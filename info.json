@@ -1,0 +1,10 @@
+{
+    "AUTHOR" : "Brandon Silva",
+    "INSTALL_MSG" : "Thanks for installing my cog!",
+    "NAME" : "ScriptCog",
+    "SHORT" : "Generates text from keras model.",
+    "DESCRIPTION" : "Uses a keras model to generate text.",
+    "TAGS" : ["mlp"],
+    "REQUIREMENTS" : ["tensorflow", "keras"],
+    "HIDDEN" : false
+}
