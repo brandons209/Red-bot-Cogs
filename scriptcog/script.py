@@ -65,7 +65,10 @@ class ScriptCog:
         self.model_path = "data/scriptcog/model.h5"
         self.dict_path = "data/scriptcog/dicts/"
 
-        self.model = load_model(self.model_path)
+        try:
+            self.model = load_model(self.model_path)
+        except:
+            self.model = None
         self.word_limit = 100
 
         try:
@@ -79,17 +82,17 @@ class ScriptCog:
 
     @commands.command(pass_context=True)
     async def setwordlimit(self, ctx, num_words : int = 100):
-        if ctx.invoked_subcommand is None:
-            await self.bot.say("Usage: setwordlimit limit")
-            return
+        #if ctx.invoked_subcommand is None:
+        #    await self.bot.say("Usage: setwordlimit limit")
+        #    return
         self.word_limit = num_words
         await self.bot.say("Maximum number of words is now {}".format(self.word_limit))
 
     @commands.command(pass_context=True)
     async def genscript(self, ctx, num_words : int = 100, temp : float = 0.5, seed : str = "pinkie pie::"):
-        if ctx.invoked_subcommand is None:
-            await self.bot.say("Usage: genscript num_words randomness(between 0 and 1) seed_text")
-            return
+        #if ctx.invoked_subcommand is None:
+        #    await self.bot.say("Usage: genscript num_words randomness(between 0 and 1) seed_text")
+        #    return
         if num_words > self.word_limit:
             await self.bot.say("Please keep script sizes to {} words or less.".format(self.word_limit))
             return
