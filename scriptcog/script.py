@@ -1,6 +1,8 @@
 import discord
 from discord.ext import commands
+
 from keras.models import load_model
+from keras.preprocessing.sequence import pad_sequences
 
 import numpy as np
 import os
