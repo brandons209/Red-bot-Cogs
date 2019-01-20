@@ -83,9 +83,10 @@ class ScriptCog:
                 content = content.split()
             self.word_limit = int(content[0])
             self.cooldown_limit = int(content[1])
+            self.tv_show = content[2]
         else:
             with open("data/scriptcog/config.txt", "w") as f:
-                f.write("100 30")
+                f.write("100 30 MLP")
             self.word_limit = 100
             self.cooldown_limit = 30
 
@@ -100,7 +101,7 @@ class ScriptCog:
 
     def _write_config(self):
         with open("data/scriptcog/config.txt", "w") as f:
-            f.write("{} {}".format(self.word_limit, self.cooldown_limit))
+            f.write("{} {} {}".format(self.word_limit, self.cooldown_limit, self.tv_show))
 
     @commands.command(pass_context=True, no_pm=True)
     @checks.is_owner()
@@ -114,11 +115,18 @@ class ScriptCog:
 
     @commands.command(pass_context=True, no_pm=True)
     async def genscriptinfo(self, ctx):
-        await self.bot.say("Word Limit: {}, Cooldown Time: {}".format(self.word_limit, self.cooldown_limit))
+        await self.bot.say("Word Limit: {}, Cooldown Time: {}, Show: {}".format(self.word_limit, self.cooldown_limit, self.tv_show))
 
     @commands.command(pass_context=True, no_pm=True)
     async def genscripthelp(self, ctx):
-        await self.bot.say("----------\nGenerate original TV scripts using Neural Networks!\nUsage: `genscript number_of_words_to_generate word_variance starting_text`\n----------")
+        await self.bot.say("--------------------\nGenerate original TV scripts for {} using Neural Networks!\nUsage: `genscript number_of_words_to_generate word_variance starting_text`\nUse starting texts such as:\n`pinkie pie::`\n`fluttershy::`\n`twilight sparkle::`\nor other names of characters in the show. Otherwise, you can use any words said in the show.-------------------".format(self.tv_show))
+
+    @commands.command(pass_context=True, no_pm=True)
+    @checks.is_owner()
+    async def settvshow(self, ctx, show : str = "MLP"):
+        self.tv_show = show
+        self._write_config()
+        await self.bot.say("TV show is now {}.".format(self.tv_show))
 
     @commands.command(pass_context=True, no_pm=True)
     @checks.is_owner()
@@ -126,6 +134,7 @@ class ScriptCog:
         self.cooldown_limit = cooldown
         self._write_config()
         await self.bot.say("Script cooldown is now {}.".format(self.cooldown_limit))
+
 
     @commands.command(pass_context=True, no_pm=True)
     async def genscript(self, ctx, num_words_to_generate : int = 100, variance : float = 0.5, seed : str = "pinkie pie::"):
