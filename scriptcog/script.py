@@ -1,5 +1,7 @@
 import discord
 from discord.ext import commands
+from cogs.utils import checks
+from cogs.utils.converters import GlobalUser
 
 from keras.models import load_model
 from keras.preprocessing.sequence import pad_sequences
