@@ -89,6 +89,7 @@ class ScriptCog:
                 f.write("100 30 MLP")
             self.word_limit = 100
             self.cooldown_limit = 30
+            self.tv_show = "MLP"
 
         try:
             self.word_to_int = _load_dict(self.dict_path + 'word_to_int.pkl')
