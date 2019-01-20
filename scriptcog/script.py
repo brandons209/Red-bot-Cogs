@@ -101,6 +101,7 @@ class ScriptCog:
             f.write("{} {}".format(self.word_limit, self.cooldown_limit))
 
     @commands.command(pass_context=True, no_pm=True)
+    @checks.is_owner()
     async def setwordlimit(self, ctx, num_words : int = 100):
         #if ctx.invoked_subcommand is None:
         #    await self.bot.say("Usage: setwordlimit limit")
@@ -110,6 +111,15 @@ class ScriptCog:
         await self.bot.say("Maximum number of words is now {}".format(self.word_limit))
 
     @commands.command(pass_context=True, no_pm=True)
+    async def genscriptinfo(self, ctx):
+        await self.bot.say("Word Limit: {}, Cooldown Time: {}".format(self.word_limit, self.cooldown_limit))
+
+    @commands.command(pass_context=True, no_pm=True)
+    async def genscripthelp(self, ctx):
+        await self.bot.say("----------\nGenerate original TV scripts using Neural Networks!\nUsage: `genscript number_of_words_to_generate word_variance starting_text`\n----------")
+
+    @commands.command(pass_context=True, no_pm=True)
+    @checks.is_owner()
     async def setcooldown(self, ctx, cooldown : int = 30):
         self.cooldown_limit = cooldown
         self._write_config()
