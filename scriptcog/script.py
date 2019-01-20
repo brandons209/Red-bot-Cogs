@@ -7,6 +7,7 @@ from keras.preprocessing.sequence import pad_sequences
 import numpy as np
 import os
 import pickle
+import time
 
 
 #loads dictionary from file
@@ -67,11 +68,24 @@ class ScriptCog:
         self.model_path = "data/scriptcog/model.h5"
         self.dict_path = "data/scriptcog/dicts/"
 
+        self.cooldown = time.time()
+
         try:
             self.model = load_model(self.model_path)
         except:
             self.model = None
-        self.word_limit = 100
+
+        if os.path.isfile("data/scriptcog/config.txt"):
+            with open("data/scriptcog/config.txt", "r") as f:
+                content = f.read()
+                content = content.split("\n")
+            self.word_limit = int(content[0])
+            self.cooldown_limit = int(content[1])
+        else:
+            with open("data/scriptcog/config.txt", "w") as f:
+                f.write("100\n30")
+            self.word_limit = 100
+            self.cooldown_limit = 30
 
         try:
             self.word_to_int = _load_dict(self.dict_path + 'word_to_int.pkl')
@@ -82,15 +96,26 @@ class ScriptCog:
             self.int_to_word = None
             self.sequence_length = None
 
-    @commands.command(pass_context=True)
+    def _write_config(self):
+        with open("data/scriptcog/config.txt", "w") as f:
+            f.write("{}\n{}".format(self.world_limit, self.cooldown_limit))
+
+    @commands.command(pass_context=True, no_pm=True)
     async def setwordlimit(self, ctx, num_words : int = 100):
         #if ctx.invoked_subcommand is None:
         #    await self.bot.say("Usage: setwordlimit limit")
         #    return
         self.word_limit = num_words
+        self._write_config()
         await self.bot.say("Maximum number of words is now {}".format(self.word_limit))
 
-    @commands.command(pass_context=True)
+    @commands.command(pass_context=True, no_pm=True)
+    async def setcooldown(self, ctx, cooldown : int = 30):
+        self.cooldown_limit = cooldown
+        self._write_config()
+        await self.bot.say("Script cooldown is now {}.".format(self.cooldown_limit))
+
+    @commands.command(pass_context=True, no_pm=True)
     async def genscript(self, ctx, num_words : int = 100, temp : float = 0.5, seed : str = "pinkie pie::"):
         #if ctx.invoked_subcommand is None:
         #    await self.bot.say("Usage: genscript num_words randomness(between 0 and 1) seed_text")
@@ -98,6 +123,8 @@ class ScriptCog:
         if num_words > self.word_limit:
             await self.bot.say("Please keep script sizes to {} words or less.".format(self.word_limit))
             return
+        elif time.time() - self.cooldown < self.cooldown_limit:
+            await self.bot.say("Sorry, I am cooling down, please wait {:.0f} seconds.".format(self.cooldown_limit - (time.time() - self.cooldown)))
 
         if temp > 1.0:
             temp = 1.0
@@ -125,8 +152,9 @@ class ScriptCog:
             input_text += ' ' + output_word
         #convert tokenized punctuation and other characters back
         result = _untokenize_punctuation(input_text)
-
+        await self.bot.say("------------------------")
         await self.bot.say(result)
+        await self.bot.say("------------------------")
 
 def setup(bot):
     bot.add_cog(ScriptCog(bot))
