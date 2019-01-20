@@ -78,12 +78,12 @@ class ScriptCog:
         if os.path.isfile("data/scriptcog/config.txt"):
             with open("data/scriptcog/config.txt", "r") as f:
                 content = f.read()
-                content = content.split("\n")
+                content = content.split()
             self.word_limit = int(content[0])
             self.cooldown_limit = int(content[1])
         else:
             with open("data/scriptcog/config.txt", "w") as f:
-                f.write("100\n30")
+                f.write("100 30")
             self.word_limit = 100
             self.cooldown_limit = 30
 
@@ -98,7 +98,7 @@ class ScriptCog:
 
     def _write_config(self):
         with open("data/scriptcog/config.txt", "w") as f:
-            f.write("{}\n{}".format(self.word_limit, self.cooldown_limit))
+            f.write("{} {}".format(self.word_limit, self.cooldown_limit))
 
     @commands.command(pass_context=True, no_pm=True)
     async def setwordlimit(self, ctx, num_words : int = 100):
@@ -127,7 +127,7 @@ class ScriptCog:
             await self.bot.say("Sorry, I am cooling down, please wait {:.0f} seconds.".format(self.cooldown_limit - (time.time() - self.cooldown)))
 
         self.cooldown = time.time()
-        
+
         if temp > 1.0:
             temp = 1.0
         elif temp < 0:
