@@ -148,7 +148,7 @@ class ScriptCog:
                 int_text = np.array([self.word_to_int[word] for word in int_text], dtype=np.int32)
             except KeyError:
                 await self.bot.say("Sorry, that seed word is not in my vocabulary.\nPlease try an English word from the show.\n")
-                return None
+                return
             #pad text if it is too short, pads with zeros at beginning of text, so shouldnt have too much noise added
             int_text = pad_sequences([int_text], maxlen=self.sequence_length)
             #predict next word:
@@ -157,7 +157,10 @@ class ScriptCog:
             #append to the result
             input_text += ' ' + output_word
         #convert tokenized punctuation and other characters back
-        return _untokenize_punctuation(input_text)
+        result = _untokenize_punctuation(input_text)
+        await self.bot.say("------------------------")
+        await self.bot.say(result)
+        await self.bot.say("------------------------")
 
     @commands.command(pass_context=True, no_pm=True)
     async def genscript(self, ctx, num_words_to_generate : int = 100, variance : float = 0.5, seed : str = "pinkie pie::"):
@@ -179,13 +182,8 @@ class ScriptCog:
             variance = 0
 
         await self.bot.say("Generating script, please wait...")
-
-        result = await self.get_model_output(num_words_to_generate, variance, seed)
-
-        if result is not None:
-            await self.bot.say("------------------------")
-            await self.bot.say(result)
-            await self.bot.say("------------------------")
+        loop = asyncio.get_event_loop()
+        await self.get_model_output(num_words_to_generate, variance, seed)
 
 def setup(bot):
     bot.add_cog(ScriptCog(bot))
