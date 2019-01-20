@@ -10,6 +10,7 @@ import numpy as np
 import os
 import pickle
 import time
+import asyncio
 
 
 #loads dictionary from file
@@ -179,7 +180,7 @@ class ScriptCog:
 
         await self.bot.say("Generating script, please wait...")
 
-        result = self.get_model_output(num_words_to_generate, variance, seed)
+        result = await self.get_model_output(num_words_to_generate, variance, seed)
 
         if result is not None:
             await self.bot.say("------------------------")
