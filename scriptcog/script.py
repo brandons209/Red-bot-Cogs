@@ -86,7 +86,7 @@ class ScriptCog:
         await self.bot.say("Maximum number of words is now {}".format(self.word_limit))
 
     @commands.command(pass_context=True)
-    async def genscript(self, ctx, num_words : int = 100, temp : float = 0.5 ):
+    async def genscript(self, ctx, num_words : int = 100, temp : float = 0.5, seed : string = "pinkie pie::"):
         if ctx.invoked_subcommand is None:
             await self.bot.say("Usage: genscript num_words randomness(between 0 and 1)")
             return
