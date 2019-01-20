@@ -182,8 +182,7 @@ class ScriptCog:
             variance = 0
 
         await self.bot.say("Generating script, please wait...")
-        loop = asyncio.get_event_loop()
-        await self.get_model_output(num_words_to_generate, variance, seed)
+        asyncio.ensure_future(self.get_model_output(num_words_to_generate, variance, seed))
 
 def setup(bot):
     bot.add_cog(ScriptCog(bot))
