@@ -120,7 +120,7 @@ class ScriptCog:
 
     @commands.command(pass_context=True, no_pm=True)
     async def genscripthelp(self, ctx):
-        await self.bot.say("--------------------\nGenerate original TV scripts for {} using Neural Networks!\nUsage: `genscript number_of_words_to_generate word_variance starting_text`\nUse starting texts such as:\n`pinkie pie::`\n`fluttershy::`\n`twilight sparkle::`\nor other names of characters in the show. Otherwise, you can use any words said in the show.\nWord variance helps gives the generate better results. A variance of 0 will mean that with the same starting text, it will always have the same output. Variance up to 1.0 will give more variety to words, however going closer to 1 can introduce more grammar and spelling mistakes.\n-------------------".format(self.tv_show))
+        await self.bot.say("--------------------\nGenerate original TV scripts for {} using Neural Networks!\nUsage: `genscript number_of_words_to_generate word_variance starting_text`\nUse starting texts such as:\n`"pinkie pie::"`\n`fluttershy::`\n`"twilight sparkle::"`\nor other names of characters in the show. Otherwise, you can use any words said in the show.\n**If your starting text has spaces, enclose it with quotes: ""**\nWord variance helps gives the generate better results. A variance of 0 will mean that with the same starting text, it will always have the same output. Variance up to 1.0 will give more variety to words, however going closer to 1 can introduce more grammar and spelling mistakes.b\n-------------------".format(self.tv_show))
 
     @commands.command(pass_context=True, no_pm=True)
     @checks.is_owner()
