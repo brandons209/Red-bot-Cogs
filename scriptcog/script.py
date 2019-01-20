@@ -116,26 +116,27 @@ class ScriptCog:
         await self.bot.say("Script cooldown is now {}.".format(self.cooldown_limit))
 
     @commands.command(pass_context=True, no_pm=True)
-    async def genscript(self, ctx, num_words : int = 100, temp : float = 0.5, seed : str = "pinkie pie::"):
+    async def genscript(self, ctx, num_words_to_generate : int = 100, variance : float = 0.5, seed : str = "pinkie pie::"):
         #if ctx.invoked_subcommand is None:
         #    await self.bot.say("Usage: genscript num_words randomness(between 0 and 1) seed_text")
         #    return
-        if num_words > self.word_limit:
+        if num_words_to_generate > self.word_limit:
             await self.bot.say("Please keep script sizes to {} words or less.".format(self.word_limit))
             return
         elif time.time() - self.cooldown < self.cooldown_limit:
             await self.bot.say("Sorry, I am cooling down, please wait {:.0f} seconds.".format(self.cooldown_limit - (time.time() - self.cooldown)))
+            return
 
         self.cooldown = time.time()
 
-        if temp > 1.0:
-            temp = 1.0
-        elif temp < 0:
-            temp = 0
+        if variance > 1.0:
+            variance = 1.0
+        elif variance < 0:
+            variance = 0
 
         await self.bot.say("Generating script, please wait...")
         input_text = seed
-        for _  in range(num_words):
+        for _  in range(num_words_to_generate):
             #tokenize text to ints
             int_text = _tokenize_punctuation(input_text)
             int_text = int_text.lower()
@@ -149,7 +150,7 @@ class ScriptCog:
             int_text = pad_sequences([int_text], maxlen=self.sequence_length)
             #predict next word:
             prediction = self.model.predict(int_text, verbose=0)
-            output_word = self.int_to_word[_sample(prediction, temp=temp)]
+            output_word = self.int_to_word[_sample(prediction, temp=variance)]
             #append to the result
             input_text += ' ' + output_word
         #convert tokenized punctuation and other characters back
