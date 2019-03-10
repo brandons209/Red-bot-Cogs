@@ -246,11 +246,11 @@ class ScriptCog:
         cooldown = self.settings.get(server_id, {}).get("COOLDOWN", self.default_cooldown_limit)
         tv_show =  self.settings.get(server_id, {}).get("TV_SHOW", self.default_tv_show)
         price = self.settings.get(server_id, {}).get("PRICE", self.default_price)
-        await self.bot.say("Word Limit: {}, Cooldown Time: {}, Show: {}, Price: {}".format(word_limit, cooldown, tv_show, price))
+        await self.bot.say("```Word Limit: {0}\nCooldown Time: {1} seconds\nShow: {2}\nPrice for {0} words: {3}, which is {4} bits per word```".format(word_limit, cooldown, tv_show, price, price / word_limit))
 
     @commands.command(pass_context=True, no_pm=True)
     async def genscripthelp(self, ctx):
-        await self.bot.say("--------------------\nGenerate original TV scripts for {} using Neural Networks!\nUsage: `genscript <number of words to generate> <word variance> <starting text>`\nUse starting texts such as:\n`pinkie pie::`\n`fluttershy::`\n`twilight sparkle::`\nor other names of characters in the show. Otherwise, you can use any words said in the show.\n\nWord variance helps gives the script better results. A variance of 0 will mean that with the same starting text, it will always have the same output. Variance up to 1.0 will give more variety to words, however going closer to 1 can introduce more grammar and spelling mistakes.\n-------------------".format(self.settings.get(ctx.message.server.id, {}).get("TV_SHOW", self.default_tv_show)))
+        await self.bot.say("--------------------\nGenerate original TV scripts for {0} using Neural Networks!\nUsage: `{1}genscript <number of words to generate> <word variance> <starting text>`\nUse starting texts such as:\n`pinkie pie::`\n`fluttershy::`\n`twilight sparkle::`\nor other names of characters in the show. Otherwise, you can use any words said in the show.\n\nWord variance helps gives the script better results. A variance of 0 will mean that with the same starting text, it will always have the same output. Variance up to 1.0 will give more variety to words, however going closer to 1 can introduce more grammar and spelling mistakes.\n\nGenerating scripts cost bits, depending on how many words you want to generate. Use `{1}genscriptinfo` to get information on the cost.\n-------------------".format(self.settings.get(ctx.message.server.id, {}).get("TV_SHOW", self.default_tv_show), ctx.prefix))
 
     @commands.command(pass_context=True, no_pm=True)
     async def genscript(self, ctx, num_words_to_generate : int, variance : float, *, seed):
@@ -272,6 +272,7 @@ class ScriptCog:
             return
 
         if not self.check_free_role(user):
+            price = int((price / word_limit) * num_words_to_generate)
             return_val = self.charge_user(user, price)
             if return_val == 1: #if this worked, dont need to check when getting econ cog
                 balance = self.bot.get_cog('Economy').bank.get_balance(user)
