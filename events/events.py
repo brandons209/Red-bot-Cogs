@@ -36,7 +36,7 @@ class Events(commands.Cog):
     async def addevent(self, ctx, start_time: str, *, event_name: str = ""):
         """
         Add event to track. If start time is not given, the current data and time is used.
-        Start time should be a UNIX timestamp
+        Start time should be a UNIX timestamp in UTC.
         """
         guild = ctx.guild
         channel_id = await self.config.guild(guild).channel()
@@ -189,4 +189,4 @@ class Events(commands.Cog):
                         msg = "{}{}{}".format(day_msg if elapsed_time.days > 0 else "", hour_msg if int(elapsed_time.seconds / 60 / 60) > 0 else "", minute_msg)
                         embed.add_field(name="Elapsed time", value=msg)
                         await message.edit(embed=embed)
-            await asyncio.sleep(40)
+            await asyncio.sleep(30)
