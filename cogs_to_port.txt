@@ -28,10 +28,11 @@
 
 15. markov if fix issue
 
+16. sfx
+
 cogs to look at:
 evolution
 economytrickle upgrade - awards voice activity too (oof)
-roleplay - provides all the fun commands like hug stuff, extra ones
 massdm
 invoice
 otherbot
@@ -42,3 +43,11 @@ blurplefy
 imagemaker
 audiotrivia
 exclusive role replaces xorole
+chatter
+leaver
+infochannel
+love calculator
+turn
+cah
+pupper
+pingtime
