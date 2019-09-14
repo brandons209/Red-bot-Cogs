@@ -35,12 +35,12 @@ class Pony(commands.Cog):
         await self.fetch_image(ctx, randomize=True, tags=text)
 
     # needed because derpi was having trouble getting a random image from our derpi page with the filters we have
-    @commands.command(pass_context=True, no_pm=True)
+    @commands.command(pass_context=True)
     async def mascot(self, ctx):
         """
         Gives a random picture of our mascot!
         """
-        await fetch_image(self, ctx, randomize=True, mascot=True, tags=['safe,', 'uploader:champions of equestria'])
+        await fetch_image(self, ctx, randomize=True, mascot=True, tags=['safe,', 'coe'])
 
     @commands.group()
     @commands.guild_only()
