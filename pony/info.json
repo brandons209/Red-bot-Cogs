@@ -1,0 +1,24 @@
+{
+  "author": [
+    "Brandons209",
+    "somethingux",
+    "Alzarath"
+  ],
+  "bot_version": [
+    3,
+    0,
+    0
+  ],
+  "description": "Search derpibooru for images of ponies! Fully customizable filter list!",
+  "hidden": false,
+  "install_msg": "Thank you for using this cog! Please make sure to setup the filters to your liking using '[p]ponyfilter'.",
+  "requirements": ["urllib3", "aiohttp"],
+  "short": "Search derpibooru for images of ponies!",
+  "tags": [
+    "brandons209",
+    "fun",
+    "pony",
+    "mlp",
+    "image"
+  ]
+}
