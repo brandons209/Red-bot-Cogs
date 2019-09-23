@@ -219,7 +219,11 @@ class Welcome(getattr(commands, "Cog", object)):
        "").format(channel)
     )
 
+<<<<<<< HEAD
   @welcomeset.command(name='ban-channel')
+=======
+  @welcomeset.command(name='channel')
+>>>>>>> 564a96b68d4c483315280c0da50e22ae8fcf44ba
   async def welcomeset_channel(self, ctx: commands.Context, channel: discord.TextChannel):
     """Sets the channel to be used for event notices."""
 
