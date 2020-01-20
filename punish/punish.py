@@ -140,8 +140,9 @@ class Punish(commands.Cog):
         punished = await self.config.guild(guild).PUNISHED()
 
         embeds = []
-
-        for member_id, data in punished.items():
+        num_p = len(punished)
+        for i, data in enumerate(punished.items()):
+            member_id, data = data
             member_name = getmname(member_id, guild)
             moderator = getmname(data['by'], guild)
             reason = data['reason']
@@ -155,6 +156,7 @@ class Punish(commands.Cog):
             for header, row_val in zip(headers, row):
                 embed.add_field(name=header, value=row_val)
 
+            embed.set_footer(text=f"Page {i+1} out of {num_p}")
             embeds.append(embed)
 
         if not punished:
