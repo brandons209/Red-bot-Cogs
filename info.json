@@ -1,7 +1,21 @@
 {
-  "AUTHOR": "Brandons209",
-  "INSTALL_MSG": "Thank you for using my cogs! Have fun!",
-  "NAME": "Brandon-V3",
-  "SHORT": "Cogs by Brandons209",
-  "DESCRIPTION": "Cogs for Red-Discord Bot by Brandons209"
-}
+    "author": [
+      "PancakeSparkle"
+      
+    ],
+    "bot_version": [
+      3,
+      0,
+      0
+    ],
+    "description": "Cog used for setting birthdays and announcing them and giving people roles on their birthday",
+    "hidden": false,
+    "install_msg": "Use [p]bday to bring up the help menu",
+    "requirements": [],
+    "short": "Cog used for setting birthdays and announcing them and giving people roles on their birthday",
+    "tags": [
+      "brandons209",
+      "pancakesparkle",
+      "punish"
+    ]
+  }
