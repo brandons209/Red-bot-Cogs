@@ -88,7 +88,7 @@ class Birthdays(Cog):
 
     @bday.command(name="role")
     @checks.mod_or_permissions(manage_roles=True)
-    async def bday_role(self, ctx: Context, role: discord.Role):
+    async def bday_role(self, ctx: Context, *, role: discord.Role):
         """Sets the birthday role"""
         message = ctx.message
         guild = message.guild
@@ -115,7 +115,6 @@ class Birthdays(Cog):
         if birthday is None:
             print(self.BDAY_INVALID())
             await channel.send(self.BDAY_INVALID())
-            
         else:
             await self.remove_user_bday(message.guild.id, author.id)
             await self.get_date_config(message.guild.id, birthday.toordinal()).get_attr(author.id).set(year)
