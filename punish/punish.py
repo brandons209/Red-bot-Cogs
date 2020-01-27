@@ -79,7 +79,6 @@ class Punish(commands.Cog):
             "default_setting": True,
             "image": "\N{HOURGLASS WITH FLOWING SAND}\N{SPEAKER WITH CANCELLATION STROKE}",
             "case_str": "Timed Mute",
-            "audit_type": "member_update",
         }
         try:
             await modlog.register_casetype(**punish_case)
@@ -1345,9 +1344,6 @@ class Punish(commands.Cog):
     @commands.Cog.listener()
     async def on_guild_channel_create(self, channel):
         """Run when new channels are created and set up role permissions"""
-        if channel.is_private:
-            return
-
         role = await self.get_role(channel.guild, quiet=True)
         if not role:
             return
@@ -1356,11 +1352,11 @@ class Punish(commands.Cog):
 
     @commands.Cog.listener()
     async def on_member_update(self, before, after):
-        """Remove scheduled unpunish when manually removed"""
+        """Remove scheduled unpunish when manually removed role"""
         try:
+            assert before.roles != after.roles
             guild_data = await self.config.guild(before.guild).PUNISHED()
             member_data = guild_data[str(before.id)]
-            assert before.roles != after.roles
             role = await self.get_role(before.guild, quiet=True)
             assert role
         except (KeyError, AssertionError):
