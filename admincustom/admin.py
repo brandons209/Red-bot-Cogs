@@ -59,9 +59,7 @@ class Admin(commands.Cog):
         self.conf.register_global(serverlocked=False)
 
         self.conf.register_guild(
-            announce_ignore=False,
-            announce_channel=None,  # Integer ID
-            selfroles=[],  # List of integer ID's
+            announce_ignore=False, announce_channel=None, selfroles=[],  # Integer ID  # List of integer ID's
         )
 
         self.__current_announcer = None
@@ -114,16 +112,12 @@ class Admin(commands.Cog):
             await member.add_roles(role)
         except discord.Forbidden:
             if not self.pass_hierarchy_check(ctx, role):
-                await self.complain(
-                    ctx, T_(HIERARCHY_ISSUE), role=role, member=member, verb=_("add")
-                )
+                await self.complain(ctx, T_(HIERARCHY_ISSUE), role=role, member=member, verb=_("add"))
             else:
                 await self.complain(ctx, T_(GENERIC_FORBIDDEN))
         else:
             await ctx.send(
-                _("I successfully added {role.name} to {member.display_name}").format(
-                    role=role, member=member
-                )
+                _("I successfully added {role.name} to {member.display_name}").format(role=role, member=member)
             )
 
     async def _removerole(self, ctx: commands.Context, member: discord.Member, role: discord.Role):
@@ -134,24 +128,18 @@ class Admin(commands.Cog):
             await member.remove_roles(role)
         except discord.Forbidden:
             if not self.pass_hierarchy_check(ctx, role):
-                await self.complain(
-                    ctx, T_(HIERARCHY_ISSUE), role=role, member=member, verb=_("remove")
-                )
+                await self.complain(ctx, T_(HIERARCHY_ISSUE), role=role, member=member, verb=_("remove"))
             else:
                 await self.complain(ctx, T_(GENERIC_FORBIDDEN))
         else:
             await ctx.send(
-                _("I successfully removed {role.name} from {member.display_name}").format(
-                    role=role, member=member
-                )
+                _("I successfully removed {role.name} from {member.display_name}").format(role=role, member=member)
             )
 
     @commands.command()
     @commands.guild_only()
     @checks.admin_or_permissions(manage_roles=True)
-    async def addrole(
-        self, ctx: commands.Context, rolename: discord.Role, *, user: MemberDefaultAuthor = None
-    ):
+    async def addrole(self, ctx: commands.Context, rolename: discord.Role, *, user: MemberDefaultAuthor = None):
         """Add a role to a user.
 
         If user is left blank it defaults to the author of the command.
@@ -162,16 +150,12 @@ class Admin(commands.Cog):
             # noinspection PyTypeChecker
             await self._addrole(ctx, user, rolename)
         else:
-            await self.complain(
-                ctx, T_(USER_HIERARCHY_ISSUE), member=user, role=rolename, verb=_("add")
-            )
+            await self.complain(ctx, T_(USER_HIERARCHY_ISSUE), member=user, role=rolename, verb=_("add"))
 
     @commands.command()
     @commands.guild_only()
     @checks.admin_or_permissions(manage_roles=True)
-    async def removerole(
-        self, ctx: commands.Context, rolename: discord.Role, *, user: MemberDefaultAuthor = None
-    ):
+    async def removerole(self, ctx: commands.Context, rolename: discord.Role, *, user: MemberDefaultAuthor = None):
         """Remove a role from a user.
 
         If user is left blank it defaults to the author of the command.
@@ -182,9 +166,7 @@ class Admin(commands.Cog):
             # noinspection PyTypeChecker
             await self._removerole(ctx, user, rolename)
         else:
-            await self.complain(
-                ctx, T_(USER_HIERARCHY_ISSUE), member=user, role=rolename, verb=_("remove")
-            )
+            await self.complain(ctx, T_(USER_HIERARCHY_ISSUE), member=user, role=rolename, verb=_("remove"))
 
     @commands.group()
     @commands.guild_only()
@@ -194,9 +176,7 @@ class Admin(commands.Cog):
         pass
 
     @editrole.command(name="colour", aliases=["color"])
-    async def editrole_colour(
-        self, ctx: commands.Context, role: discord.Role, value: discord.Colour
-    ):
+    async def editrole_colour(self, ctx: commands.Context, role: discord.Role, value: discord.Colour):
         """Edit a role's colour.
 
         Use double quotes if the role contains spaces.
@@ -234,9 +214,7 @@ class Admin(commands.Cog):
         """
         author = ctx.message.author
         old_name = role.name
-        reason = "{}({}) changed the name of role '{}' to '{}'".format(
-            author.name, author.id, old_name, name
-        )
+        reason = "{}({}) changed the name of role '{}' to '{}'".format(author.name, author.id, old_name, name)
 
         if not self.pass_user_hierarchy_check(ctx, role):
             await self.complain(ctx, T_(ROLE_USER_HIERARCHY_ISSUE), role=role)
@@ -285,9 +263,7 @@ class Admin(commands.Cog):
             channel = ctx.channel
         await self.conf.guild(ctx.guild).announce_channel.set(channel.id)
 
-        await ctx.send(
-            _("The announcement channel has been set to {channel.mention}").format(channel=channel)
-        )
+        await ctx.send(_("The announcement channel has been set to {channel.mention}").format(channel=channel))
 
     @announce.command(name="ignore")
     @commands.guild_only()
@@ -298,15 +274,9 @@ class Admin(commands.Cog):
         await self.conf.guild(ctx.guild).announce_ignore.set(not ignored)
 
         if ignored:  # Keeping original logic....
-            await ctx.send(
-                _("The server {guild.name} will receive announcements.").format(guild=ctx.guild)
-            )
+            await ctx.send(_("The server {guild.name} will receive announcements.").format(guild=ctx.guild))
         else:
-            await ctx.send(
-                _("The server {guild.name} will not receive announcements.").format(
-                    guild=ctx.guild
-                )
-            )
+            await ctx.send(_("The server {guild.name} will not receive announcements.").format(guild=ctx.guild))
 
     async def _valid_selfroles(self, guild: discord.Guild) -> Tuple[discord.Role]:
         """

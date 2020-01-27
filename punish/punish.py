@@ -16,21 +16,22 @@ import logging
 import time
 import textwrap
 
-log = logging.getLogger('red.punish')
+log = logging.getLogger("red.punish")
 
-__version__ = '3.0.0'
+__version__ = "3.0.0"
 
 PURGE_MESSAGES = 1  # for cpunish
 
-DEFAULT_ROLE_NAME = 'Punished'
+DEFAULT_ROLE_NAME = "Punished"
 DEFAULT_TEXT_OVERWRITE = discord.PermissionOverwrite(send_messages=False, send_tts_messages=False, add_reactions=False)
 DEFAULT_VOICE_OVERWRITE = discord.PermissionOverwrite(speak=False, connect=False)
 DEFAULT_TIMEOUT_OVERWRITE = discord.PermissionOverwrite(send_messages=True, read_messages=True)
 
 QUEUE_TIME_CUTOFF = 30
 
-DEFAULT_TIMEOUT = '5m'
-DEFAULT_CASE_MIN_LENGTH = '5m'  # only create modlog cases when length is longer than this
+DEFAULT_TIMEOUT = "5m"
+DEFAULT_CASE_MIN_LENGTH = "5m"  # only create modlog cases when length is longer than this
+
 
 class Punish(commands.Cog):
     """
@@ -38,6 +39,7 @@ class Punish(commands.Cog):
     do other things that can be denied using discord permissions. Includes
     auto-setup and more.
     """
+
     def __init__(self, bot):
         super().__init__()
 
@@ -53,7 +55,7 @@ class Punish(commands.Cog):
             "VOICE_OVERWRITE": overwrite_to_dict(DEFAULT_VOICE_OVERWRITE),
             "ROLE_ID": None,
             "NITRO_ID": None,
-            "CHANNEL_ID": None
+            "CHANNEL_ID": None,
         }
         self.config.register_guild(**default_guild)
 
@@ -100,7 +102,7 @@ class Punish(commands.Cog):
         elif user:
             await self._punish_cmd_common(ctx, user, duration, reason)
 
-    @punish.command(name='cstart')
+    @punish.command(name="cstart")
     @commands.guild_only()
     @checks.mod()
     async def punish_cstart(self, ctx, user: discord.Member, duration: str = None, *, reason: str = None):
@@ -121,7 +123,7 @@ class Punish(commands.Cog):
         except discord.errors.Forbidden:
             await ctx.send("Punishment set, but I need permissions to manage messages to clean up.")
 
-    @punish.command(name='list')
+    @punish.command(name="list")
     @commands.guild_only()
     @checks.mod()
     async def punish_list(self, ctx):
@@ -135,7 +137,7 @@ class Punish(commands.Cog):
         guild = ctx.guild
         guild_id = guild.id
         now = time.time()
-        headers = ['Member', 'Remaining', 'Moderator', 'Reason']
+        headers = ["Member", "Remaining", "Moderator", "Reason"]
         punished = await self.config.guild(guild).PUNISHED()
 
         embeds = []
@@ -143,13 +145,13 @@ class Punish(commands.Cog):
         for i, data in enumerate(punished.items()):
             member_id, data = data
             member_name = getmname(member_id, guild)
-            moderator = getmname(data['by'], guild)
-            reason = data['reason']
-            until = data['until']
+            moderator = getmname(data["by"], guild)
+            reason = data["reason"]
+            until = data["until"]
             sort = until or float("inf")
-            remaining = generate_timespec(until - now, short=True) if until else 'forever'
+            remaining = generate_timespec(until - now, short=True) if until else "forever"
 
-            row = [member_name, remaining, moderator, reason or 'No reason set.']
+            row = [member_name, remaining, moderator, reason or "No reason set."]
             embed = discord.Embed(title="Punish List", colour=discord.Colour.from_rgb(255, 0, 0))
 
             for header, row_val in zip(headers, row):
@@ -164,7 +166,7 @@ class Punish(commands.Cog):
 
         await menu(ctx, embeds, DEFAULT_CONTROLS)
 
-    @punish.command(name='clean')
+    @punish.command(name="clean")
     @commands.guild_only()
     @checks.mod()
     async def punish_clean(self, ctx, clean_pending: bool = False):
@@ -189,14 +191,14 @@ class Punish(commands.Cog):
             if not mid.isdigit() or guild.get_member(mid):
                 continue
 
-            elif clean_pending or ((mdata['until'] or 0) < now):
-                del(data[mid])
+            elif clean_pending or ((mdata["until"] or 0) < now):
+                del data[mid]
                 count += 1
 
         await self.config.guild(guild).PUNISHED.set(data)
-        await ctx.send('Cleaned %i absent members from the list.' % count)
+        await ctx.send("Cleaned %i absent members from the list." % count)
 
-    @punish.command(name='clean-bans')
+    @punish.command(name="clean-bans")
     @commands.guild_only()
     @checks.mod()
     async def punish_clean_bans(self, ctx):
@@ -220,13 +222,13 @@ class Punish(commands.Cog):
                 continue
 
             elif mid in ban_ids:
-                del(data[mid])
+                del data[mid]
                 count += 1
 
         await self.config.guild(guild).PUNISHED.set(data)
-        await ctx.send('Cleaned %i banned users from the list.' % count)
+        await ctx.send("Cleaned %i banned users from the list." % count)
 
-    @punish.command(name='warn')
+    @punish.command(name="warn")
     @commands.guild_only()
     @checks.mod_or_permissions(manage_messages=True)
     async def punish_warn(self, ctx, user: discord.Member, *, reason: str = None):
@@ -234,16 +236,15 @@ class Punish(commands.Cog):
         Warns a user with boilerplate about the rules
         """
 
-        msg = ['Hey %s, ' % user.mention]
-        msg.append("you're doing something that might get you muted if you keep "
-                   "doing it.")
+        msg = ["Hey %s, " % user.mention]
+        msg.append("you're doing something that might get you muted if you keep " "doing it.")
         if reason:
             msg.append(" Specifically, %s." % reason)
 
         msg.append("Be sure to review the guild rules.")
-        await ctx.send(' '.join(msg))
+        await ctx.send(" ".join(msg))
 
-    @punish.command(name='end', aliases=['remove'])
+    @punish.command(name="end", aliases=["remove"])
     @commands.guild_only()
     @checks.mod()
     async def punish_end(self, ctx, user: discord.Member, *, reason: str = None):
@@ -260,60 +261,64 @@ class Punish(commands.Cog):
         now = time.time()
         punished = await self.config.guild(guild).PUNISHED()
         data = punished.get(str(user.id), {})
-        removed_roles_parsed = resolve_role_list(guild, data.get('removed_roles', []))
+        removed_roles_parsed = resolve_role_list(guild, data.get("removed_roles", []))
 
         if role and role in user.roles:
-            msg = 'Punishment manually ended early by %s.' % ctx.author
+            msg = "Punishment manually ended early by %s." % ctx.author
 
-            original_start = data.get('start')
-            original_end = data.get('until')
+            original_start = data.get("start")
+            original_end = data.get("until")
             remaining = original_end and (original_end - now)
 
             if remaining:
-                msg += ' %s was left' % generate_timespec(round(remaining))
+                msg += " %s was left" % generate_timespec(round(remaining))
 
                 if original_start:
-                    msg += ' of the original %s.' % generate_timespec(round(original_end - original_start))
+                    msg += " of the original %s." % generate_timespec(round(original_end - original_start))
                 else:
-                    msg += '.'
+                    msg += "."
 
             if reason:
-                msg += '\n\nReason for ending early: ' + reason
+                msg += "\n\nReason for ending early: " + reason
 
-            if data.get('reason'):
-                msg += '\n\nOriginal reason was: ' + data['reason']
+            if data.get("reason"):
+                msg += "\n\nOriginal reason was: " + data["reason"]
 
-            updated_reason = str(msg) # copy string
+            updated_reason = str(msg)  # copy string
 
             if removed_roles_parsed:
                 names_list = format_list(*(r.name for r in removed_roles_parsed))
                 msg += "\nRestored role(s): {}".format(names_list)
 
             if not await self._unpunish(user, reason=updated_reason, update=True, moderator=moderator):
-                msg += '\n\n(failed to send punishment end notification DM)'
+                msg += "\n\n(failed to send punishment end notification DM)"
 
             await ctx.send(msg)
         elif data:  # This shouldn't happen, but just in case
             now = time.time()
-            until = data.get('until')
-            remaining = until and generate_timespec(round(until - now)) or 'forever'
+            until = data.get("until")
+            remaining = until and generate_timespec(round(until - now)) or "forever"
 
-            data_fmt = '\n'.join([
-                "**Reason:** %s" % (data.get('reason') or 'no reason set'),
-                "**Time remaining:** %s" % remaining,
-                "**Moderator**: %s" % (user.guild.get_member(data.get('by')) or 'Missing ID#%s' % data.get('by'))
-            ])
-            del(punished[str(user.id)])
+            data_fmt = "\n".join(
+                [
+                    "**Reason:** %s" % (data.get("reason") or "no reason set"),
+                    "**Time remaining:** %s" % remaining,
+                    "**Moderator**: %s" % (user.guild.get_member(data.get("by")) or "Missing ID#%s" % data.get("by")),
+                ]
+            )
+            del punished[str(user.id)]
             await self.config.guild(guild).PUNISHED.set(punished)
 
-            await ctx.send("That user doesn't have the %s role, but they still have a data entry. I removed it, "
-                               "but in case it's needed, this is what was there:\n\n%s" % (role.name, data_fmt))
+            await ctx.send(
+                "That user doesn't have the %s role, but they still have a data entry. I removed it, "
+                "but in case it's needed, this is what was there:\n\n%s" % (role.name, data_fmt)
+            )
         elif role:
             await ctx.send("That user doesn't have the %s role." % role.name)
         else:
             await ctx.send("The punish role couldn't be found in this guild.")
 
-    @punish.command(name='reason')
+    @punish.command(name="reason")
     @commands.guild_only()
     @checks.mod()
     async def punish_reason(self, ctx, user: discord.Member, *, reason: str = None):
@@ -325,19 +330,21 @@ class Punish(commands.Cog):
         data = punished.get(str(user.id), None)
 
         if not data:
-            await ctx.send("That user doesn't have an active punishment entry. To update modlog "
-                               "cases manually, use the `%sreason` command." % ctx.prefix)
+            await ctx.send(
+                "That user doesn't have an active punishment entry. To update modlog "
+                "cases manually, use the `%sreason` command." % ctx.prefix
+            )
             return
 
-        punished[str(user.id)]['reason'] = reason
+        punished[str(user.id)]["reason"] = reason
         await self.config.guild(guild).PUNISHED.set(punished)
 
         if reason:
-            msg = 'Reason updated.'
+            msg = "Reason updated."
         else:
-            msg = 'Reason cleared.'
+            msg = "Reason cleared."
 
-        caseno = data.get('caseno')
+        caseno = data.get("caseno")
         try:
             case = await modlog.get_case(caseno, guild, self.bot)
         except:
@@ -348,12 +355,12 @@ class Punish(commands.Cog):
             moderator = ctx.author
 
             try:
-                edits = {'reason': reason}
+                edits = {"reason": reason}
 
-                if moderator.id != data.get('by'):
-                    edits['amended_by'] = moderator
+                if moderator.id != data.get("by"):
+                    edits["amended_by"] = moderator
 
-                edits['modified_at'] = ctx.message.created_at.timestamp()
+                edits["modified_at"] = ctx.message.created_at.timestamp()
 
                 await case.edit(edits)
             except:
@@ -504,23 +511,23 @@ class Punish(commands.Cog):
 
             try:
                 # Combine sets to get the baseline (roles they'd have normally)
-                member_roles |= set(role_memo.filter(member_data['removed_roles'], skip_nulls=True))
+                member_roles |= set(role_memo.filter(member_data["removed_roles"], skip_nulls=True))
             except KeyError:
                 pass
 
             # update new removed roles with intersection of guild removal list and baseline
             new_removed = guild_remove_roles & member_roles
-            punished[str(member.id)]['removed_roles'] = [r.id for r in new_removed]
+            punished[str(member.id)]["removed_roles"] = [r.id for r in new_removed]
 
             member_roles -= guild_remove_roles
 
             # can't restore, so skip (remove from set)
-            for role in (member_roles - original_roles):
+            for role in member_roles - original_roles:
                 if role >= highest_role:
                     member_roles.discard(role)
 
             # can't remove, so skip (re-add to set)
-            for role in (original_roles - member_roles):
+            for role in original_roles - member_roles:
                 if role >= highest_role:
                     member_roles.add(role)
 
@@ -541,7 +548,7 @@ class Punish(commands.Cog):
 
         await ctx.send(msg)
 
-    @punishset.command(name='setup')
+    @punishset.command(name="setup")
     async def punishset_setup(self, ctx):
         """
         (Re)configures the punish role and channel overrides
@@ -568,28 +575,29 @@ class Punish(commands.Cog):
             perms = discord.Permissions.none()
             role = await guild.create_role(name=default_name, permissions=perms, reason="punish cog.")
         else:
-            msgobj = await ctx.send('%s role exists... ' % role.name)
+            msgobj = await ctx.send("%s role exists... " % role.name)
 
         if role.position != (guild.me.top_role.position - 1):
             if role < guild.me.top_role:
-                await msgobj.edit(content=msgobj.content + 'moving role to higher position... ')
+                await msgobj.edit(content=msgobj.content + "moving role to higher position... ")
                 await role.edit(position=guild.me.top_role.position - 1)
             else:
-                await msgobj.edit(content=msgobj.content + 'role is too high to manage.'
-                                            ' Please move it to below my highest role.')
+                await msgobj.edit(
+                    content=msgobj.content + "role is too high to manage." " Please move it to below my highest role."
+                )
                 return
 
-        await msgobj.edit(content=msgobj.content + '(re)configuring channels... ')
+        await msgobj.edit(content=msgobj.content + "(re)configuring channels... ")
 
         for channel in guild.channels:
             await self.setup_channel(channel, role)
 
-        await msgobj.edit(content=msgobj.content + 'done.')
+        await msgobj.edit(content=msgobj.content + "done.")
 
         if role and role.id != role_id:
             await self.config.guild(guild).ROLE_ID.set(role.id)
 
-    @punishset.command(name='channel')
+    @punishset.command(name="channel")
     async def punishset_channel(self, ctx, channel: discord.TextChannel = None):
         """
         Sets or shows the punishment "timeout" channel.
@@ -613,13 +621,16 @@ class Punish(commands.Cog):
                 await ctx.send("The timeout channel is currently %s." % current.mention)
         else:
             if current == channel:
-                await ctx.send("The timeout channel is already %s. If you need to repair its permissions, use `%spunishset setup`." % (current.mention, ctx.prefix))
+                await ctx.send(
+                    "The timeout channel is already %s. If you need to repair its permissions, use `%spunishset setup`."
+                    % (current.mention, ctx.prefix)
+                )
                 return
 
             await self.config.guild(guild).CHANNEL_ID.set(channel.id)
 
             role = await self.get_role(guild, create=True)
-            update_msg = '{} to the %s role' % role
+            update_msg = "{} to the %s role" % role
             grants = []
             denies = []
             perms = permissions_for_roles(channel, role)
@@ -631,7 +642,7 @@ class Punish(commands.Cog):
 
                 if getattr(perms, perm) != value:
                     setattr(overwrite, perm, value)
-                    name = perm.replace('_', ' ').title().replace("Tts", "TTS")
+                    name = perm.replace("_", " ").title().replace("Tts", "TTS")
 
                     if value:
                         grants.append(name)
@@ -640,8 +651,8 @@ class Punish(commands.Cog):
 
             # Any changes made? Apply them.
             if grants or denies:
-                grants = grants and ('grant ' + format_list(*grants))
-                denies = denies and ('deny ' + format_list(*denies))
+                grants = grants and ("grant " + format_list(*grants))
+                denies = denies and ("deny " + format_list(*denies))
                 to_join = [x for x in (grants, denies) if x]
                 update_msg = update_msg.format(format_list(*to_join))
 
@@ -655,14 +666,14 @@ class Punish(commands.Cog):
                     await self.setup_channel(current, role)
 
                 if channel.permissions_for(guild.me).manage_roles:
-                    await ctx.send(info('Updating permissions in %s to %s...' % (channel.mention, update_msg)))
+                    await ctx.send(info("Updating permissions in %s to %s..." % (channel.mention, update_msg)))
                     await channel.set_permissions(role, overwrite=overwrite)
                 else:
                     await ctx.send(error("I don't have permissions to %s." % update_msg))
 
             await ctx.send("Timeout channel set to %s." % channel.mention)
 
-    @punishset.command(name='clear-channel')
+    @punishset.command(name="clear-channel")
     async def punishset_clear_channel(self, ctx):
         """
         Clears the timeout channel and resets its permissions
@@ -678,7 +689,7 @@ class Punish(commands.Cog):
             if current.permissions_for(guild.me).manage_roles:
                 role = await self.get_role(guild, quiet=True)
                 await self.setup_channel(current, role)
-                msg = ' and its permissions reset'
+                msg = " and its permissions reset"
             else:
                 msg = ", but I don't have permissions to reset its permissions."
 
@@ -686,7 +697,7 @@ class Punish(commands.Cog):
         else:
             await ctx.send("No timeout channel has been set yet.")
 
-    @punishset.command(name='case-min')
+    @punishset.command(name="case-min")
     async def punishset_case_min(self, ctx, *, timespec: str = None):
         """
         Set/disable or display the minimum punishment case duration
@@ -699,11 +710,11 @@ class Punish(commands.Cog):
 
         if not timespec:
             if current:
-                await ctx.send('Punishments longer than %s will create cases.' % generate_timespec(current))
+                await ctx.send("Punishments longer than %s will create cases." % generate_timespec(current))
             else:
                 await ctx.send("Punishment case creation is disabled.")
         else:
-            if timespec.strip('\'"').lower() == 'disable':
+            if timespec.strip("'\"").lower() == "disable":
                 value = None
             else:
                 try:
@@ -714,9 +725,9 @@ class Punish(commands.Cog):
 
             await self.config.guild(guild).CASE_MIN_LENGTH.set(value)
 
-            await ctx.send('Punishments longer than %s will create cases.' % generate_timespec(value))
+            await ctx.send("Punishments longer than %s will create cases." % generate_timespec(value))
 
-    @punishset.command(name='overrides')
+    @punishset.command(name="overrides")
     async def punishset_overrides(self, ctx, *, channel_id: int = None):
         """
         Copy or display the punish role overrides
@@ -751,52 +762,58 @@ class Punish(commands.Cog):
                 confirm_msg = "Are you sure you want to copy overrides from this channel?"
 
             if channel.type is discord.ChannelType.text:
-                key = 'text'
+                key = "text"
             elif channel.type is discord.ChannelType.voice:
-                key = 'voice'
+                key = "voice"
             else:
                 await ctx.send(error("Unknown channel type!"))
                 return
 
             if confirm_msg:
-                await ctx.send(warning(confirm_msg + '(reply `yes` within 30s to confirm)'))
+                await ctx.send(warning(confirm_msg + "(reply `yes` within 30s to confirm)"))
+
                 def check(m):
                     return m.author == ctx.author and m.channel == ctx.channel
+
                 try:
-                    reply = await self.bot.wait_for('message', check=check, timeout=30.0)
-                    if reply.content.strip(' `"\'').lower() != 'yes':
-                        await ctx.send('Commmand cancelled.')
+                    reply = await self.bot.wait_for("message", check=check, timeout=30.0)
+                    if reply.content.strip(" `\"'").lower() != "yes":
+                        await ctx.send("Commmand cancelled.")
                         return
                 except asyncio.TimeoutError:
-                    await ctx.send('Timed out waiting for a response.')
+                    await ctx.send("Timed out waiting for a response.")
                     return
 
-            if key == 'text':
+            if key == "text":
                 await self.config.guild(guild).TEXT_OVERWRITE.set(overwrite_to_dict(overwrite))
             else:
                 await self.config.guild(guild).VOICE_OVERWRITE.set(overwrite_to_dict(overwrite))
 
-            await ctx.send("{} channel overrides set to:\n".format(key.title()) +
-                               format_permissions(overwrite) +
-                               "\n\nRun `%spunishset setup` to apply them to all channels." % ctx.prefix)
+            await ctx.send(
+                "{} channel overrides set to:\n".format(key.title())
+                + format_permissions(overwrite)
+                + "\n\nRun `%spunishset setup` to apply them to all channels." % ctx.prefix
+            )
         else:
             msg = []
-            for key in ('text', 'voice'):
-                if key == 'text':
+            for key in ("text", "voice"):
+                if key == "text":
                     data = await self.config.guild(guild).TEXT_OVERWRITE()
                 else:
                     data = await self.config.guild(guild).VOICE_OVERWRITE()
-                title = '%s permission overrides:' % key.title()
+                title = "%s permission overrides:" % key.title()
 
-                if data == overwrite_to_dict(DEFAULT_TEXT_OVERWRITE) or data == overwrite_to_dict(DEFAULT_VOICE_OVERWRITE):
-                    title = title[:-1] + ' (defaults):'
+                if data == overwrite_to_dict(DEFAULT_TEXT_OVERWRITE) or data == overwrite_to_dict(
+                    DEFAULT_VOICE_OVERWRITE
+                ):
+                    title = title[:-1] + " (defaults):"
 
-                msg.append(bold(title) + '\n' + format_permissions(overwrite_from_dict(data)))
+                msg.append(bold(title) + "\n" + format_permissions(overwrite_from_dict(data)))
 
-            await ctx.send('\n\n'.join(msg))
+            await ctx.send("\n\n".join(msg))
 
-    @punishset.command(name='reset-overrides')
-    async def punishset_reset_overrides(self, ctx, channel_type: str = 'both'):
+    @punishset.command(name="reset-overrides")
+    async def punishset_reset_overrides(self, ctx, channel_type: str = "both"):
         """
         Resets the punish role overrides for text, voice or both (default)
 
@@ -804,21 +821,21 @@ class Punish(commands.Cog):
         for newly created channels.
         """
 
-        channel_type = channel_type.strip('`"\' ').lower()
+        channel_type = channel_type.strip("`\"' ").lower()
 
         msg = []
-        for key in ('text', 'voice'):
-            if channel_type not in ['both', key]:
+        for key in ("text", "voice"):
+            if channel_type not in ["both", key]:
                 continue
 
-            title = '%s permission overrides reset to:' % key.title()
+            title = "%s permission overrides reset to:" % key.title()
 
-            if key == 'text':
+            if key == "text":
                 await self.config.guild(guild).TEXT_OVERWRITE.set(overwrite_to_dict(DEFAULT_TEXT_OVERWRITE))
-                msg.append(bold(title) + '\n' + format_permissions(overwrite_to_dict(DEFAULT_TEXT_OVERWRITE)))
+                msg.append(bold(title) + "\n" + format_permissions(overwrite_to_dict(DEFAULT_TEXT_OVERWRITE)))
             else:
                 await self.config.guild(guild).VOICE_OVERWRITE.set(overwrite_to_dict(DEFAULT_VOICE_OVERWRITE))
-                msg.append(bold(title) + '\n' + format_permissions(overwrite_to_dict(DEFAULT_VOICE_OVERWRITE)))
+                msg.append(bold(title) + "\n" + format_permissions(overwrite_to_dict(DEFAULT_VOICE_OVERWRITE)))
 
         if not msg:
             await ctx.send("Invalid channel type. Use `text`, `voice`, or `both` (the default, if not specified)")
@@ -826,7 +843,7 @@ class Punish(commands.Cog):
 
         msg.append("Run `%spunishset setup` to apply them to all channels." % ctx.prefix)
 
-        await ctx.send('\n\n'.join(msg))
+        await ctx.send("\n\n".join(msg))
 
     async def get_role(self, guild, quiet=False, create=False):
         role_id = await self.config.guild(guild).ROLE_ID()
@@ -848,19 +865,19 @@ class Punish(commands.Cog):
                 if not quiet:
                     msgobj = await ctx.send(msg)
 
-                log.debug('Creating punish role in %s' % guild.name)
+                log.debug("Creating punish role in %s" % guild.name)
                 perms = discord.Permissions.none()
                 role = await guild.create_role(name=DEFAULT_ROLE_NAME, permissions=perms, reason="punish cog.")
                 await role.edit(position=guild.me.top_role.position - 1)
 
                 if not quiet:
-                    await msgobj.edit(content=msgobj.content + '\nconfiguring channels... ')
+                    await msgobj.edit(content=msgobj.content + "\nconfiguring channels... ")
 
                 for channel in guild.channels:
                     await self.setup_channel(channel, role)
 
                 if not quiet:
-                    await msgobj.edit(content=msgobj.content + '\ndone.')
+                    await msgobj.edit(content=msgobj.content + "\ndone.")
 
         if role and role.id != role_id:
             await self.config.guild(guild).ROLE_ID.set(role.id)
@@ -906,23 +923,23 @@ class Punish(commands.Cog):
 
             for member_id, data in punished.items():
 
-                until = data['until']
+                until = data["until"]
                 member = guild.get_member(member_id)
 
                 if until and (until - time.time()) < 0:
                     if member:
-                        reason = 'Punishment removal overdue, maybe the bot was offline. '
+                        reason = "Punishment removal overdue, maybe the bot was offline. "
 
-                        if data['reason']:
-                            reason += data['reason']
+                        if data["reason"]:
+                            reason += data["reason"]
 
                         await self._unpunish(member, reason=reason)
                     else:  # member disappeared
-                        del(punished[str(member_id)])
+                        del punished[str(member_id)]
                 elif member:
                     # re-check roles
                     user_roles = set(member.roles)
-                    removed_roles = set(role_memo.filter(data.get('removed_roles', ()), skip_nulls=True))
+                    removed_roles = set(role_memo.filter(data.get("removed_roles", ()), skip_nulls=True))
                     removed_roles = user_roles & {r for r in removed_roles if r < me.top_role}
                     user_roles -= removed_roles
 
@@ -954,7 +971,7 @@ class Punish(commands.Cog):
             except Exception:
                 pass
 
-        log.debug('queue manager dying')
+        log.debug("queue manager dying")
 
         while not self.queue.empty():
             self.queue.get_nowait()
@@ -985,7 +1002,7 @@ class Punish(commands.Cog):
 
             return removed is not None
 
-    async def put_queue_event(self, run_at : float, *args):
+    async def put_queue_event(self, run_at: float, *args):
         diff = run_at - time.time()
 
         if args in self.enqueued:
@@ -1038,7 +1055,7 @@ class Punish(commands.Cog):
         remove_role_set = set(resolve_role_list(guild, remove_role_set))
         punished = await self.config.guild(guild).PUNISHED()
         current = punished.get(str(member.id), {})
-        reason = reason or current.get('reason')  # don't clear if not given
+        reason = reason or current.get("reason")  # don't clear if not given
         hierarchy_allowed = ctx.author.top_role > member.top_role
         case_min_length = await self.config.guild(guild).CASE_MIN_LENGTH()
         nitro_role = await self.config.guild(guild).NITRO_ID()
@@ -1051,7 +1068,7 @@ class Punish(commands.Cog):
             await ctx.send("You can't punish the bot.")
             return
 
-        if duration and duration.lower() in ['forever', 'inf', 'infinite']:
+        if duration and duration.lower() in ["forever", "inf", "infinite"]:
             duration = None
         else:
             if not duration:
@@ -1071,7 +1088,7 @@ class Punish(commands.Cog):
         if role is None:
             return
         elif role >= guild.me.top_role:
-            await ctx.send('The %s role is too high for me to manage.' % role)
+            await ctx.send("The %s role is too high for me to manage." % role)
             return
 
         # Call time() after getting the role due to potential creation delay
@@ -1085,22 +1102,26 @@ class Punish(commands.Cog):
 
             try:
                 if current:
-                    case_number = current.get('caseno')
+                    case_number = current.get("caseno")
                     try:
                         case = await modlog.get_case(case_number, guild, self.bot)
-                    except: # shouldn't happen
-                        await ctx.send(warning("Error, modlog case not found, but user is punished with case.\nTry unpunishing and punishing again."))
+                    except:  # shouldn't happen
+                        await ctx.send(
+                            warning(
+                                "Error, modlog case not found, but user is punished with case.\nTry unpunishing and punishing again."
+                            )
+                        )
                         return
 
                     moderator = ctx.author
 
                     try:
-                        edits = {'reason': reason}
+                        edits = {"reason": reason}
 
-                        if moderator.id != current.get('by'):
-                            edits['amended_by'] = moderator
+                        if moderator.id != current.get("by"):
+                            edits["amended_by"] = moderator
 
-                        edits['modified_at'] = ctx.message.created_at.timestamp()
+                        edits["modified_at"] = ctx.message.created_at.timestamp()
 
                         await case.edit(edits)
                     except Exception as e:
@@ -1110,7 +1131,16 @@ class Punish(commands.Cog):
                     updating_case = True
 
                 else:
-                    case = await modlog.create_case(self.bot, guild, now_date, "Timed Mute", member, moderator=ctx.author, reason=reason, until=mod_until)
+                    case = await modlog.create_case(
+                        self.bot,
+                        guild,
+                        now_date,
+                        "Timed Mute",
+                        member,
+                        moderator=ctx.author,
+                        reason=reason,
+                        until=mod_until,
+                    )
                     case_number = case.case_number
 
             except Exception as e:
@@ -1118,18 +1148,18 @@ class Punish(commands.Cog):
         else:
             case_number = None
 
-        subject = 'the %s role' % role.name
+        subject = "the %s role" % role.name
 
         if str(member.id) in punished:
             if role in member.roles:
-                msg = '{0} already had the {1.name} role; resetting their timer.'
+                msg = "{0} already had the {1.name} role; resetting their timer."
             else:
-                msg = '{0} is missing the {1.name} role for some reason. I added it and reset their timer.'
+                msg = "{0} is missing the {1.name} role for some reason. I added it and reset their timer."
         elif role in member.roles:
-            msg = '{0} already had the {1.name} role, but had no timer; setting it now.'
+            msg = "{0} already had the {1.name} role, but had no timer; setting it now."
         else:
-            msg = 'Applied the {1.name} role to {0}.'
-            subject = 'it'
+            msg = "Applied the {1.name} role to {0}."
+            subject = "it"
 
         msg = msg.format(member, role)
 
@@ -1137,24 +1167,24 @@ class Punish(commands.Cog):
             timespec = generate_timespec(duration)
 
             if using_default:
-                timespec += ' (the default)'
+                timespec += " (the default)"
 
-            msg += ' I will remove %s in %s.' % (subject, timespec)
+            msg += " I will remove %s in %s." % (subject, timespec)
 
         if case_error:
             if isinstance(case_error, CaseMessageNotFound):
-                case_error = 'the case message could not be found'
+                case_error = "the case message could not be found"
             elif isinstance(case_error, NoModLogAccess):
-                case_error = 'I do not have access to the modlog channel'
+                case_error = "I do not have access to the modlog channel"
             else:
                 case_error = None
 
             if case_error:
-                verb = 'updating' if updating_case else 'creating'
-                msg += '\n\n' + warning('There was an error %s the modlog case: %s.' % (verb, case_error))
+                verb = "updating" if updating_case else "creating"
+                msg += "\n\n" + warning("There was an error %s the modlog case: %s." % (verb, case_error))
         elif case_number:
-            verb = 'updated' if updating_case else 'created'
-            msg += ' I also %s case #%i in the modlog.' % (verb, case_number)
+            verb = "updated" if updating_case else "created"
+            msg += " I also %s case #%i in the modlog." % (verb, case_number)
 
         voice_overwrite = await self.config.guild(guild).VOICE_OVERWRITE()
 
@@ -1175,12 +1205,12 @@ class Punish(commands.Cog):
             # build lists of roles that *should* be removed and ones that *can* be
             removed_roles = user_roles & remove_role_set
             too_high_to_remove = {r for r in removed_roles if r >= guild.me.top_role}
-            user_roles -= (removed_roles - too_high_to_remove)
+            user_roles -= removed_roles - too_high_to_remove
             user_roles.add(role)  # add punish role to the set
             await member.edit(roles=user_roles, reason=f"punish {member}")
 
         else:
-            removed_roles = set(resolve_role_list(guild, current.get('removed_roles', [])))
+            removed_roles = set(resolve_role_list(guild, current.get("removed_roles", [])))
             too_high_to_remove = {r for r in removed_roles if r >= guild.me.top_role}
 
         if removed_roles:
@@ -1190,8 +1220,10 @@ class Punish(commands.Cog):
 
             if too_high_to_remove:
                 fmt_list = format_list(*(r.name for r in removed_roles))
-                msg += "\n" + warning("These roles were too high to remove (fix hierarchy, then run "
-                                      "`{}punishset sync-roles`): {}".format(ctx.prefix, fmt_list))
+                msg += "\n" + warning(
+                    "These roles were too high to remove (fix hierarchy, then run "
+                    "`{}punishset sync-roles`): {}".format(ctx.prefix, fmt_list)
+                )
         if member.voice:
             muted = member.voice.mute
         else:
@@ -1199,13 +1231,13 @@ class Punish(commands.Cog):
 
         async with self.config.guild(guild).PUNISHED() as punished:
             punished[str(member.id)] = {
-                'start'  : current.get('start') or now,  # don't override start time if updating
-                'until'  : until,
-                'by'     : current.get('by') or ctx.author.id,  # don't override original moderator
-                'reason' : reason,
-                'unmute' : overwrite_denies_speak and not muted,
-                'caseno' : case_number,
-                'removed_roles' : [r.id for r in removed_roles]
+                "start": current.get("start") or now,  # don't override start time if updating
+                "until": until,
+                "by": current.get("by") or ctx.author.id,  # don't override original moderator
+                "reason": reason,
+                "unmute": overwrite_denies_speak and not muted,
+                "caseno": case_number,
+                "removed_roles": [r.id for r in removed_roles],
             }
 
         if member.voice and overwrite_denies_speak:
@@ -1256,8 +1288,8 @@ class Punish(commands.Cog):
         if role:
             data = await self.config.guild(guild).PUNISHED()
             member_data = data.get(str(member.id), {})
-            caseno = member_data.get('caseno')
-            removed_roles = set(resolve_role_list(guild, member_data.get('removed_roles', [])))
+            caseno = member_data.get("caseno")
+            removed_roles = set(resolve_role_list(guild, member_data.get("removed_roles", [])))
 
             # Has to be done first to prevent triggering listeners
             await self._unpunish_data(member)
@@ -1280,20 +1312,20 @@ class Punish(commands.Cog):
                 await member.edit(roles=user_roles, reason="punish end")
 
             if update and caseno:
-                until = member_data.get('until') or False
+                until = member_data.get("until") or False
                 # fallback gracefully
-                moderator = moderator or guild.get_member(member_data.get('by')) or guild.me
+                moderator = moderator or guild.get_member(member_data.get("by")) or guild.me
 
                 if until:
                     until = datetime.utcfromtimestamp(until).timestamp()
 
-                edits = {'reason': reason}
+                edits = {"reason": reason}
 
-                if moderator.id != data.get('by'):
-                    edits['amended_by'] = moderator
+                if moderator.id != data.get("by"):
+                    edits["amended_by"] = moderator
 
-                edits['modified_at'] = time.time()
-                edits['until'] = until
+                edits["modified_at"] = time.time()
+                edits["until"] = until
 
                 try:
                     case = await modlog.get_case(caseno, guild, self.bot)
@@ -1301,7 +1333,7 @@ class Punish(commands.Cog):
                 except Exception:
                     pass
 
-            if member_data.get('unmute', False):
+            if member_data.get("unmute", False):
                 if member.voice:
                     if member.voice.channel:
                         await member.edit(mute=False)
@@ -1313,7 +1345,7 @@ class Punish(commands.Cog):
             if quiet:
                 return True
 
-            msg = 'Your punishment in %s has ended.' % member.guild.name
+            msg = "Your punishment in %s has ended." % member.guild.name
 
             if reason:
                 msg += "\nReason: %s" % reason
@@ -1323,8 +1355,9 @@ class Punish(commands.Cog):
 
                 if too_high_to_restore:
                     fmt_list = format_list(*(r.name for r in too_high_to_restore))
-                    msg += "\n" + warning("These roles were too high for me to restore: {}. "
-                                          "Ask a mod for help.".format(fmt_list))
+                    msg += "\n" + warning(
+                        "These roles were too high for me to restore: {}. " "Ask a mod for help.".format(fmt_list)
+                    )
 
             try:
                 await member.send(msg)
@@ -1338,7 +1371,7 @@ class Punish(commands.Cog):
 
         async with self.config.guild(guild).PUNISHED() as punished:
             if str(member.id) in punished:
-                del(punished[str(member.id)])
+                del punished[str(member.id)]
 
     # Listeners
     @commands.Cog.listener()
@@ -1365,14 +1398,14 @@ class Punish(commands.Cog):
         new_roles = {role.id: role for role in after.roles}
 
         if role in before.roles and role.id not in new_roles:
-            msg = 'Punishment manually ended early by a moderator/admin.'
+            msg = "Punishment manually ended early by a moderator/admin."
 
-            if member_data['reason']:
-                msg += '\nReason was: ' + member_data['reason']
+            if member_data["reason"]:
+                msg += "\nReason was: " + member_data["reason"]
 
             await self._unpunish(after, reason=msg, update=True)
         else:
-            to_remove = {new_roles.get(role_id) for role_id in member_data.get('removed_roles', [])}
+            to_remove = {new_roles.get(role_id) for role_id in member_data.get("removed_roles", [])}
             to_remove = [r for r in to_remove if r and r < after.guild.me.top_role]
 
             if to_remove:
@@ -1393,7 +1426,7 @@ class Punish(commands.Cog):
         member = self.bot.get_guild(guild.id).get_member(member.id)
         role = await self.get_role(member.guild, quiet=True)
 
-        until = data['until']
+        until = data["until"]
         duration = until - time.time()
 
         if role and duration > 0:
@@ -1433,7 +1466,7 @@ class Punish(commands.Cog):
 
         msg = "Punishment ended early due to ban."
 
-        if member_data.get('reason'):
-            msg += '\n\nOriginal reason was: ' + member_data['reason']
+        if member_data.get("reason"):
+            msg += "\n\nOriginal reason was: " + member_data["reason"]
 
         await self._unpunish(member, reason=msg, apply_roles=False, update=True, quiet=True)

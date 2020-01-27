@@ -14,6 +14,7 @@ import asyncio
 import os
 import json
 
+
 class RolePlay(commands.Cog):
     def __init__(self):
         super().__init__()
@@ -31,7 +32,8 @@ class RolePlay(commands.Cog):
                 "lotsa spaghetti",
                 "a brick",
                 "a slice of cheese",
-                "my foot"],
+                "my foot",
+            ],
             "high_iq_msgs": [
                 "wow!",
                 "that's pretty big.",
@@ -40,7 +42,8 @@ class RolePlay(commands.Cog):
                 "someone here is actually smart.",
                 "thats a dab.",
                 "<:aureliawink:549481308519399425>",
-                "you must of watched Rick and Morty."],
+                "you must of watched Rick and Morty.",
+            ],
             "low_iq_msgs": [
                 ":rofl:",
                 "oof.",
@@ -49,7 +52,8 @@ class RolePlay(commands.Cog):
                 "awww you're special aren't you.",
                 ":crying_cat_face:",
                 "god I'm sorry (not).",
-                "I didn't know people could have IQ that low."]
+                "I didn't know people could have IQ that low.",
+            ],
         }
 
         self.config.register_guild(**self.default_guild)
@@ -104,12 +108,11 @@ class RolePlay(commands.Cog):
         elif user.id == botid:
             user = ctx.message.author
             botname = ctx.bot.user.name
-            await ctx.send("`-" + botname + " slaps " + user.display_name +
-                               " multiple times with " +
-                               (choice(slap_items) + "-`"))
+            await ctx.send(
+                "`-" + botname + " slaps " + user.display_name + " multiple times with " + (choice(slap_items) + "-`")
+            )
         else:
-            await ctx.send("`-slaps " + user.display_name + " with " +
-                               (choice(slap_items) + "-`"))
+            await ctx.send("`-slaps " + user.display_name + " with " + (choice(slap_items) + "-`"))
 
     @slap.command(name="add")
     @checks.admin()
@@ -126,7 +129,7 @@ class RolePlay(commands.Cog):
 
     @slap.command(name="remove")
     @checks.admin()
-    async def _remove_slap(self, ctx, slap_item: str=""):
+    async def _remove_slap(self, ctx, slap_item: str = ""):
         """Removes item to use for slaps!"""
         guild = ctx.guild
         slap_items = await self.config.guild(guild).slap_items()
@@ -146,7 +149,7 @@ class RolePlay(commands.Cog):
         msg = ""
         for item in slap_items:
             msg += "+ {}\n".format(item)
-        pages = pagify(msg) # pages is an iterator of pages
+        pages = pagify(msg)  # pages is an iterator of pages
 
         for page in pages:
             await ctx.send(box(page, lang="diff"))
@@ -173,9 +176,8 @@ class RolePlay(commands.Cog):
         except json.decoder.JSONDecodeError:
             await ctx.send("Invalid or malformed json file.")
 
-
     @commands.group(invoke_without_command=True)
-    async def iq(self, ctx, *users : discord.Member):
+    async def iq(self, ctx, *users: discord.Member):
         """
         Gets IQ of a user. Use multiple users to compare IQs
         """
@@ -199,7 +201,9 @@ class RolePlay(commands.Cog):
         iqs = sorted(iqs.items(), key=lambda x: x[1])
 
         for user, iq in iqs:
-            msg += "{}'s iq is {}, {}\n".format(user.display_name, iq, choice(high_iq_msgs) if int(iq) > 130 else choice(low_iq_messages))
+            msg += "{}'s iq is {}, {}\n".format(
+                user.display_name, iq, choice(high_iq_msgs) if int(iq) > 130 else choice(low_iq_messages)
+            )
 
         await ctx.send(msg)
 
@@ -215,11 +219,11 @@ class RolePlay(commands.Cog):
 
         for high_phrase in high_iq_msgs:
             msg1 += "+ {}\n".format(high_phrase)
-        high_pages = pagify(msg1) # pages is an iterator of pages
+        high_pages = pagify(msg1)  # pages is an iterator of pages
 
         for low_phrase in low_iq_msgs:
             msg2 += "+ {}\n".format(low_phrase)
-        low_pages = pagify(msg2) # pages is an iterator of pages
+        low_pages = pagify(msg2)  # pages is an iterator of pages
 
         for high_page in high_pages:
             await ctx.send(box(high_page, lang="diff"))
@@ -255,7 +259,7 @@ class RolePlay(commands.Cog):
 
     @iq.command(name="removehigh")
     @checks.admin()
-    async def _removehigh_iq(self, ctx, high_phrase: str=""):
+    async def _removehigh_iq(self, ctx, high_phrase: str = ""):
         """Removes phrases for high IQ's!"""
         guild = ctx.guild
         high_iq_msgs = await self.config.guild(guild).high_iq_msgs()
@@ -274,7 +278,7 @@ class RolePlay(commands.Cog):
 
     @iq.command(name="removelow")
     @checks.admin()
-    async def _removelow_iq(self, ctx, low_phrase: str=""):
+    async def _removelow_iq(self, ctx, low_phrase: str = ""):
         """Removes phrases for low IQ's!"""
         guild = ctx.guild
         low_iq_msgs = await self.config.guild(guild).low_iq_msgs()
@@ -306,7 +310,7 @@ class RolePlay(commands.Cog):
             largest_factor = 1
         else:
             largest_factor = [x for x in range(1, horses) if horses % x == 0][-1]
-        #largest_factor = [x for x in largest_factor if x <= 15][-1]
+        # largest_factor = [x for x in largest_factor if x <= 15][-1]
         if largest_factor == 1:
             largest_factor = horses
             rows = 1
@@ -367,7 +371,7 @@ class RolePlay(commands.Cog):
         if user.id == ctx.bot.user.id:
             await ctx.send(":newspaper2: :newspaper2: :newspaper2: " + italics(ctx.message.author.display_name))
         else:
-            await ctx.send(":newspaper2: " + italics(user.display_name) )
+            await ctx.send(":newspaper2: " + italics(user.display_name))
 
     @commands.command()
     async def flip(self, ctx, *, user: discord.Member = None):

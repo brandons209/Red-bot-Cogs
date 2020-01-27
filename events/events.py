@@ -11,11 +11,30 @@ import pytz
 from tzlocal import get_localzone
 
 
-basic_colors = [discord.Colour.blue(), discord.Colour.teal(), discord.Colour.dark_teal(), discord.Colour.green(), discord.Colour.dark_green(), discord.Colour.dark_blue(), discord.Colour.purple(), discord.Colour.dark_purple(), discord.Colour.magenta(), discord.Colour.gold(), discord.Colour.orange(), discord.Colour.red(), discord.Colour.dark_red(), discord.Colour.blurple(), discord.Colour.greyple()]
+basic_colors = [
+    discord.Colour.blue(),
+    discord.Colour.teal(),
+    discord.Colour.dark_teal(),
+    discord.Colour.green(),
+    discord.Colour.dark_green(),
+    discord.Colour.dark_blue(),
+    discord.Colour.purple(),
+    discord.Colour.dark_purple(),
+    discord.Colour.magenta(),
+    discord.Colour.gold(),
+    discord.Colour.orange(),
+    discord.Colour.red(),
+    discord.Colour.dark_red(),
+    discord.Colour.blurple(),
+    discord.Colour.greyple(),
+]
+
+
 class Events(commands.Cog):
     """
     Set events that track time since set events
     """
+
     def __init__(self, bot):
         super().__init__()
         self.config = Config.get_conf(self, identifier=6748392754)
@@ -55,18 +74,33 @@ class Events(commands.Cog):
 
         elapsed_time = datetime.datetime.utcnow() - start_time
         embed = discord.Embed(title=event_name, colour=random.choice(basic_colors))
-        embed.add_field(name="Event time", value=start_time.replace(tzinfo=pytz.utc).astimezone(self.timezone).strftime("%b %d, %Y, %H:%M"))
+        embed.add_field(
+            name="Event time",
+            value=start_time.replace(tzinfo=pytz.utc).astimezone(self.timezone).strftime("%b %d, %Y, %H:%M"),
+        )
         day_msg = "{} day{},".format(elapsed_time.days, "s" if elapsed_time.days > 1 else "")
-        hour_msg = " {} hour{}".format(int(elapsed_time.seconds / 60 / 60), "s" if int(elapsed_time.seconds / 60 / 60) > 1 else "")
+        hour_msg = " {} hour{}".format(
+            int(elapsed_time.seconds / 60 / 60), "s" if int(elapsed_time.seconds / 60 / 60) > 1 else ""
+        )
         if elapsed_time.days > 0 or int(elapsed_time.seconds / 60 / 60) > 0:
-            minute_msg = ", and {} minute{}".format(int(elapsed_time.seconds / 60 - int(elapsed_time.seconds / 60 / 60) * 60), "s" if int(elapsed_time.seconds / 60 - int(elapsed_time.seconds / 60 / 60) * 60) > 1 else "")
+            minute_msg = ", and {} minute{}".format(
+                int(elapsed_time.seconds / 60 - int(elapsed_time.seconds / 60 / 60) * 60),
+                "s" if int(elapsed_time.seconds / 60 - int(elapsed_time.seconds / 60 / 60) * 60) > 1 else "",
+            )
         else:
-            minute_msg = "{} minute{}".format(int(elapsed_time.seconds / 60 - int(elapsed_time.seconds / 60 / 60) * 60), "s" if int(elapsed_time.seconds / 60 - int(elapsed_time.seconds / 60 / 60) * 60) > 1 else "")
-        msg = "{}{}{}".format(day_msg if elapsed_time.days > 0 else "", hour_msg if int(elapsed_time.seconds / 60 / 60) > 0 else "", minute_msg)
+            minute_msg = "{} minute{}".format(
+                int(elapsed_time.seconds / 60 - int(elapsed_time.seconds / 60 / 60) * 60),
+                "s" if int(elapsed_time.seconds / 60 - int(elapsed_time.seconds / 60 / 60) * 60) > 1 else "",
+            )
+        msg = "{}{}{}".format(
+            day_msg if elapsed_time.days > 0 else "",
+            hour_msg if int(elapsed_time.seconds / 60 / 60) > 0 else "",
+            minute_msg,
+        )
         embed.add_field(name="Elapsed time", value=msg)
         message = await channel.send(embed=embed)
         async with self.config.guild(guild).events() as events:
-            new_event = {"start_time" : int(start_time.replace(tzinfo=pytz.utc).timestamp()), "name" : event_name}
+            new_event = {"start_time": int(start_time.replace(tzinfo=pytz.utc).timestamp()), "name": event_name}
             events[message.id] = new_event
         await ctx.send("Event added!")
 
@@ -98,13 +132,20 @@ class Events(commands.Cog):
             msg += "```"
             await ctx.send(msg)
             await ctx.send("Please choose which event you want to delete. (type number in chat)")
+
             def m_check(m):
                 try:
-                    return m.author.id == ctx.author.id and m.channel.id == ctx.channel.id and int(m.content) <= counter and int(m.content) >= 0
+                    return (
+                        m.author.id == ctx.author.id
+                        and m.channel.id == ctx.channel.id
+                        and int(m.content) <= counter
+                        and int(m.content) >= 0
+                    )
                 except:
                     return False
+
             try:
-                response = await self.bot.wait_for('message', timeout=30, check=m_check)
+                response = await self.bot.wait_for("message", timeout=30, check=m_check)
             except:
                 await ctx.send("Timed out, event deletion cancelled.")
                 return
@@ -179,14 +220,35 @@ class Events(commands.Cog):
                         elapsed_time = datetime.datetime.utcnow() - start_time
                         embed = message.embeds[0]
                         embed.clear_fields()
-                        embed.add_field(name="Event time", value=start_time.replace(tzinfo=pytz.utc).astimezone(self.timezone).strftime("%b %d, %Y, %H:%M"))
+                        embed.add_field(
+                            name="Event time",
+                            value=start_time.replace(tzinfo=pytz.utc)
+                            .astimezone(self.timezone)
+                            .strftime("%b %d, %Y, %H:%M"),
+                        )
                         day_msg = "{} day{},".format(elapsed_time.days, "s" if elapsed_time.days > 1 else "")
-                        hour_msg = " {} hour{}".format(int(elapsed_time.seconds / 60 / 60), "s" if int(elapsed_time.seconds / 60 / 60) > 1 else "")
+                        hour_msg = " {} hour{}".format(
+                            int(elapsed_time.seconds / 60 / 60), "s" if int(elapsed_time.seconds / 60 / 60) > 1 else ""
+                        )
                         if elapsed_time.days > 0 or int(elapsed_time.seconds / 60 / 60) > 0:
-                            minute_msg = ", and {} minute{}".format(int(elapsed_time.seconds / 60 - int(elapsed_time.seconds / 60 / 60) * 60), "s" if int(elapsed_time.seconds / 60 - int(elapsed_time.seconds / 60 / 60) * 60) > 1 else "")
+                            minute_msg = ", and {} minute{}".format(
+                                int(elapsed_time.seconds / 60 - int(elapsed_time.seconds / 60 / 60) * 60),
+                                "s"
+                                if int(elapsed_time.seconds / 60 - int(elapsed_time.seconds / 60 / 60) * 60) > 1
+                                else "",
+                            )
                         else:
-                            minute_msg = "{} minute{}".format(int(elapsed_time.seconds / 60 - int(elapsed_time.seconds / 60 / 60) * 60), "s" if int(elapsed_time.seconds / 60 - int(elapsed_time.seconds / 60 / 60) * 60) > 1 else "")
-                        msg = "{}{}{}".format(day_msg if elapsed_time.days > 0 else "", hour_msg if int(elapsed_time.seconds / 60 / 60) > 0 else "", minute_msg)
+                            minute_msg = "{} minute{}".format(
+                                int(elapsed_time.seconds / 60 - int(elapsed_time.seconds / 60 / 60) * 60),
+                                "s"
+                                if int(elapsed_time.seconds / 60 - int(elapsed_time.seconds / 60 / 60) * 60) > 1
+                                else "",
+                            )
+                        msg = "{}{}{}".format(
+                            day_msg if elapsed_time.days > 0 else "",
+                            hour_msg if int(elapsed_time.seconds / 60 / 60) > 0 else "",
+                            minute_msg,
+                        )
                         embed.add_field(name="Elapsed time", value=msg)
                         await message.edit(embed=embed)
             await asyncio.sleep(30)

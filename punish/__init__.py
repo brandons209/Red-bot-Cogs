@@ -1,5 +1,6 @@
 from .punish import Punish
 
+
 async def setup(bot):
     punish = Punish(bot)
     await punish.initialize()

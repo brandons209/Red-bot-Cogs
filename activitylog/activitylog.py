@@ -12,13 +12,9 @@ import os
 import asyncio
 import glob
 
-__version__ = '3.0.0'
+__version__ = "3.0.0"
 
-TIMESTAMP_FORMAT = '%Y-%m-%d %X'  # YYYY-MM-DD HH:MM:SS
-#PATH_LIST = ['data', 'activitylogger']
-#JSON = os.path.join(*PATH_LIST, "settings.json")
-#NAMES_JSON = os.path.join(*PATH_LIST, "past_names.json")
-EDIT_TIMEDELTA = timedelta(seconds=3)
+TIMESTAMP_FORMAT = "%Y-%m-%d %X"  # YYYY-MM-DD HH:MM:SS
 
 # 0 is Message object
 AUTHOR_TEMPLATE = "@{0.author.name}#{0.author.discriminator}(id:{0.author.id})"
@@ -41,6 +37,7 @@ DELETE_TEMPLATE = AUTHOR_TEMPLATE + " deleted message from {1} ({0.clean_content
 DELETE_AUDIT_TEMPLATE = "@{0.name}#{0.discriminator}(id:{0.id}) deleted message from {3} @{2.name}#{2.discriminator}(id:{2.id}): ({1.clean_content})"
 
 MAX_LINES = 50000
+
 
 def get_all_names(guild_files, user):
     names = [str(user)]
@@ -68,19 +65,21 @@ def get_all_names(guild_files, user):
                             names.append(username)
     return set(names)
 
-def format_list(*items, join='and', delim=', '):
+
+def format_list(*items, join="and", delim=", "):
     if len(items) > 1:
-        return (' %s ' % join).join((delim.join(items[:-1]), items[-1]))
+        return (" %s " % join).join((delim.join(items[:-1]), items[-1]))
     elif items:
         return items[0]
     else:
-        return ''
+        return ""
 
 
 class LogHandle:
     """basic wrapper for logfile handles, used to keep track of stale handles"""
-    def __init__(self, path, time=None, mode='a', buf=1):
-        self.handle = open(path, mode, buf, errors='backslashreplace')
+
+    def __init__(self, path, time=None, mode="a", buf=1):
+        self.handle = open(path, mode, buf, errors="backslashreplace")
         self.lock = asyncio.Lock()
 
         if time:
@@ -111,34 +110,13 @@ class ActivityLogger(commands.Cog):
         self.bot = bot
         self.config = Config.get_conf(self, identifier=9584736583, force_registration=True)
         default_global = {
-            "attrs": {
-                "attachments" : False,
-                "default" : False,
-                "direct" : False,
-                "everything" : False,
-                "rotation" : "m"
-            }
+            "attrs": {"attachments": False, "default": False, "direct": False, "everything": False, "rotation": "m"}
         }
-        self.default_guild = {
-            "all_s": False,
-            "voice": False,
-            "events": False,
-            "prefixes": []
-        }
-        self.default_channel = {
-            "enabled": False
-        }
-        default_user = {
-            "past_names": []
-        }
+        self.default_guild = {"all_s": False, "voice": False, "events": False, "prefixes": []}
+        self.default_channel = {"enabled": False}
+        default_user = {"past_names": []}
         default_member = {
-            "stats": {
-                "total_msg": 0,
-                "bot_cmd": 0,
-                "avg_len": 0.0,
-                "vc_time_sec": 0.0,
-                "last_vc_time": None
-            }
+            "stats": {"total_msg": 0, "bot_cmd": 0, "avg_len": 0.0, "vc_time_sec": 0.0, "last_vc_time": None}
         }
         self.config.register_global(**default_global)
         self.config.register_guild(**self.default_guild)
@@ -203,9 +181,7 @@ class ActivityLogger(commands.Cog):
             since_joined = "?"
             user_joined = "Unknown"
         user_created = user.created_at.strftime("%b %d, %Y %H:%M UTC")
-        member_number = (sorted(guild.members,
-                         key=lambda m: m.joined_at or ctx.message.created_at)
-                         .index(user) + 1)
+        member_number = sorted(guild.members, key=lambda m: m.joined_at or ctx.message.created_at).index(user) + 1
 
         created_on = "{}\n({} days ago)".format(user_created, since_created)
         joined_on = "{}\n({} days ago)".format(user_joined, since_joined)
@@ -243,8 +219,7 @@ class ActivityLogger(commands.Cog):
             names = pagify(names, page_length=1000)
             for name in names:
                 data.add_field(name="Also known as:", value=name, inline=False)
-        data.set_footer(text="Member #{} | User ID:{}"
-                             "".format(member_number, user.id))
+        data.set_footer(text="Member #{} | User ID:{}" "".format(member_number, user.id))
 
         name = str(user)
         name = " ~ ".join((name, user.nick)) if user.nick else name
@@ -274,7 +249,7 @@ class ActivityLogger(commands.Cog):
         stats = await self.config.member(user).stats()
         async with self.config.user(user).past_names() as past_names:
             if not past_names:
-                guild_files = sorted(glob.glob(os.path.join(PATH, 'usernames', "*.log")))
+                guild_files = sorted(glob.glob(os.path.join(PATH, "usernames", "*.log")))
                 names = get_all_names(guild_files, user)
             else:
                 names = past_names
@@ -306,7 +281,9 @@ class ActivityLogger(commands.Cog):
             msg += "Average message length: `{:.2f}` words\n".format(avg_len / (num_messages - num_bot_commands))
         except ZeroDivisionError:
             msg += "Average message length: `{:.2f}` words\n".format(0)
-        msg += "Time spent in voice chat: `{:.0f}` {}.\n".format(minutes if minutes <= 120 else hours, "minutes" if minutes <= 120 else "hours")
+        msg += "Time spent in voice chat: `{:.0f}` {}.\n".format(
+            minutes if minutes <= 120 else hours, "minutes" if minutes <= 120 else "hours"
+        )
         msg += f"Bans: `{bans}`, Kicks: `{kicks}`, Mutes: `{mutes}`"
         if len(names) > 1:
             return msg, format_list(*names)
@@ -351,12 +328,12 @@ class ActivityLogger(commands.Cog):
             messages = [message for message in messages if str(user.id) in message]
 
         message_chunks = [
-            messages[i * MAX_LINES:(i + 1) * MAX_LINES] for i in range((len(messages) + MAX_LINES - 1) // MAX_LINES)
+            messages[i * MAX_LINES : (i + 1) * MAX_LINES] for i in range((len(messages) + MAX_LINES - 1) // MAX_LINES)
         ]
 
         for msgs in message_chunks:
             temp_file = os.path.join(log_path, datetime.utcnow().strftime("%Y%m%d%X").replace(":", "") + ".txt")
-            with open(temp_file, encoding='utf-8', mode="w") as f:
+            with open(temp_file, encoding="utf-8", mode="w") as f:
                 f.writelines(msgs)
 
             await ctx.channel.send(file=discord.File(temp_file))
@@ -436,12 +413,12 @@ class ActivityLogger(commands.Cog):
         """
         try:
             dates = date.split(";")
-            dates = [dates[0].strip(), dates[1].strip()] # only use 2 dates
+            dates = [dates[0].strip(), dates[1].strip()]  # only use 2 dates
             start, end = [parse_time(date).replace(tzinfo=None) for date in dates]
             # order doesnt matter, so check which date is older than the other
             # end time should be the newest date since logs are processed in reverse
-            if start < end: # start is before end date
-                start, end = end, start # swap order
+            if start < end:  # start is before end date
+                start, end = end, start  # swap order
         except:
             await ctx.send("Invalid dates! Try again.")
             return
@@ -530,12 +507,12 @@ class ActivityLogger(commands.Cog):
         """
         try:
             dates = date.split(";")
-            dates = [dates[0].strip(), dates[1].strip()] # only use 2 dates
+            dates = [dates[0].strip(), dates[1].strip()]  # only use 2 dates
             start, end = [parse_time(date).replace(tzinfo=None) for date in dates]
             # order doesnt matter, so check which date is older than the other
             # end time should be the newest date since logs are processed in reverse
-            if start < end: # start is before end date
-                start, end = end, start # swap order
+            if start < end:  # start is before end date
+                start, end = end, start  # swap order
         except:
             await ctx.send("Invalid dates! Try again.")
             return
@@ -624,12 +601,12 @@ class ActivityLogger(commands.Cog):
         """
         try:
             dates = date.split(";")
-            dates = [dates[0].strip(), dates[1].strip()] # only use 2 dates
+            dates = [dates[0].strip(), dates[1].strip()]  # only use 2 dates
             start, end = [parse_time(date).replace(tzinfo=None) for date in dates]
             # order doesnt matter, so check which date is older than the other
             # end time should be the newest date since logs are processed in reverse
-            if start < end: # start is before end date
-                start, end = end, start # swap order
+            if start < end:  # start is before end date
+                start, end = end, start  # swap order
         except:
             await ctx.send("Invalid dates! Try again.")
             return
@@ -719,12 +696,12 @@ class ActivityLogger(commands.Cog):
         """
         try:
             dates = date.split(";")
-            dates = [dates[0].strip(), dates[1].strip()] # only use 2 dates
+            dates = [dates[0].strip(), dates[1].strip()]  # only use 2 dates
             start, end = [parse_time(date).replace(tzinfo=None) for date in dates]
             # order doesnt matter, so check which date is older than the other
             # end time should be the newest date since logs are processed in reverse
-            if start < end: # start is before end date
-                start, end = end, start # swap order
+            if start < end:  # start is before end date
+                start, end = end, start  # swap order
         except:
             await ctx.send("Invalid dates! Try again.")
             return
@@ -746,7 +723,7 @@ class ActivityLogger(commands.Cog):
         """
         pass
 
-    @logset.command(name='everything', aliases=['global'])
+    @logset.command(name="everything", aliases=["global"])
     async def set_everything(self, ctx, on_off: bool = None):
         """
         Global override for all logging
@@ -762,7 +739,7 @@ class ActivityLogger(commands.Cog):
         else:
             await ctx.send("Global logging override is disabled.")
 
-    @logset.command(name='default')
+    @logset.command(name="default")
     async def set_default(self, ctx, on_off: bool = None):
         """
         Sets whether logging is on or off where unset
@@ -780,7 +757,7 @@ class ActivityLogger(commands.Cog):
         else:
             await ctx.send("Logging is disabled by default.")
 
-    @logset.command(name='dm')
+    @logset.command(name="dm")
     async def set_direct(self, ctx, on_off: bool = None):
         """
         Log direct messages?
@@ -797,7 +774,7 @@ class ActivityLogger(commands.Cog):
         else:
             await ctx.send("Logging of direct messages is disabled.")
 
-    @logset.command(name='attachments')
+    @logset.command(name="attachments")
     async def set_attachments(self, ctx, on_off: bool = None):
         """
         Download message attachments?
@@ -813,7 +790,7 @@ class ActivityLogger(commands.Cog):
         else:
             await ctx.send("Downloading of attachments is disabled.")
 
-    @logset.command(name='channel')
+    @logset.command(name="channel")
     @commands.guild_only()
     async def set_channel(self, ctx, on_off: bool, channel: discord.TextChannel = None):
         """
@@ -830,11 +807,11 @@ class ActivityLogger(commands.Cog):
         await self.config.channel(channel).enabled.set(on_off)
 
         if on_off:
-            await ctx.send('Logging enabled for %s' % channel.mention)
+            await ctx.send("Logging enabled for %s" % channel.mention)
         else:
-            await ctx.send('Logging disabled for %s' % channel.mention)
+            await ctx.send("Logging disabled for %s" % channel.mention)
 
-    @logset.command(name='server')
+    @logset.command(name="server")
     @commands.guild_only()
     async def set_guild(self, ctx, on_off: bool):
         """
@@ -846,11 +823,11 @@ class ActivityLogger(commands.Cog):
         await self.config.guild(guild).all_s.set(on_off)
 
         if on_off:
-            await ctx.send('Logging enabled for %s' % guild)
+            await ctx.send("Logging enabled for %s" % guild)
         else:
-            await ctx.send('Logging disabled for %s' % guild)
+            await ctx.send("Logging disabled for %s" % guild)
 
-    @logset.command(name='voice')
+    @logset.command(name="voice")
     @commands.guild_only()
     async def set_voice(self, ctx, on_off: bool):
         """
@@ -862,11 +839,11 @@ class ActivityLogger(commands.Cog):
         await self.config.guild(guild).voice.set(on_off)
 
         if on_off:
-            await ctx.send('Voice event logging enabled for %s' % guild)
+            await ctx.send("Voice event logging enabled for %s" % guild)
         else:
-            await ctx.send('Voice event logging disabled for %s' % guild)
+            await ctx.send("Voice event logging disabled for %s" % guild)
 
-    @logset.command(name='events')
+    @logset.command(name="events")
     @commands.guild_only()
     async def set_events(self, ctx, on_off: bool):
         """
@@ -878,9 +855,9 @@ class ActivityLogger(commands.Cog):
         await self.config.guild(guild).events.set(on_off)
 
         if on_off:
-            await ctx.send('Logging enabled for guild events in %s' % guild)
+            await ctx.send("Logging enabled for guild events in %s" % guild)
         else:
-            await ctx.send('Logging disabled for guild events in %s' % guild)
+            await ctx.send("Logging disabled for guild events in %s" % guild)
 
     @logset.command(name="prefixes")
     @commands.guild_only()
@@ -895,16 +872,16 @@ class ActivityLogger(commands.Cog):
                 await self.config.guild(ctx.guild).prefixes.set([ctx.clean_prefix])
                 self.cache[ctx.guild.id]["prefixes"] = [ctx.clean_prefix]
                 return
-            await ctx.send("Current Prefixes: " + format_list(*curr, delim=', '))
+            await ctx.send("Current Prefixes: " + format_list(*curr, delim=", "))
             return
 
-        prefixes = [p for p in prefixes if p != ' ']
+        prefixes = [p for p in prefixes if p != " "]
         await self.config.guild(ctx.guild).prefixes.set(prefixes)
         self.cache[ctx.guild.id]["prefixes"] = prefixes
         prefixes = [f"`{p}`" for p in prefixes]
-        await ctx.send("Prefixes set to: " + format_list(*prefixes, delim=', '))
+        await ctx.send("Prefixes set to: " + format_list(*prefixes, delim=", "))
 
-    @logset.command(name='rotation')
+    @logset.command(name="rotation")
     async def set_rotation(self, ctx, freq: str = None):
         """
         Show, disable, or set the log rotation period
@@ -921,12 +898,12 @@ class ActivityLogger(commands.Cog):
         - y: one log file per year (starts 00:00Z Jan 1)
         """
         if freq:
-            freq = freq.lower().strip('"\'` ')
+            freq = freq.lower().strip("\"'` ")
 
-        if freq in ('d', 'w', 'm', 'y', 'none', 'disable'):
-            adj = 'now'
+        if freq in ("d", "w", "m", "y", "none", "disable"):
+            adj = "now"
 
-            if freq in ('none', 'disable'):
+            if freq in ("none", "disable"):
                 freq = None
 
             async with self.config.attrs() as attrs:
@@ -937,53 +914,48 @@ class ActivityLogger(commands.Cog):
             await self.bot.send_cmd_help(ctx)
             return
         else:
-            adj = 'currently'
+            adj = "currently"
             freq = self.cache["rotation"]
 
         if not freq:
             await ctx.send("Log rotation is %s disabled." % adj)
         else:
-            desc = {
-                'd' : 'daily',
-                'w' : 'weekly',
-                'm' : 'monthly',
-                'y' : 'yearly'
-            }[freq]
+            desc = {"d": "daily", "w": "weekly", "m": "monthly", "y": "yearly"}[freq]
 
-            await ctx.send('Log rotation period is %s %s.' % (adj, desc))
+            await ctx.send("Log rotation period is %s %s." % (adj, desc))
 
     @staticmethod
     def format_rotation_string(timestamp, rotation_code, filename=None):
         kwargs = dict(hour=0, minute=0, second=0, microsecond=0)
 
         if not rotation_code:
-            return filename or ''
+            return filename or ""
 
-        if rotation_code == 'y':
+        if rotation_code == "y":
             kwargs.update(day=1, month=1)
             start = timestamp.replace(**kwargs)
-        elif rotation_code == 'm':
+        elif rotation_code == "m":
             kwargs.update(day=1)
             start = timestamp.replace(**kwargs)
-        elif rotation_code == 'w':
+        elif rotation_code == "w":
             start = timestamp - timedelta(days=timestamp.weekday())
 
-        spec = start.strftime('%Y%m%d')
+        spec = start.strftime("%Y%m%d")
 
-        if rotation_code == 'w':
-            spec += '--P7D'
+        if rotation_code == "w":
+            spec += "--P7D"
         else:
-            spec += '--P1%c' % rotation_code.upper()
+            spec += "--P1%c" % rotation_code.upper()
 
         if filename:
-            return '%s_%s' % (spec, filename)
+            return "%s_%s" % (spec, filename)
         else:
             return spec
 
     @staticmethod
     def get_voice_flags(voice_state):
         flags = []
-        for f in ('deaf', 'mute', 'self_deaf', 'self_mute', 'self_stream', 'self_video'):
+        for f in ("deaf", "mute", "self_deaf", "self_mute", "self_stream", "self_video"):
             if getattr(voice_state, f, None):
                 flags.append(f)
 
@@ -992,11 +964,13 @@ class ActivityLogger(commands.Cog):
     @staticmethod
     def format_overwrite(target, channel, before, after, user=None):
         if user:
-            target_str = 'Channel overwrites by @{1.name}#{1.discriminator}(id:{1.id}): {0.name} ({0.id}): '.format(channel, user)
+            target_str = "Channel overwrites by @{1.name}#{1.discriminator}(id:{1.id}): {0.name} ({0.id}): ".format(
+                channel, user
+            )
         else:
-            target_str = 'Channel overwrites: {0.name} ({0.id}): '.format(channel)
-        target_str += 'role' if isinstance(target, discord.Role) else 'member'
-        target_str += ' {0.name} ({0.id})'.format(target)
+            target_str = "Channel overwrites: {0.name} ({0.id}): ".format(channel)
+        target_str += "role" if isinstance(target, discord.Role) else "member"
+        target_str += " {0.name} ({0.id})".format(target)
 
         if before:
             bpair = [x.value for x in before.pair()]
@@ -1005,14 +979,14 @@ class ActivityLogger(commands.Cog):
             apair = [x.value for x in after.pair()]
 
         if before and after:
-            fmt = ' updated to values %i, %i (was %i, %i)'
+            fmt = " updated to values %i, %i (was %i, %i)"
             return target_str + fmt % tuple(apair + bpair)
         elif after:
-            return target_str + ' added with values %i, %i' % tuple(apair)
+            return target_str + " added with values %i, %i" % tuple(apair)
         elif before:
-            return target_str + ' removed (was %i, %i)' % tuple(bpair)
+            return target_str + " removed (was %i, %i)" % tuple(bpair)
 
-    def gethandle(self, path, mode='a'):
+    def gethandle(self, path, mode="a"):
         """Manages logfile handles, culling stale ones and creating folders"""
         if path in self.handles:
             if os.path.exists(path):
@@ -1047,34 +1021,34 @@ class ActivityLogger(commands.Cog):
             return handle
 
     def should_log(self, location):
-        if self.cache.get('everything', False):
+        if self.cache.get("everything", False):
             return True
 
-        default = self.cache.get('default', False)
+        default = self.cache.get("default", False)
 
         if type(location) is discord.Guild:
             loc = self.cache[location.id]
-            return loc.get('all_s', False) or loc.get('events', default)
+            return loc.get("all_s", False) or loc.get("events", default)
 
         elif type(location) is discord.TextChannel:
             loc = self.cache[location.guild.id]
-            opts = [loc.get('all_s', False), self.cache[location.id].get("enabled", default)]
+            opts = [loc.get("all_s", False), self.cache[location.id].get("enabled", default)]
             return any(opts)
 
         elif type(location) is discord.VoiceChannel:
             loc = self.cache[location.guild.id]
-            opts = [loc.get('all_s', False), loc.get('voice', False)]
+            opts = [loc.get("all_s", False), loc.get("voice", False)]
 
             return any(opts)
 
         elif isinstance(location, discord.abc.PrivateChannel):
-            return self.cache.get('direct', default)
+            return self.cache.get("direct", default)
 
         else:  # can't log other types
             return False
 
     def should_download(self, msg):
-        return self.should_log(msg.channel) and self.cache.get('attachments', False)
+        return self.should_log(msg.channel) and self.cache.get("attachments", False)
 
     def process_attachment(self, message, a):
         aid = a.id
@@ -1086,23 +1060,23 @@ class ActivityLogger(commands.Cog):
         if type(channel) is discord.TextChannel:
             guildid = channel.guild.id
         elif isinstance(channel, discord.abc.PrivateChannel):
-            guildid = 'direct'
+            guildid = "direct"
 
-        path = os.path.join(path, str(guildid), str(channel.id) + '_attachments')
-        filename = str(aid) + '_' + aname
+        path = os.path.join(path, str(guildid), str(channel.id) + "_attachments")
+        filename = str(aid) + "_" + aname
 
         if len(filename) > 255:
             target_len = 255 - len(aid) - 4
             part_a = target_len // 2
             part_b = target_len - part_a
-            filename = aid + '_' + aname[:part_a] + '...' + aname[-part_b:]
+            filename = aid + "_" + aname[:part_a] + "..." + aname[-part_b:]
             truncated = True
         else:
             truncated = False
 
         return aid, url, path, filename, truncated
 
-    async def log(self, location, text, timestamp=None, force=False, subfolder=None, mode='a'):
+    async def log(self, location, text, timestamp=None, force=False, subfolder=None, mode="a"):
         if not timestamp:
             timestamp = datetime.utcnow()
 
@@ -1111,24 +1085,24 @@ class ActivityLogger(commands.Cog):
 
         path = []
         entry = [timestamp.strftime(TIMESTAMP_FORMAT)]
-        rotation = self.cache['rotation']
+        rotation = self.cache["rotation"]
         if type(location) is discord.Guild:
-            path += [str(location.id), 'guild.log']
+            path += [str(location.id), "guild.log"]
         elif type(location) is discord.TextChannel or type(location) is discord.VoiceChannel:
             guildid = str(location.guild.id)
-            entry.append('#' + location.name)
-            path += [guildid, str(location.id) + '.log']
+            entry.append("#" + location.name)
+            path += [guildid, str(location.id) + ".log"]
         elif isinstance(location, discord.abc.PrivateChannel):
-            path += ['direct', str(location.id) + '.log']
+            path += ["direct", str(location.id) + ".log"]
         elif type(location) is discord.User or type(location) is discord.Member:
-            path += ['usernames', 'usernames.log']
+            path += ["usernames", "usernames.log"]
         else:
             return
 
         if subfolder:
             path.insert(-1, str(subfolder))
 
-        text = text.replace('\n', '\\n')
+        text = text.replace("\n", "\\n")
         entry.append(text)
 
         if rotation:
@@ -1136,7 +1110,7 @@ class ActivityLogger(commands.Cog):
 
         fname = os.path.join(PATH, *path)
         handle = self.gethandle(fname, mode=mode)
-        await handle.write(' '.join(entry) + '\n')
+        await handle.write(" ".join(entry) + "\n")
 
     async def message_handler(self, message, *args, force_attachments=None, **kwargs):
         dl_attachment = self.should_download(message)
@@ -1149,15 +1123,17 @@ class ActivityLogger(commands.Cog):
             for a in message.attachments:
                 attachments += [self.process_attachment(message, a)]
 
-            entry = DOWNLOAD_TEMPLATE.format(message, [a[3] + ' (filename truncated)' if a[4] else a[3] for a in attachments])
+            entry = DOWNLOAD_TEMPLATE.format(
+                message, [a[3] + " (filename truncated)" if a[4] else a[3] for a in attachments]
+            )
 
         elif message.attachments:
-            urls = ','.join(a.url for a in message.attachments)
+            urls = ",".join(a.url for a in message.attachments)
             entry = ATTACHMENT_TEMPLATE.format(message, urls)
         else:
             entry = MESSAGE_TEMPLATE.format(message)
 
-        if message.author.id != self.bot.user.id: # don't calculate bot stats
+        if message.author.id != self.bot.user.id:  # don't calculate bot stats
             async with self.config.member(message.author).stats() as stats:
                 stats["total_msg"] += 1
                 if len(message.content) > 0 and message.content[0] in self.cache[message.guild.id]["prefixes"]:
@@ -1199,10 +1175,12 @@ class ActivityLogger(commands.Cog):
             async for entry in message.guild.audit_logs(limit=1):
                 # target is user who had message deleted
                 if entry.action is discord.AuditLogAction.message_delete:
-                    if entry.target.id == message.author.id and \
-                       entry.extra.channel.id == message.channel.id and \
-                       entry.created_at.timestamp() > time.time() - 3000 and \
-                       entry.extra.count >= 1:
+                    if (
+                        entry.target.id == message.author.id
+                        and entry.extra.channel.id == message.channel.id
+                        and entry.created_at.timestamp() > time.time() - 3000
+                        and entry.extra.count >= 1
+                    ):
                         entry_s = DELETE_AUDIT_TEMPLATE.format(entry.user, message, message.author, timestamp)
                         break
         except:
@@ -1215,12 +1193,12 @@ class ActivityLogger(commands.Cog):
 
     @commands.Cog.listener()
     async def on_guild_join(self, guild):
-        entry = 'this bot joined the guild'
+        entry = "this bot joined the guild"
         await self.log(guild, entry)
 
     @commands.Cog.listener()
     async def on_guild_remove(self, guild):
-        entry = 'this bot left the guild'
+        entry = "this bot left the guild"
         await self.log(guild, entry)
 
     @commands.Cog.listener()
@@ -1230,39 +1208,49 @@ class ActivityLogger(commands.Cog):
         try:
             async for entry in after.audit_logs(limit=1):
                 if entry.action is discord.AuditLogAction.guild_update:
-                        user = entry.user
+                    user = entry.user
         except:
             pass
 
         if before.owner != after.owner:
             if user:
-                entries.append('guild owner changed by @{2.name}#{2.discriminator}(id:{2.id}), from {0.owner} (id {0.owner.id}) to {1.owner} (id {1.owner.id})')
+                entries.append(
+                    "guild owner changed by @{2.name}#{2.discriminator}(id:{2.id}), from {0.owner} (id {0.owner.id}) to {1.owner} (id {1.owner.id})"
+                )
             else:
-                entries.append('guild owner changed from {0.owner} (id {0.owner.id}) to {1.owner} (id {1.owner.id})')
+                entries.append("guild owner changed from {0.owner} (id {0.owner.id}) to {1.owner} (id {1.owner.id})")
 
         if before.region != after.region:
             if user:
-                entries.append('guild region changed by @{2.name}#{2.discriminator}(id:{2.id}), from {0.region} to {1.region}')
+                entries.append(
+                    "guild region changed by @{2.name}#{2.discriminator}(id:{2.id}), from {0.region} to {1.region}"
+                )
             else:
-                entries.append('guild region changed from {0.region} to {1.region}')
+                entries.append("guild region changed from {0.region} to {1.region}")
 
         if before.name != after.name:
             if user:
-                entries.append('guild name changed by @{2.name}#{2.discriminator}(id:{2.id}), from "{0.name}" to "{1.name}"')
+                entries.append(
+                    'guild name changed by @{2.name}#{2.discriminator}(id:{2.id}), from "{0.name}" to "{1.name}"'
+                )
             else:
                 entries.append('guild name changed from "{0.name}" to "{1.name}"')
 
         if before.icon_url != after.icon_url:
             if user:
-                entries.append('guild icon changed by @{2.name}#{2.discriminator}(id:{2.id}), from {0.icon_url} to {1.icon_url}')
+                entries.append(
+                    "guild icon changed by @{2.name}#{2.discriminator}(id:{2.id}), from {0.icon_url} to {1.icon_url}"
+                )
             else:
-                entries.append('guild icon changed from {0.icon_url} to {1.icon_url}')
+                entries.append("guild icon changed from {0.icon_url} to {1.icon_url}")
 
         if before.splash != after.splash:
             if user:
-                entries.append('guild splash changed by @{2.name}#{2.discriminator}(id:{2.id}), from {0.splash} to {1.splash}')
+                entries.append(
+                    "guild splash changed by @{2.name}#{2.discriminator}(id:{2.id}), from {0.splash} to {1.splash}"
+                )
             else:
-                entries.append('guild splash changed from {0.splash} to {1.splash}')
+                entries.append("guild splash changed from {0.splash} to {1.splash}")
 
         for e in entries:
             if user:
@@ -1326,45 +1314,61 @@ class ActivityLogger(commands.Cog):
 
         if before.color != after.color:
             if user:
-                entries.append('Role color by @{2.name}#{2.discriminator}(id:{2.id}): "{0}" (id {0.id}) changed from {0.color} to {1.color}')
+                entries.append(
+                    'Role color by @{2.name}#{2.discriminator}(id:{2.id}): "{0}" (id {0.id}) changed from {0.color} to {1.color}'
+                )
             else:
                 entries.append('Role color: "{0}" (id {0.id}) changed from {0.color} to {1.color}')
 
         if before.mentionable != after.mentionable:
             if after.mentionable:
                 if user:
-                    entries.append('Role mentionable by @{2.name}#{2.discriminator}(id:{2.id}): "{1.name}" (id {1.id}) is now mentionable')
+                    entries.append(
+                        'Role mentionable by @{2.name}#{2.discriminator}(id:{2.id}): "{1.name}" (id {1.id}) is now mentionable'
+                    )
                 else:
                     entries.append('Role mentionable: "{1.name}" (id {1.id}) is now mentionable')
             else:
                 if user:
-                    entries.append('Role mentionable by @{2.name}#{2.discriminator}(id:{2.id}): "{1.name}" (id {1.id}) is no longer mentionable')
+                    entries.append(
+                        'Role mentionable by @{2.name}#{2.discriminator}(id:{2.id}): "{1.name}" (id {1.id}) is no longer mentionable'
+                    )
                 else:
                     entries.append('Role mentionable: "{1.name}" (id {1.id}) is no longer mentionable')
 
         if before.hoist != after.hoist:
             if after.hoist:
                 if user:
-                    entries.append('Role hoist by @{2.name}#{2.discriminator}(id:{2.id}): "{1.name}" (id {1.id}) is now shown seperately')
+                    entries.append(
+                        'Role hoist by @{2.name}#{2.discriminator}(id:{2.id}): "{1.name}" (id {1.id}) is now shown seperately'
+                    )
                 else:
                     entries.append('Role hoist: "{1.name}" (id {1.id}) is now shown seperately')
             else:
                 if user:
-                    entries.append('Role hoist by @{2.name}#{2.discriminator}(id:{2.id}): "{1.name}" (id {1.id}) is no longer shown seperately')
+                    entries.append(
+                        'Role hoist by @{2.name}#{2.discriminator}(id:{2.id}): "{1.name}" (id {1.id}) is no longer shown seperately'
+                    )
                 else:
                     entries.append('Role hoist: "{1.name}" (id {1.id}) is no longer shown seperately')
 
         if before.permissions != after.permissions:
             if user:
-                entries.append('Role permissions by @{2.name}#{2.discriminator}(id:{2.id}): "{1.name}" (id {1.id}) changed from {0.permissions.value} '
-                           'to {1.permissions.value}')
+                entries.append(
+                    'Role permissions by @{2.name}#{2.discriminator}(id:{2.id}): "{1.name}" (id {1.id}) changed from {0.permissions.value} '
+                    "to {1.permissions.value}"
+                )
             else:
-                entries.append('Role permissions: "{1.name}" (id {1.id}) changed from {0.permissions.value} '
-                           'to {1.permissions.value}')
+                entries.append(
+                    'Role permissions: "{1.name}" (id {1.id}) changed from {0.permissions.value} '
+                    "to {1.permissions.value}"
+                )
 
         if before.position != after.position:
             if user:
-                entries.append('Role position by @{2.name}#{2.discriminator}(id:{2.id}): "{0}" changed from {0.position} to {1.position}')
+                entries.append(
+                    'Role position by @{2.name}#{2.discriminator}(id:{2.id}): "{0}" changed from {0.position} to {1.position}'
+                )
             else:
                 entries.append('Role position: "{0}" changed from {0.position} to {1.position}')
 
@@ -1376,7 +1380,7 @@ class ActivityLogger(commands.Cog):
 
     @commands.Cog.listener()
     async def on_member_join(self, member):
-        entry = 'Member join: @{0} (id {0.id})'.format(member)
+        entry = "Member join: @{0} (id {0.id})".format(member)
 
         async with self.config.user(member).past_names() as past_names:
             if str(member) not in past_names:
@@ -1396,9 +1400,9 @@ class ActivityLogger(commands.Cog):
             pass
 
         if user:
-            entry = 'Member kicked by @{1.name}#{1.discriminator}(id:{1.id}): @{0} (id {0.id})'.format(member, user)
+            entry = "Member kicked by @{1.name}#{1.discriminator}(id:{1.id}): @{0} (id {0.id})".format(member, user)
         else:
-            entry = 'Member leave: @{0} (id {0.id})'.format(member)
+            entry = "Member leave: @{0} (id {0.id})".format(member)
 
         await self.config.member(member).clear()
         await self.log(member.guild, entry)
@@ -1415,9 +1419,9 @@ class ActivityLogger(commands.Cog):
             pass
 
         if user:
-            entry = 'Member banned by @{1.name}#{1.discriminator}(id:{1.id}): @{0} (id {0.id})'.format(member, user)
+            entry = "Member banned by @{1.name}#{1.discriminator}(id:{1.id}): @{0} (id {0.id})".format(member, user)
         else:
-            entry = 'Member ban: @{0} (id {0.id})'.format(member)
+            entry = "Member ban: @{0} (id {0.id})".format(member)
 
         await self.log(member.guild, entry)
 
@@ -1433,9 +1437,9 @@ class ActivityLogger(commands.Cog):
             pass
 
         if user:
-            entry = 'Member unbanned by @{1.name}#{1.discriminator}(id:{1.id}): @{0} (id {0.id})'.format(member, user)
+            entry = "Member unbanned by @{1.name}#{1.discriminator}(id:{1.id}): @{0} (id {0.id})".format(member, user)
         else:
-            entry = 'Member unban: @{0} (id {0.id})'.format(member)
+            entry = "Member unban: @{0} (id {0.id})".format(member)
 
         await self.log(guild, entry)
 
@@ -1445,8 +1449,10 @@ class ActivityLogger(commands.Cog):
         user = None
         try:
             async for entry in after.guild.audit_logs(limit=1):
-                if entry.action is discord.AuditLogAction.member_update \
-                   or entry.action is discord.AuditLogAction.member_role_update:
+                if (
+                    entry.action is discord.AuditLogAction.member_update
+                    or entry.action is discord.AuditLogAction.member_role_update
+                ):
                     if entry.target.id == after.id:
                         user = entry.user
         except:
@@ -1454,7 +1460,9 @@ class ActivityLogger(commands.Cog):
 
         if before.nick != after.nick:
             if user:
-                entries.append('Member nickname changed by @{2.name}#{2.discriminator}(id:{2.id}): "@{0}" (id {0.id}) nickname change from "{0.nick}" to "{1.nick}"')
+                entries.append(
+                    'Member nickname changed by @{2.name}#{2.discriminator}(id:{2.id}): "@{0}" (id {0.id}) nickname change from "{0.nick}" to "{1.nick}"'
+                )
             else:
                 entries.append('Member nickname: "@{0}" (id {0.id}) changed nickname from "{0.nick}" to "{1.nick}"')
 
@@ -1466,18 +1474,27 @@ class ActivityLogger(commands.Cog):
 
             for r in added:
                 if user:
-                    entries.append('Member role added by @{1.name}#{1.discriminator}(id:{1.id}): "{0}" (id {0.id}) role '
-                               'was added to "@{{0}}" (id {{0.id}})'.format(r, user))
+                    entries.append(
+                        'Member role added by @{1.name}#{1.discriminator}(id:{1.id}): "{0}" (id {0.id}) role '
+                        'was added to "@{{0}}" (id {{0.id}})'.format(r, user)
+                    )
                 else:
-                    entries.append('Member role add: "{0}" (id {0.id}) role '
-                               'was added to "@{{0}}" (id {{0.id}})'.format(r))
+                    entries.append(
+                        'Member role add: "{0}" (id {0.id}) role ' 'was added to "@{{0}}" (id {{0.id}})'.format(r)
+                    )
 
             for r in removed:
                 if user:
-                    entries.append('Member role removed by @{1.name}#{1.discriminator}(id:{1.id}): "{0}" (id {0.id}) role was removed from "@{{0}}" (id {{0.id}})'.format(r, user))
+                    entries.append(
+                        'Member role removed by @{1.name}#{1.discriminator}(id:{1.id}): "{0}" (id {0.id}) role was removed from "@{{0}}" (id {{0.id}})'.format(
+                            r, user
+                        )
+                    )
                 else:
-                    entries.append('Member role remove: "{0}" (id {0.id}) role '
-                               'was removed from "@{{0}}" (id {{0.id}})'.format(r))
+                    entries.append(
+                        'Member role remove: "{0}" (id {0.id}) role '
+                        'was removed from "@{{0}}" (id {{0.id}})'.format(r)
+                    )
 
         for e in entries:
             await self.log(before.guild, e.format(before, after, user))
@@ -1513,7 +1530,9 @@ class ActivityLogger(commands.Cog):
             pass
 
         if user:
-            entry = 'Channel created by @{1.name}#{1.discriminator}(id:{1.id}): "{0.name}" (id {0.id})'.format(channel, user)
+            entry = 'Channel created by @{1.name}#{1.discriminator}(id:{1.id}): "{0.name}" (id {0.id})'.format(
+                channel, user
+            )
         else:
             entry = 'Channel created: "{0.name}" (id {0.id})'.format(channel)
 
@@ -1531,7 +1550,9 @@ class ActivityLogger(commands.Cog):
             pass
 
         if user:
-            entry = 'Channel deleted by @{1.name}#{1.discriminator}(id:{1.id}): "{0.name}" (id {0.id})'.format(channel, user)
+            entry = 'Channel deleted by @{1.name}#{1.discriminator}(id:{1.id}): "{0.name}" (id {0.id})'.format(
+                channel, user
+            )
         else:
             entry = 'Channel deleted: "{0.name}" (id {0.id})'.format(channel)
 
@@ -1552,19 +1573,25 @@ class ActivityLogger(commands.Cog):
 
         if before.name != after.name:
             if user:
-                entries.append('Channel rename by @{2.name}#{2.discriminator}(id:{2.id}): "{0.name}" (id {0.id}) renamed to "{1.name}"')
+                entries.append(
+                    'Channel rename by @{2.name}#{2.discriminator}(id:{2.id}): "{0.name}" (id {0.id}) renamed to "{1.name}"'
+                )
             else:
                 entries.append('Channel rename: "{0.name}" (id {0.id}) renamed to "{1.name}"')
 
         if before.topic != after.topic:
             if user:
-                entries.append('Channel topic by @{2.name}#{2.discriminator}(id:{2.id}): "{0.name}" (id {0.id}) topic was set to "{1.topic}"')
+                entries.append(
+                    'Channel topic by @{2.name}#{2.discriminator}(id:{2.id}): "{0.name}" (id {0.id}) topic was set to "{1.topic}"'
+                )
             else:
                 entries.append('Channel topic: "{0.name}" (id {0.id}) topic was set to "{1.topic}"')
 
         if before.position != after.position:
             if user:
-                entries.append('Channel position by @{2.name}#{2.discriminator}(id:{2.id}): "{0.name}" (id {0.id}) moved from {0.position} to {1.position}')
+                entries.append(
+                    'Channel position by @{2.name}#{2.discriminator}(id:{2.id}): "{0.name}" (id {0.id}) moved from {0.position} to {1.position}'
+                )
             else:
                 entries.append('Channel position: "{0.name}" (id {0.id}) moved from {0.position} to {1.position}')
 
@@ -1603,11 +1630,11 @@ class ActivityLogger(commands.Cog):
                 msg = "Voice channel leave: {0} (id {0.id})"
 
                 async with self.config.member(member).stats() as stats:
-                    stats["vc_time_sec"] += (time.time() - stats["last_vc_time"])
+                    stats["vc_time_sec"] += time.time() - stats["last_vc_time"]
                     stats["last_vc_time"] = None
 
                 if after.channel:
-                    msg += ' moving to {1.channel}'
+                    msg += " moving to {1.channel}"
 
                 await self.log(before.channel, msg.format(member, after))
 
@@ -1618,35 +1645,35 @@ class ActivityLogger(commands.Cog):
                     stats["last_vc_time"] = time.time()
 
                 if before.channel:
-                    msg += ', moved from {1.channel}'
+                    msg += ", moved from {1.channel}"
 
                 flags = self.get_voice_flags(after)
 
                 if flags:
-                    msg += ', flags: %s' % ','.join(flags)
+                    msg += ", flags: %s" % ",".join(flags)
 
                 await self.log(after.channel, msg.format(member, before))
 
         if before.deaf != after.deaf:
-            verb = 'deafen' if after.deaf else 'undeafen'
-            await self.log(before.channel, 'guild {0}: {1} (id {1.id})'.format(verb, member))
+            verb = "deafen" if after.deaf else "undeafen"
+            await self.log(before.channel, "guild {0}: {1} (id {1.id})".format(verb, member))
 
         if before.mute != after.mute:
-            verb = 'mute' if after.mute else 'unmute'
-            await self.log(before.channel, 'guild {0}: {1} (id {1.id})'.format(verb, member))
+            verb = "mute" if after.mute else "unmute"
+            await self.log(before.channel, "guild {0}: {1} (id {1.id})".format(verb, member))
 
         if before.self_deaf != after.self_deaf:
-            verb = 'deafen' if after.self_deaf else 'undeafen'
-            await self.log(before.channel, 'guild self-{0}: {1} (id {1.id})'.format(verb, member))
+            verb = "deafen" if after.self_deaf else "undeafen"
+            await self.log(before.channel, "guild self-{0}: {1} (id {1.id})".format(verb, member))
 
         if before.self_mute != after.self_mute:
-            verb = 'mute' if after.self_mute else 'unmute'
-            await self.log(before.channel, 'guild self-{0}: {1} (id {1.id})'.format(verb, member))
+            verb = "mute" if after.self_mute else "unmute"
+            await self.log(before.channel, "guild self-{0}: {1} (id {1.id})".format(verb, member))
 
         if before.self_stream != after.self_stream:
-            verb = 'stop-stream' if not after.self_stream else 'start-stream'
-            await self.log(before.channel, 'guild self-{0}: {1} (id {1.id})'.format(verb, member))
+            verb = "stop-stream" if not after.self_stream else "start-stream"
+            await self.log(before.channel, "guild self-{0}: {1} (id {1.id})".format(verb, member))
 
         if before.self_video != after.self_video:
-            verb = 'start-video' if after.self_video else 'stop-video'
-            await self.log(before.channel, 'guild self-{0}: {1} (id {1.id})'.format(verb, member))
+            verb = "start-video" if after.self_video else "stop-video"
+            await self.log(before.channel, "guild self-{0}: {1} (id {1.id})".format(verb, member))

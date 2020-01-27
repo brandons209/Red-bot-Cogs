@@ -43,7 +43,6 @@ def parse_time(datetimestring: str):
     return ret
 
 
-
 def parse_time_naive(datetimestring: str):
     return parser.parse(datetimestring)
 

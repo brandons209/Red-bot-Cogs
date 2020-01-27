@@ -1,0 +1,13 @@
+name: black-checker
+
+on: [pull_request, push]
+
+jobs:
+  black:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v1
+      - name: Black Code Formatter
+        uses: lgeiger/black-action@v1.0.1
+        with:
+          args: "--line-length 120 --target-version py38 --check ."

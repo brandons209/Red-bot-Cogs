@@ -7,18 +7,14 @@ import os
 import traceback
 import json
 
+
 class Pony(commands.Cog):
     def __init__(self):
         super().__init__()
 
         self.config = Config.get_conf(self, identifier=7384662719)
-        default_global = {
-            "maxfilters":50
-        }
-        self.default_guild = {
-            "filters": ["-meme", "safe", "-spoiler:*", "-vulgar"],
-            "verbose": False
-        }
+        default_global = {"maxfilters": 50}
+        self.default_guild = {"filters": ["-meme", "safe", "-spoiler:*", "-vulgar"], "verbose": False}
         self.config.register_guild(**self.default_guild)
         self.config.register_global(**default_global)
 
@@ -40,7 +36,7 @@ class Pony(commands.Cog):
         """
         Gives a random picture of our mascot!
         """
-        await fetch_image(self, ctx, randomize=True, mascot=True, tags=['safe,', 'coe'])
+        await fetch_image(self, ctx, randomize=True, mascot=True, tags=["safe,", "coe"])
 
     @commands.group()
     @commands.guild_only()
@@ -53,7 +49,7 @@ class Pony(commands.Cog):
         pass
 
     @ponyfilter.command(name="add")
-    async def _add_ponyfilter(self, ctx, filter_tag : str):
+    async def _add_ponyfilter(self, ctx, filter_tag: str):
         """Adds a tag to the server's pony filter list
 
            Example: !ponyfilter add safe"""
@@ -72,7 +68,7 @@ class Pony(commands.Cog):
             await ctx.send("This server has exceeded the maximum filters ({}/{}).".format(len(filters), max_filters))
 
     @ponyfilter.command(name="del")
-    async def _del_ponyfilter(self, ctx, filter_tag : str=""):
+    async def _del_ponyfilter(self, ctx, filter_tag: str = ""):
         """Deletes a tag from the server's pony filter list
 
            Without arguments, reverts to the default pony filter list
@@ -100,10 +96,10 @@ class Pony(commands.Cog):
         guild = ctx.guild
         filters = await self.config.guild(guild).filters()
         if filters:
-            filter_list = '\n'.join(sorted(filters))
+            filter_list = "\n".join(sorted(filters))
             target_guild = "{}'s".format(guild.name)
         else:
-            filter_list = '\n'.join(sorted(filters["default"]))
+            filter_list = "\n".join(sorted(filters["default"]))
             target_guild = "Default"
         await ctx.send("{} pony filter list contains:```\n{}```".format(target_guild, filter_list))
 
@@ -114,7 +110,7 @@ class Pony(commands.Cog):
         pass
 
     @ponyset.command(name="verbose")
-    async def _verbose_ponyset(self, ctx, toggle : str="toggle"):
+    async def _verbose_ponyset(self, ctx, toggle: str = "toggle"):
         """Toggles verbose mode"""
         guild = ctx.guild
         verbose = await self.config.guild(guild).verbose()
@@ -140,7 +136,7 @@ class Pony(commands.Cog):
 
     @ponyset.command(name="maxfilters")
     @checks.is_owner()
-    async def _maxfilters_ponyset(self, ctx, new_max_filters : int):
+    async def _maxfilters_ponyset(self, ctx, new_max_filters: int):
         """Sets the global tag limit for the filter list.
 
            Leave blank to get current max filters.
@@ -178,7 +174,7 @@ class Pony(commands.Cog):
                         if guild is None:
                             continue
 
-                        await self.config.guild(guild).verbose.set(json_guild_verbose['verbose'])
+                        await self.config.guild(guild).verbose.set(json_guild_verbose["verbose"])
                         msg += "**{}**\n".format(guild)
                         if len(msg) + 100 > 2000:
                             await ctx.send(msg)
@@ -194,7 +190,7 @@ class Pony(commands.Cog):
                 for json_guild_id, json_guild_filters in import_filters.items():
                     if json_guild_id != "default":
 
-                        guild = bot.get_guild(int(json_guild_id)) # returns None if guild is not found
+                        guild = bot.get_guild(int(json_guild_id))  # returns None if guild is not found
                         if guild is None:
                             continue
 
@@ -204,7 +200,7 @@ class Pony(commands.Cog):
                             await ctx.send(msg)
                             msg = ""
                     else:
-                            continue
+                        continue
                 if msg != "":
                     await ctx.send(msg)
 
@@ -213,25 +209,25 @@ class Pony(commands.Cog):
         except json.decoder.JSONDecodeError:
             await ctx.send("Invalid or malformed json files.")
 
-    async def fetch_image(self, ctx, randomize : bool=False, tags : list=[], mascot=False):
+    async def fetch_image(self, ctx, randomize: bool = False, tags: list = [], mascot=False):
         guild = ctx.guild
         filters = await self.config.guild(guild).filters()
         verbose = await self.config.guild(guild).verbose()
 
-        #Initialize variables
-        artist      = "unknown artist"
-        artists     = ""
-        artistList  = []
-        embedLink   = ""
-        embedTitle  = ""
-        imageId     = ""
-        message     = ""
-        output      = None
-        rating      = ""
+        # Initialize variables
+        artist = "unknown artist"
+        artists = ""
+        artistList = []
+        embedLink = ""
+        embedTitle = ""
+        imageId = ""
+        message = ""
+        output = None
+        rating = ""
         ratingColor = "FFFFFF"
-        ratingWord  = "unknown"
-        search      = "https://derpibooru.org/search.json?q="
-        tagSearch   = ""
+        ratingWord = "unknown"
+        search = "https://derpibooru.org/search.json?q="
+        tagSearch = ""
 
         # Assign tags to URL
         if tags:
@@ -250,12 +246,12 @@ class Pony(commands.Cog):
         # Randomize results and apply Derpibooru's "Everything" filter
         if randomize:
             if not tags and filters:
-               if filters == []:
-                   search = "https://derpibooru.org/images/random.json?filter_id=56027"
-               else:
-                   search += "&random_image=y&filter_id=56027"
+                if filters == []:
+                    search = "https://derpibooru.org/images/random.json?filter_id=56027"
+                else:
+                    search += "&random_image=y&filter_id=56027"
             else:
-               search += "&random_image=y&filter_id=56027"
+                search += "&random_image=y&filter_id=56027"
 
         # Inform users about image retrieving
         message = await ctx.send("Fetching pony image...")
@@ -263,7 +259,7 @@ class Pony(commands.Cog):
         # Fetch the image or display an error
         try:
             async with aiohttp.ClientSession(loop=ctx.bot.loop) as session:
-                async with session.get(search, headers={'User-Agent': "Booru-Cogs (https://git.io/booru)"}) as r:
+                async with session.get(search, headers={"User-Agent": "Booru-Cogs (https://git.io/booru)"}) as r:
                     website = await r.json()
             if randomize:
                 if "id" in website:

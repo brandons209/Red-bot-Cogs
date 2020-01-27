@@ -2,7 +2,8 @@ class Memoizer:
     """
     General purpose cache for function results. Appends positional args, overlays kwargs. Both must be hashable.
     """
-    __slots__ = ['_cache', '_func', '_args', '_kwargs']
+
+    __slots__ = ["_cache", "_func", "_args", "_kwargs"]
 
     def __init__(self, func, *args, **kwargs):
         self._cache = {}

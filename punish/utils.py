@@ -2,12 +2,13 @@ import re
 import discord
 
 UNIT_TABLE = (
-    (('weeks', 'wks', 'w'),    60 * 60 * 24 * 7),
-    (('days',  'dys', 'd'),    60 * 60 * 24),
-    (('hours', 'hrs', 'h'),    60 * 60),
-    (('minutes', 'mins', 'm'), 60),
-    (('seconds', 'secs', 's'), 1),
+    (("weeks", "wks", "w"), 60 * 60 * 24 * 7),
+    (("days", "dys", "d"), 60 * 60 * 24),
+    (("hours", "hrs", "h"), 60 * 60),
+    (("minutes", "mins", "m"), 60),
+    (("seconds", "secs", "s"), 1),
 )
+
 
 class BadTimeExpr(Exception):
     pass
@@ -23,24 +24,23 @@ def _find_unit(unit):
 def parse_time(time):
     time = time.lower()
     if not time.isdigit():
-        time = re.split(r'\s*([\d.]+\s*[^\d\s,;]*)(?:[,;\s]|and)*', time)
+        time = re.split(r"\s*([\d.]+\s*[^\d\s,;]*)(?:[,;\s]|and)*", time)
         time = sum(map(_timespec_sec, filter(None, time)))
     return int(time)
 
 
 def _timespec_sec(expr):
-    atoms = re.split(r'([\d.]+)\s*([^\d\s]*)', expr)
+    atoms = re.split(r"([\d.]+)\s*([^\d\s]*)", expr)
     atoms = list(filter(None, atoms))
 
     if len(atoms) > 2:  # This shouldn't ever happen
         raise BadTimeExpr("invalid expression: '%s'" % expr)
     elif len(atoms) == 2:
         names, length = _find_unit(atoms[1])
-        if atoms[0].count('.') > 1 or \
-                not atoms[0].replace('.', '').isdigit():
+        if atoms[0].count(".") > 1 or not atoms[0].replace(".", "").isdigit():
             raise BadTimeExpr("Not a number: '%s'" % atoms[0])
     else:
-        names, length = _find_unit('seconds')
+        names, length = _find_unit("seconds")
 
     try:
         return float(atoms[0]) * length
@@ -59,48 +59,46 @@ def generate_timespec(sec: int, short=False, micro=False) -> str:
 
         if n:
             if micro:
-                s = '%d%s' % (n, names[2])
+                s = "%d%s" % (n, names[2])
             elif short:
-                s = '%d%s' % (n, names[1])
+                s = "%d%s" % (n, names[1])
             else:
-                s = '%d %s' % (n, names[0])
+                s = "%d %s" % (n, names[0])
 
-            if n <= 1 and not (micro and names[2] == 's'):
-                s = s.rstrip('s')
+            if n <= 1 and not (micro and names[2] == "s"):
+                s = s.rstrip("s")
 
             timespec.append(s)
 
     if len(timespec) > 1:
         if micro:
-            spec = ''.join(timespec)
+            spec = "".join(timespec)
 
         segments = timespec[:-1], timespec[-1:]
-        spec = ' and '.join(', '.join(x) for x in segments)
+        spec = " and ".join(", ".join(x) for x in segments)
     elif timespec:
         spec = timespec[0]
     else:
-        return '0'
+        return "0"
 
     if neg:
-        spec += ' ago'
+        spec += " ago"
 
     return spec
 
 
-def format_list(*items, join='and', delim=', '):
+def format_list(*items, join="and", delim=", "):
     if len(items) > 1:
-        return (' %s ' % join).join((delim.join(items[:-1]), items[-1]))
+        return (" %s " % join).join((delim.join(items[:-1]), items[-1]))
     elif items:
         return items[0]
     else:
-        return ''
+        return ""
+
 
 def overwrite_to_dict(overwrite):
     allow, deny = overwrite.pair()
-    return {
-        'allow' : allow.value,
-        'deny'  : deny.value
-    }
+    return {"allow": allow.value, "deny": deny.value}
 
 
 def format_permissions(permissions, include_null=False):
@@ -116,10 +114,10 @@ def format_permissions(permissions, include_null=False):
         else:
             continue
 
-        entries.append(symbol + ' ' + perm.replace('_', ' ').title().replace("Tts", "TTS"))
+        entries.append(symbol + " " + perm.replace("_", " ").title().replace("Tts", "TTS"))
 
     if entries:
-        return '\n'.join(entries)
+        return "\n".join(entries)
     else:
         return "No permission entries."
 
@@ -130,7 +128,7 @@ def getmname(mid, guild):
     if member:
         return str(member)
     else:
-        return '(absent user #%s)' % mid
+        return "(absent user #%s)" % mid
 
 
 def role_from_string(guild, rolename, roles=None):
@@ -186,7 +184,7 @@ def permissions_for_roles(channel, *roles):
         if overwrite.id == default.id:
             base.handle_overwrite(allow=overwrite.allow, deny=overwrite.deny)
 
-        if overwrite.type == 'role' and overwrite.id in role_ids:
+        if overwrite.type == "role" and overwrite.id in role_ids:
             denies |= overwrite.deny
             allows |= overwrite.allow
 
@@ -218,6 +216,6 @@ def permissions_for_roles(channel, *roles):
 
 
 def overwrite_from_dict(data):
-    allow = discord.Permissions(data.get('allow', 0))
-    deny = discord.Permissions(data.get('deny', 0))
+    allow = discord.Permissions(data.get("allow", 0))
+    deny = discord.Permissions(data.get("deny", 0))
     return discord.PermissionOverwrite.from_pair(allow, deny)
