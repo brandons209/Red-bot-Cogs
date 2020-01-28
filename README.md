@@ -5,7 +5,7 @@ Thank you for taking a look at my cogs, most of these are rewrites of other cogs
 
 
 ##### Activitylog
-Full V2 port with most of the cog rewritten from [calebj](https://github.com/calebj/calebj-cogs). This is an all in one logger for all sorts of discord messages and events.
+Full V2 port with most of the cog rewritten from [calebj](https://github.com/calebj/calebj-cogs). This is an all in one logger for all sorts of discord messages and events.    
 **Features:**
 - Track messages, attachments, voice channel states, audit log entries, DMs, and also who deletes messages and performs other audit log actions.
 - Customizable log file rotation.
@@ -24,15 +24,15 @@ Will be changed to standalone admin-extension, currently outdated.
 Made for a friend, pretty messy. Send custom events and log time since that event.
 
 #### Pony
-Search derpibooru for pony images. Ported from [Alzarath](https://github.com/Alzarath/Booru-Cogs).
-**Features:**
+Search derpibooru for pony images. Ported from [Alzarath](https://github.com/Alzarath/Booru-Cogs).    
+**Features:**   
 - Filter by tags.
 - Verbose mode.
 - Get random and latest image results.
 
 
 #### Punish
-Port from [calebj](https://github.com/calebj/calebj-cogs) punish cog. Functionality mostly retained. Allows adding a custom Punished role to a user to lock them out of all channels in your server except a designated one.
+Port from [calebj](https://github.com/calebj/calebj-cogs) punish cog. Functionality mostly retained. Allows adding a custom Punished role to a user to lock them out of all channels in your server except a designated one.    
 **Features:**
 - Set roles to remove when punishing to bypass per channel overrides on some roles.
 - Customize overrides for the punish role.
@@ -45,7 +45,7 @@ Modifed from [flapjax](https://github.com/flapjax/FlapJack-Cogs). Uses base of v
 
 
 #### Roleplay
-Assorted roleplay commands. Uses ASCII art.
+Assorted roleplay commands. Uses ASCII art.    
 **Features:**
 - Improved hug, don't need to @ a user nor use quotes if their name has spaces.
 - Slap.
