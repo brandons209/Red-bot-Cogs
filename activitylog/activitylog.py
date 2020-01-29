@@ -12,7 +12,7 @@ import os
 import asyncio
 import glob
 
-__version__ = "3.0.0"
+__version__ = "3.1.0"
 
 TIMESTAMP_FORMAT = "%Y-%m-%d %X"  # YYYY-MM-DD HH:MM:SS
 
@@ -159,7 +159,7 @@ class ActivityLogger(commands.Cog):
 
     @commands.command()
     @commands.guild_only()
-    @commands.cooldown(rate=1, per=10, type=commands.BucketType.user)
+    @commands.cooldown(rate=1, per=5, type=commands.BucketType.user)
     async def uinfo(self, ctx, user: discord.Member = None):
         """
         Show information about a user.
@@ -347,9 +347,16 @@ class ActivityLogger(commands.Cog):
 
     # log rotation independent
     @logs.command(name="from")
-    async def logs_channel_interval(self, ctx, channel: discord.TextChannel, *, interval: str):
+    async def logs_channel_interval(self, ctx, channel: discord.TextChannel, *, till: str):
         """
-        Logs for an entire channel going back the specified interval.
+        Logs for an entire channel going back to a specific interval or date/time.
+
+         Dates/times look like:
+            February 14 at 6pm EDT
+            2019-04-13 06:43:00 PST
+            01/20/18 at 21:00:43
+
+        times default to UTC if no timezone provided
 
          Intervals look like:
             5 minutes
@@ -360,41 +367,23 @@ class ActivityLogger(commands.Cog):
             5h30m
             (etc)
         """
-        interval = parse_timedelta(interval)
+        interval = parse_timedelta(till)
+        date = None
         if not interval:
-            await ctx.send("Invalid interval! Try again.")
-            return
+            try:
+                date = parse_time(till).replace(tzinfo=None)
+            except:
+                await ctx.send("Invalid date or interval! Try again.")
+                return
 
         guild = ctx.guild
         channel = ctx.channel
         log_files = sorted(glob.glob(os.path.join(PATH, str(guild.id), "*{}*.log".format(channel.id))), reverse=True)
 
-        end_time = datetime.utcnow() - interval
-        await self.log_sender(ctx, log_files, end_time)
-
-    @logs.command(name="till")
-    async def logs_channel_until(self, ctx, channel: discord.TextChannel, *, date: str):
-        """
-        Logs for an entire channel going back to the specified date
-
-         times look like:
-            February 14 at 6pm EDT
-            2019-04-13 06:43:00 PST
-            01/20/18 at 21:00:43
-
-        times default to UTC if no timezone provided.
-        """
-        try:
-            date = parse_time(date).replace(tzinfo=None)
-        except:
-            await ctx.send("Invalid date! Try again.")
-            return
-
-        guild = ctx.guild
-        channel = ctx.channel
-        log_files = sorted(glob.glob(os.path.join(PATH, str(guild.id), "*{}*.log".format(channel.id))), reverse=True)
-
-        end_time = date
+        if interval:
+            end_time = datetime.utcnow() - interval
+        else:
+            end_time = date
 
         await self.log_sender(ctx, log_files, end_time)
 
@@ -402,7 +391,7 @@ class ActivityLogger(commands.Cog):
     async def logs_channel_in(self, ctx, channel: discord.TextChannel, *, date: str):
         """
         Logs for an entire channel in between the specified dates
-        Seperate dates with a **semicolon**.
+        Seperate dates with a **__semicolon__**.
 
          times look like:
             February 14 at 6pm EDT
@@ -435,13 +424,20 @@ class ActivityLogger(commands.Cog):
         pass
 
     @logs_audit.command(name="from")
-    async def logs_audit_from(self, ctx, *, interval: str):
+    async def logs_audit_from(self, ctx, *, till: str):
         """
-        Audit logs for server going back interval.
+        Audit logs for server going back a time or to a specific data.
         Gets all role and name changes, mutes, etc.
         Also gets audit actions (deleting messages, bans, etc)
 
-         Intervals look like:
+        Date/times look like:
+            February 14 at 6pm EDT
+            2019-04-13 06:43:00 PST
+            01/20/18 at 21:00:43
+
+        times default to UTC if no timezone provided.
+
+        Intervals look like:
             5 minutes
             1 minute 30 seconds
             1 hour
@@ -450,42 +446,22 @@ class ActivityLogger(commands.Cog):
             5h30m
             (etc)
         """
-        interval = parse_timedelta(interval)
+        interval = parse_timedelta(till)
+        date = None
         if not interval:
-            await ctx.send("Invalid interval! Try again.")
-            return
+            try:
+                date = parse_time(till).replace(tzinfo=None)
+            except:
+                await ctx.send("Invalid date or interval! Try again.")
+                return
 
         guild = ctx.guild
         log_files = sorted(glob.glob(os.path.join(PATH, str(guild.id), "*guild*.log")), reverse=True)
 
-        end_time = datetime.utcnow() - interval
-
-        await self.log_sender(ctx, log_files, end_time)
-
-    @logs_audit.command(name="till")
-    async def logs_audit_till(self, ctx, *, date: str):
-        """
-        Audit logs for server going to a date.
-        Gets all role and name changes, mutes, etc.
-        Also gets audit actions (deleting messages, bans, etc)
-
-         times look like:
-            February 14 at 6pm EDT
-            2019-04-13 06:43:00 PST
-            01/20/18 at 21:00:43
-
-        times default to UTC if no timezone provided.
-        """
-        try:
-            date = parse_time(date)
-        except:
-            await ctx.send("Invalid date! Try again.")
-            return
-
-        guild = ctx.guild
-        log_files = sorted(glob.glob(os.path.join(PATH, str(guild.id), "*guild*.log")), reverse=True)
-
-        end_time = date
+        if interval:
+            end_time = datetime.utcnow() - interval
+        else:
+            end_time = date
 
         await self.log_sender(ctx, log_files, end_time)
 
@@ -498,7 +474,7 @@ class ActivityLogger(commands.Cog):
 
         Seperate dates with a **semicolon**.
 
-         times look like:
+        Date/times look like:
             February 14 at 6pm EDT
             2019-04-13 06:43:00 PST
             01/20/18 at 21:00:43
@@ -529,11 +505,18 @@ class ActivityLogger(commands.Cog):
         pass
 
     @logs_audit_user.command(name="from")
-    async def logs_audit_user_from(self, ctx, user: discord.Member = None, *, interval: str):
+    async def logs_audit_user_from(self, ctx, user: discord.Member, *, till: str):
         """
-        Audit logs for server from user going back interval.
+        Audit logs for server from user going back a time or to a specified date.
         Gets all role and name changes, mutes, etc.
         Also gets audit actions (deleting messages, bans, etc)
+
+        Date/times look like:
+            February 14 at 6pm EDT
+            2019-04-13 06:43:00 PST
+            01/20/18 at 21:00:43
+
+        times default to UTC if no timezone provided.
 
          Intervals look like:
             5 minutes
@@ -544,42 +527,22 @@ class ActivityLogger(commands.Cog):
             5h30m
             (etc)
         """
-        interval = parse_timedelta(interval)
+        interval = parse_timedelta(till)
+        date = None
         if not interval:
-            await ctx.send("Invalid interval! Try again.")
-            return
+            try:
+                date = parse_time(till).replace(tzinfo=None)
+            except:
+                await ctx.send("Invalid date or interval! Try again.")
+                return
 
         guild = ctx.guild
         log_files = sorted(glob.glob(os.path.join(PATH, str(guild.id), "*guild*.log")), reverse=True)
 
-        end_time = datetime.utcnow() - interval
-
-        await self.log_sender(ctx, log_files, end_time, user=user)
-
-    @logs_audit_user.command(name="till")
-    async def logs_audit_user_till(self, ctx, user: discord.Member = None, *, date: str):
-        """
-        Audit logs for server from user going back to date.
-        Gets all role and name changes, mutes, etc.
-        Also gets audit actions (deleting messages, bans, etc)
-
-         times look like:
-            February 14 at 6pm EDT
-            2019-04-13 06:43:00 PST
-            01/20/18 at 21:00:43
-
-        times default to UTC if no timezone provided.
-        """
-        try:
-            date = parse_time(date)
-        except:
-            await ctx.send("Invalid date! Try again.")
-            return
-
-        guild = ctx.guild
-        log_files = sorted(glob.glob(os.path.join(PATH, str(guild.id), "*guild*.log")), reverse=True)
-
-        end_time = date
+        if interval:
+            end_time = datetime.utcnow() - interval
+        else:
+            end_time = date
 
         await self.log_sender(ctx, log_files, end_time, user=user)
 
@@ -622,37 +585,8 @@ class ActivityLogger(commands.Cog):
         """Gets voice chat logs (leave, join, mutes, etc)"""
         pass
 
-    @logs_voice.command(name="till")
-    async def logs_voice_till(self, ctx, channel_id: int, *, date: str):
-        """
-        Logs for a voice channel going back to specified date.
-
-         times look like:
-            February 14 at 6pm EDT
-            2019-04-13 06:43:00 PST
-            01/20/18 at 21:00:43
-
-        times default to UTC if no timezone provided.
-        """
-        try:
-            date = parse_time(date)
-        except:
-            await ctx.send("Invalid date! Try again.")
-            return
-
-        guild = ctx.guild
-        channel = self.bot.get_channel(int(channel_id))
-        if not channel:
-            await ctx.send("Invalid channel!")
-            return
-        log_files = sorted(glob.glob(os.path.join(PATH, str(guild.id), "*{}*.log".format(channel.id))), reverse=True)
-
-        end_time = date
-
-        await self.log_sender(ctx, log_files, end_time)
-
     @logs_voice.command(name="from")
-    async def logs_voice_from(self, ctx, channel_id: int, *, interval: str):
+    async def logs_voice_from(self, ctx, channel_id: int, *, till: str):
         """
         Logs for a voice channel going back the specified interval.
 
@@ -665,10 +599,14 @@ class ActivityLogger(commands.Cog):
             5h30m
             (etc)
         """
-        interval = parse_timedelta(interval)
+        interval = parse_timedelta(till)
+        date = None
         if not interval:
-            await ctx.send("Invalid interval! Try again.")
-            return
+            try:
+                date = parse_time(till).replace(tzinfo=None)
+            except:
+                await ctx.send("Invalid date or interval! Try again.")
+                return
 
         guild = ctx.guild
         channel = self.bot.get_channel(channel_id)
@@ -677,7 +615,10 @@ class ActivityLogger(commands.Cog):
             return
         log_files = sorted(glob.glob(os.path.join(PATH, str(guild.id), "*{}*.log".format(channel.id))), reverse=True)
 
-        end_time = datetime.utcnow() - interval
+        if interval:
+            end_time = datetime.utcnow() - interval
+        else:
+            end_time = date
 
         await self.log_sender(ctx, log_files, end_time)
 
