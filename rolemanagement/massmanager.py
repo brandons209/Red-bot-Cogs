@@ -88,14 +88,12 @@ class MassManagementMixin(MixinMeta):
                 return False
 
             if query["anyperm"] and not any(
-                bool(value and perm in query["anyperm"])
-                for perm, value in iter(m.guild_permissions)
+                bool(value and perm in query["anyperm"]) for perm, value in iter(m.guild_permissions)
             ):
                 return False
 
             if query["notperm"] and any(
-                bool(value and perm in query["notperm"])
-                for perm, value in iter(m.guild_permissions)
+                bool(value and perm in query["notperm"]) for perm, value in iter(m.guild_permissions)
             ):
                 return False
 
@@ -126,11 +124,7 @@ class MassManagementMixin(MixinMeta):
 
     @mrole.command(name="user")
     async def mrole_user(
-        self,
-        ctx: GuildContext,
-        users: commands.Greedy[discord.Member],
-        *,
-        _query: RoleSyntaxConverter,
+        self, ctx: GuildContext, users: commands.Greedy[discord.Member], *, _query: RoleSyntaxConverter,
     ) -> None:
         """
         adds/removes roles to one or more users
@@ -150,16 +144,11 @@ class MassManagementMixin(MixinMeta):
         query = _query.parsed
         apply = query["add"] + query["remove"]
         if not await self.all_are_valid_roles(ctx, *apply):
-            await ctx.send(
-                "Either you or I don't have the required permissions "
-                "or position in the hierarchy."
-            )
+            await ctx.send("Either you or I don't have the required permissions " "or position in the hierarchy.")
             return
 
         for user in users:
-            await self.update_roles_atomically(
-                who=user, give=query["add"], remove=query["remove"]
-            )
+            await self.update_roles_atomically(who=user, give=query["add"], remove=query["remove"])
 
         await ctx.tick()
 
@@ -213,9 +202,7 @@ class MassManagementMixin(MixinMeta):
             embed = discord.Embed(description=description)
             if ctx.guild:
                 embed.color = ctx.guild.me.color
-            await ctx.send(
-                embed=embed, content=f"Search results for {ctx.author.mention}"
-            )
+            await ctx.send(embed=embed, content=f"Search results for {ctx.author.mention}")
 
         else:
             await self.send_maybe_chunked_csv(ctx, list(members))
@@ -223,9 +210,7 @@ class MassManagementMixin(MixinMeta):
     @staticmethod
     async def send_maybe_chunked_csv(ctx: GuildContext, members):
         chunk_size = 75000
-        chunks = [
-            members[i : (i + chunk_size)] for i in range(0, len(members), chunk_size)
-        ]
+        chunks = [members[i : (i + chunk_size)] for i in range(0, len(members), chunk_size)]
 
         for part, chunk in enumerate(chunks, 1):
 
@@ -246,9 +231,7 @@ class MassManagementMixin(MixinMeta):
                         "ID": member.id,
                         "Display Name": member.display_name,
                         "Username#Discrim": str(member),
-                        "Joined Server": member.joined_at.strftime(fmt)
-                        if member.joined_at
-                        else None,
+                        "Joined Server": member.joined_at.strftime(fmt) if member.joined_at else None,
                         "Joined Discord": member.created_at.strftime(fmt),
                     }
                 )
@@ -262,8 +245,7 @@ class MassManagementMixin(MixinMeta):
                 filename += f"-part{part}"
             filename += ".csv"
             await ctx.send(
-                content=f"Data for {ctx.author.mention}",
-                files=[discord.File(data, filename=filename)],
+                content=f"Data for {ctx.author.mention}", files=[discord.File(data, filename=filename)],
             )
             csvf.close()
             data.close()
@@ -302,37 +284,26 @@ class MassManagementMixin(MixinMeta):
         apply = query["add"] + query["remove"]
         if not await self.all_are_valid_roles(ctx, *apply):
             return await ctx.send(
-                "Either you or I don't have the required permissions "
-                "or position in the hierarchy."
+                "Either you or I don't have the required permissions " "or position in the hierarchy."
             )
 
         members = set(ctx.guild.members)
         members = self.search_filter(members, query)
 
         if len(members) > 100:
-            await ctx.send(
-                "This may take a while given the number of members to update."
-            )
+            await ctx.send("This may take a while given the number of members to update.")
 
         async with ctx.typing():
             for member in members:
                 try:
-                    await self.update_roles_atomically(
-                        who=member, give=query["add"], remove=query["remove"]
-                    )
+                    await self.update_roles_atomically(who=member, give=query["add"], remove=query["remove"])
                 except RoleManagementException:
                     log.debug(
-                        "Internal filter failure on member id %d guild id %d query %s",
-                        member.id,
-                        ctx.guild.id,
-                        query,
+                        "Internal filter failure on member id %d guild id %d query %s", member.id, ctx.guild.id, query,
                     )
                 except discord.HTTPException:
                     log.debug(
-                        "Unpredicted failure for member id %d in guild id %d query %s",
-                        member.id,
-                        ctx.guild.id,
-                        query,
+                        "Unpredicted failure for member id %d in guild id %d query %s", member.id, ctx.guild.id, query,
                     )
 
         await ctx.tick()

@@ -4,8 +4,10 @@ from __future__ import annotations
 class RoleManagementException(Exception):
     pass
 
+
 class PermissionOrHierarchyException(Exception):
     pass
+
 
 class MissingRequirementsException(RoleManagementException):
     def __init__(self, *, miss_any=None, miss_all=None):

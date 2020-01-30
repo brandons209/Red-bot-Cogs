@@ -26,6 +26,7 @@ TIME_RE_STRING = r"\s?".join(
 
 TIME_RE = re.compile(TIME_RE_STRING, re.I)
 
+
 def parse_timedelta(argument: str) -> timedelta:
     """
     Parses a string that contains a time interval and converts it to a timedelta object.
@@ -36,6 +37,7 @@ def parse_timedelta(argument: str) -> timedelta:
         if params:
             return timedelta(**params)
     return None
+
 
 def parse_seconds(seconds) -> str:
     """
@@ -77,11 +79,7 @@ class UtilMixin(MixinMeta):
         return variation_stripper_re.sub("", s)
 
     async def update_roles_atomically(
-        self,
-        *,
-        who: discord.Member,
-        give: List[discord.Role] = None,
-        remove: List[discord.Role] = None,
+        self, *, who: discord.Member, give: List[discord.Role] = None, remove: List[discord.Role] = None,
     ):
         """
         Give and remove roles as a single op with some slight sanity
@@ -95,10 +93,7 @@ class UtilMixin(MixinMeta):
         roles.extend([r for r in give if r not in roles])
         if sorted(roles) == sorted(who.roles):
             return
-        if (
-            any(r >= me.top_role for r in heirarchy_testing)
-            or not me.guild_permissions.manage_roles
-        ):
+        if any(r >= me.top_role for r in heirarchy_testing) or not me.guild_permissions.manage_roles:
             raise PermissionOrHierarchyException("Can't do that.")
         await who.edit(roles=roles)
 
@@ -120,10 +115,7 @@ class UtilMixin(MixinMeta):
         # Bot allowed
         if not (
             guild.me.guild_permissions.manage_roles
-            and (
-                guild.me == guild.owner
-                or all(guild.me.top_role > role for role in roles)
-            )
+            and (guild.me == guild.owner or all(guild.me.top_role > role for role in roles))
         ):
             return False
 
@@ -133,9 +125,7 @@ class UtilMixin(MixinMeta):
 
         return True
 
-    async def is_self_assign_eligible(
-        self, who: discord.Member, role: discord.Role
-    ) -> List[discord.Role]:
+    async def is_self_assign_eligible(self, who: discord.Member, role: discord.Role) -> List[discord.Role]:
         """
         Returns a list of roles to be removed if this one is added, or raises an
         exception
@@ -167,22 +157,14 @@ class UtilMixin(MixinMeta):
                     req_any_fail = []
                     break
 
-        req_all_fail = [
-            idx
-            for idx in await self.config.role(role).requires_all()
-            if not who._roles.has(idx)
-        ]
+        req_all_fail = [idx for idx in await self.config.role(role).requires_all() if not who._roles.has(idx)]
 
         if req_any_fail or req_all_fail:
-            raise MissingRequirementsException(
-                miss_all=req_all_fail, miss_any=req_any_fail
-            )
+            raise MissingRequirementsException(miss_all=req_all_fail, miss_any=req_any_fail)
 
         return None
 
-    async def check_exclusivity(
-        self, who: discord.Member, role: discord.Role
-    ) -> List[discord.Role]:
+    async def check_exclusivity(self, who: discord.Member, role: discord.Role) -> List[discord.Role]:
         """
         Returns a list of roles to remove, or raises an error
         """

@@ -28,9 +28,7 @@ class MixinMeta(ABC):
         raise NotImplementedError()
 
     @abstractmethod
-    async def is_self_assign_eligible(
-        self, who: discord.Member, role: discord.Role
-    ) -> List[discord.Role]:
+    async def is_self_assign_eligible(self, who: discord.Member, role: discord.Role) -> List[discord.Role]:
         raise NotImplementedError()
 
     @abstractmethod
