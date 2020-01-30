@@ -1074,7 +1074,8 @@ class ActivityLogger(commands.Cog):
         else:
             entry = MESSAGE_TEMPLATE.format(message)
 
-        if message.author.id != self.bot.user.id:  # don't calculate bot stats
+        # don't calculate bot stats and make sure this isnt dm message
+        if message.author.id != self.bot.user.id and isinstance(message.author, discord.Member):
             async with self.config.member(message.author).stats() as stats:
                 stats["total_msg"] += 1
                 if len(message.content) > 0 and message.content[0] in self.cache[message.guild.id]["prefixes"]:
