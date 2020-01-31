@@ -83,6 +83,8 @@ class RoleManagement(
         self._start_task: Optional[asyncio.Task] = None
         self.loop = asyncio.get_event_loop()
         self._sub_task = self.loop.create_task(self.sub_checker())
+        # remove selfrole commands since we are going to override them
+        self.bot.remove_command("selfrole")
         super().__init__()
 
     def cog_unload(self):
@@ -668,15 +670,15 @@ class RoleManagement(
 
     @checks.bot_has_permissions(manage_roles=True)
     @commands.guild_only()
-    @commands.group(name="srole", autohelp=True)
-    async def srole(self, ctx: GuildContext):
+    @commands.group(name="selfrole", autohelp=True)
+    async def selfrole(self, ctx: GuildContext):
         """
         Self assignable role commands
         """
         pass
 
-    @srole.command(name="list")
-    async def srole_list(self, ctx: GuildContext):
+    @selfrole.command(name="list")
+    async def selfrole_list(self, ctx: GuildContext):
         """
         Lists the selfroles and any associated costs.
         """
@@ -715,8 +717,8 @@ class RoleManagement(
 
         await ctx.send(embed=embed)
 
-    @srole.command(name="buy")
-    async def srole_buy(self, ctx: GuildContext, *, role: discord.Role):
+    @selfrole.command(name="buy")
+    async def selfrole_buy(self, ctx: GuildContext, *, role: discord.Role):
         """
         Purchase a role
         """
@@ -737,7 +739,7 @@ class RoleManagement(
                 return await ctx.send(f"You aren't allowed to add `{role}` to yourself {ctx.author.mention}!")
 
             if not cost:
-                return await ctx.send("This role doesn't have a cost. Please try again using `[p]srole add`.")
+                return await ctx.send("This role doesn't have a cost. Please try again using `[p]selfrole add`.")
 
             free_roles = await self.config.guild(ctx.guild).free_roles()
             currency_name = await bank.get_currency_name(ctx.guild)
@@ -764,7 +766,7 @@ class RoleManagement(
                 await self.update_roles_atomically(who=ctx.author, give=[role], remove=remove)
                 await ctx.tick()
 
-    @srole.command(name="add")
+    @selfrole.command(name="add")
     async def sadd(self, ctx: GuildContext, *, role: discord.Role):
         """
         Join a role
@@ -785,12 +787,12 @@ class RoleManagement(
                 await ctx.send(f"You aren't allowed to add `{role}` to yourself {ctx.author.mention}!")
 
             elif cost:
-                await ctx.send("This role is not free. " "Please use `[p]srole buy` if you would like to purchase it.")
+                await ctx.send("This role is not free. " "Please use `[p]selfrole buy` if you would like to purchase it.")
             else:
                 await self.update_roles_atomically(who=ctx.author, give=[role], remove=remove)
                 await ctx.tick()
 
-    @srole.command(name="remove")
+    @selfrole.command(name="remove")
     async def srem(self, ctx: GuildContext, *, role: discord.Role):
         """
         leave a role
