@@ -128,6 +128,9 @@ class ActivityLogger(commands.Cog):
         self.lock = False
         self.cache = {}
 
+        # remove userinfo since we are replacing it
+        self.bot.remove_command("userinfo")
+
     def cog_unload(self):
         self.lock = True
 
@@ -157,10 +160,10 @@ class ActivityLogger(commands.Cog):
                 for channel in guild.channels:
                     self.cache[channel.id] = self.default_channel.copy()
 
-    @commands.command()
+    @commands.command(aliases=["uinfo"])
     @commands.guild_only()
     @commands.cooldown(rate=1, per=5, type=commands.BucketType.user)
-    async def uinfo(self, ctx, user: discord.Member = None):
+    async def userinfo(self, ctx, user: discord.Member = None):
         """
         Show information about a user.
         """
