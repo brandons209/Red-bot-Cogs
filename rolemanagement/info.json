@@ -1,13 +1,14 @@
 {
     "author": [
         "mikeshardmind(Sinbad)",
-        "DiscordLiz"
+        "DiscordLiz",
+        "brandons209"
     ],
     "install_msg": "If you need help, I have a channel in https://discord.gg/mb85deu",
     "name": "RoleManagement",
     "disabled": false,
     "short": "Role searches, reactroles, requirements for roles, etc.",
-    "description": "React roles with requirements, selfroles with requirements, role based member search and more.",
+    "description": "React roles with requirements, selfroles with requirements, role based member search, subscription to roles and more.",
     "tags": [
         "react_roles",
         "react roles",
