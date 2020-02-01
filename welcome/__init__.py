@@ -4,4 +4,4 @@ from .welcome import Welcome
 
 
 def setup(bot: Red):
-    bot.add_cog(Welcome())
+    bot.add_cog(Welcome(bot=bot))

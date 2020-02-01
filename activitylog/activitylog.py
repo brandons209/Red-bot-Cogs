@@ -270,11 +270,11 @@ class ActivityLogger(commands.Cog):
         kicks = 0
         mutes = 0
         for case in cases:
-            if "mute" in case.action_str.lower():
+            if "mute" in case.action_type.lower():
                 mutes += 1
-            elif "ban" in case.action_str.lower():
+            elif "ban" in case.action_type.lower():
                 bans += 1
-            elif "kick" in case.action_str.lower():
+            elif "kick" in case.action_type.lower():
                 kicks += 1
 
         msg = "Total Number of Messages: `{}`\n".format(num_messages)
@@ -1348,6 +1348,10 @@ class ActivityLogger(commands.Cog):
             entry = "Member kicked by @{1.name}#{1.discriminator}(id:{1.id}): @{0} (id {0.id})".format(member, user)
         else:
             entry = "Member leave: @{0} (id {0.id})".format(member)
+
+        # don't clear stats right away if welcome cog is install so it can pull user stats
+        if self.bot.get_cog("Welcome"):
+            await asyncio.sleep(1)
 
         await self.config.member(member).clear()
         await self.log(member.guild, entry)

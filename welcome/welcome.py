@@ -69,8 +69,8 @@ class Welcome(commands.Cog):
     }
 
     def __init__(self, *args, **kwargs) -> None:
-        super().__init__(*args, **kwargs)
-
+        super().__init__()
+        self.bot = kwargs["bot"]
         self.config = Config.get_conf(self, 86345009)
         self.config.register_guild(**self.guild_defaults)
 
@@ -784,9 +784,16 @@ class Welcome(commands.Cog):
         else:
             roles = []
 
+        actlog = self.bot.get_cog("ActivityLogger")
+        if actlog:
+            stats = await actlog.userstats(guild, user)
+            stats = stats[0]
+        else:
+            stats = ""
+
         try:
             return await channel.send(
-                format_str.format(member=user, server=guild, bot=user, count=count or "", plural=plural, roles=roles)
+                format_str.format(member=user, server=guild, bot=user, count=count or "", plural=plural, roles=roles, stats=stats)
             )
         except discord.Forbidden:
             log.error(
