@@ -787,7 +787,9 @@ class RoleManagement(
                 await ctx.send(f"You aren't allowed to add `{role}` to yourself {ctx.author.mention}!")
 
             elif cost:
-                await ctx.send("This role is not free. " "Please use `[p]selfrole buy` if you would like to purchase it.")
+                await ctx.send(
+                    "This role is not free. " "Please use `[p]selfrole buy` if you would like to purchase it."
+                )
             else:
                 await self.update_roles_atomically(who=ctx.author, give=[role], remove=remove)
                 await ctx.tick()

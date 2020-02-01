@@ -793,7 +793,9 @@ class Welcome(commands.Cog):
 
         try:
             return await channel.send(
-                format_str.format(member=user, server=guild, bot=user, count=count or "", plural=plural, roles=roles, stats=stats)
+                format_str.format(
+                    member=user, server=guild, bot=user, count=count or "", plural=plural, roles=roles, stats=stats
+                )
             )
         except discord.Forbidden:
             log.error(

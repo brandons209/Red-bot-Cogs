@@ -5,8 +5,10 @@ import discord
 
 from collections import defaultdict
 
+
 class PoorError(commands.CommandError):
     pass
+
 
 # 0 -> member, 1 -> guild
 NEW_RECEIPT_MESSAGE = "Hello {0.mention}! This is will be your receipt for commands you pay for in {1.name}.\nThe message below will auto update as you pay for commands. I will pin the message for you so you can refer back to this to track your spending."
@@ -16,12 +18,14 @@ RECEIPT_MESSAGE = "{0}. {1}: {2} {3}\n"
 
 MAX_MSG_LEN = 2000
 
+
 class CostManager(commands.Cog):
     """
     Allows customizing costs for any commands loaded into read,
     and also set users who are exempt from costs on a per member or per role level.
     Hierarchy: user > role > guild_role
     """
+
     def __init__(self, bot):
         self.bot = bot
         self.config = Config.get_conf(self, identifier=13291493293, force_registration=True)
@@ -34,10 +38,7 @@ class CostManager(commands.Cog):
         #    },
         #    ...
         # }
-        default_guild = {
-            "FREE_ROLES": [],
-            "COMMANDS": {}
-        }
+        default_guild = {"FREE_ROLES": [], "COMMANDS": {}}
         self.config.register_guild(**default_guild)
         self.config.register_member(receipt=0)
         self.bot.before_invoke(self.cost_checker)
@@ -88,7 +89,7 @@ class CostManager(commands.Cog):
         # check role cost, choose lowest cost if mutliple roles found.
         elif found_roles:
             cost = min([command_data["role_ids"][r] for r in found_roles])
-        else: # get normal cost for command and check guild free roles
+        else:  # get normal cost for command and check guild free roles
             cost = command_data["cost"]
             found_roles = set(guild_data["FREE_ROLES"]) & member_roles
             if found_roles:
@@ -123,8 +124,10 @@ class CostManager(commands.Cog):
             try:
                 await channel.send(NEW_RECEIPT_MESSAGE.format(member, guild))
             except:
-                if receipt != -1: # send mention if first time getting this message
-                    await ctx.send(f"Hey {member.mention}, please turn on DMs from server members in your settings so I can send you receipts for purchase of commands.")
+                if receipt != -1:  # send mention if first time getting this message
+                    await ctx.send(
+                        f"Hey {member.mention}, please turn on DMs from server members in your settings so I can send you receipts for purchase of commands."
+                    )
 
                     await self.config.member(member).receipt.set(-1)
                 return
@@ -283,7 +286,9 @@ class CostManager(commands.Cog):
                 not_found = len([r for r in curr if r is None])
                 curr = [r.name for r in curr if curr is not None]
                 if not_found:
-                    await ctx.send(f"{not_found} roles weren't found, please run {ctx.prefix}costset clear to remove these roles.\nFree Roles: {self.format_list(*curr)}")
+                    await ctx.send(
+                        f"{not_found} roles weren't found, please run {ctx.prefix}costset clear to remove these roles.\nFree Roles: {self.format_list(*curr)}"
+                    )
                 else:
                     await ctx.send(f"Free Roles: {self.format_list(*curr)}")
             return
@@ -307,7 +312,9 @@ class CostManager(commands.Cog):
             found.add(role)
 
         if not_found:
-            await ctx.send(warning("These roles weren't found, please try again: {}".format(self.format_list(*not_found))))
+            await ctx.send(
+                warning("These roles weren't found, please try again: {}".format(self.format_list(*not_found)))
+            )
             return
 
         async with self.config.guild(ctx.guild).FREE_ROLES() as free:
@@ -376,7 +383,6 @@ class CostManager(commands.Cog):
             currency_name = await bank.get_currency_name(ctx.guild)
             await ctx.send(f"{command} costs `{cost}` {currency_name} for you.")
 
-
     @commands.Cog.listener()
     async def on_member_remove(self, member):
         await self.clean_data(member.guild)
@@ -392,4 +398,6 @@ class CostManager(commands.Cog):
             cost = await self.get_cost(ctx)
             currency_name = await bank.get_currency_name(ctx.guild)
             balance = await bank.get_balance(ctx.author)
-            await ctx.send(f"Sorry {ctx.author.name}, you do not have enough {currency_name} to use that command. (Cost: {cost}, Balance: {balance})")
+            await ctx.send(
+                f"Sorry {ctx.author.name}, you do not have enough {currency_name} to use that command. (Cost: {cost}, Balance: {balance})"
+            )
