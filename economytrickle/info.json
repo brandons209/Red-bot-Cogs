@@ -1,0 +1,14 @@
+{
+    "author": [
+        "mikeshardmind(Sinbad)",
+        "DiscordLiz",
+        "Brandons209"
+    ],
+    "install_msg": "Cog currently in development. Use at your own risk.",
+    "name": "EconomyTrickle",
+    "disabled": false,
+    "short": "Trickle money into user's account on activity.",
+    "description": "Trickle money into user's account on activity, modified by Brandons209 from Sinbad.",
+    "hidden": false,
+    "min_bot_version": "3.1.8"
+}
