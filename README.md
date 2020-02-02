@@ -42,7 +42,7 @@ More admin commands that provide various functionality.
 - Set a role to be pingable for a specific amount of time.
 - Hidden say and selfdm commands for setting helpful aliases with these commands.
 - Send, send attachment, edit, and get commands for bot's messages. Useful for sending rules by the bot so that anyone can edit those.
-- List all users with a role quickly and easily.
+- List all users with a role/roles quickly and easily.
 
 
 #### Pony
@@ -57,7 +57,7 @@ Search derpibooru for pony images. Ported from [Alzarath](https://github.com/Alz
 Port from [calebj](https://github.com/calebj/calebj-cogs) punish cog. Functionality mostly retained. Allows adding a custom Punished role to a user to lock them out of all channels in your server except a designated one.    
 **Features:**
 - Set roles to remove when punishing to bypass per channel overrides on some roles.
-- Customize overrides for the punish role.
+- Customize channel overrides for the punish role.
 - Creates modlog cases for punishments.
 - Log cases created/updated when manually adding or removing role without the command.
 

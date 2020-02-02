@@ -695,3 +695,8 @@ class MoreAdmin(commands.Cog):
                     stats["bot_cmd"] += data["bot_cmd"]
                     stats["avg_len"] += data["avg_len"]
                     stats["vc_time_sec"] += data["vc_time_sec"]
+
+                async with act_log.config.user(member).past_names() as past_names:
+                    for name in data["past_names"]:
+                        if name not in past_names:
+                            past_names.append(name)
