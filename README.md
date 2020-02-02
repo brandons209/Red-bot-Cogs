@@ -7,21 +7,43 @@ Thank you for taking a look at my cogs, most of these are rewrites of other cogs
 ##### Activitylog
 Full V2 port with most of the cog rewritten from [calebj](https://github.com/calebj/calebj-cogs). This is an all in one logger for all sorts of discord messages and events.    
 **Features:**
-- Track messages, attachments, voice channel states, audit log entries, DMs, and also who deletes messages and performs other audit log actions.
+- Track messages, attachments (url or download), voice channel states, audit log entries, DMs, and also who deletes messages and performs other audit log actions.
 - Customizable log file rotation.
 - Global/per guild/per channel logging preferences
-- Pull logs for a  channel or audit logs, with customizable time ranges either in specifying exact dates or an interval from the current time.
+- Pull logs for a channel or audit logs, with customizeable time ranges either in specifying exact dates or an interval from the current time.
 - Track user statistics (how many messages sent, how many bot commands, how long in voice chats) per guild.
 - Track username changes globally.
 - Upgraded userinfo command that includes user stats and number of bans, mutes, and kicks.
 
 
-#### AdminCustom
-Will be changed to standalone admin-extension, currently outdated.
+#### Cost Manager
+Allows dynamically setting costs for any commands registered to Red. Supports setting costs on a hierarchy that follows user > role > guild. Also can set guild wide roles that can use commands for free, and overriding these for certain commands. It also sends receipts to users and edits that message as they run commands so they can track their spending.    
+**Warning:** from the way its setup, it will print a custom exception message to console every time a user tries running a command but doesn't have enough money. It's the only way I figured out how to get the command to cancel before invoke, raising an exception. I am currently figuring out how to add a permission hook instead to cancel the command without needed to raise an error. Currently the hook won't process removing credits from a user.    
+**Features:**
+- DM receipts will only notify the user once if it fails to send the message.
+- Follows hierarchy, checks user cost first, then role cost, then guild wide cost and guild wide free roles.
+
+
+#### Economy Trickle
+Currently rewriting parts from [Sinbad](https://github.com/mikeshardmind/SinbadCogs). Nothing changed yet.
 
 
 #### Events
-Made for a friend, pretty messy. Send custom events and log time since that event.
+Made for a friend, pretty messy. Send custom events and log time since that event. Unsupported and won't be updated for much else.
+
+
+#### MoreAdmin
+More admin commands that provide various functionality.    
+**Features**:
+- Purge(kick) inactive users with a specific role. Can purge by last message or account age. DM's user with a notice of removal and an invite link to rejoin the guild. Logs purges to modlog.
+- Set channel to display online/total users for guild.
+- Log "suspicious" users who join. Suspicious users are new accounts, threshold to determine an account as new can be set.
+- Give and remove roles based on user's currents roles. This allows setting a role to be giveable by users who have a specific set role.
+- Set a role to be pingable for a specific amount of time.
+- Hidden say and selfdm commands for setting helpful aliases with these commands.
+- Send, send attachment, edit, and get commands for bot's messages. Useful for sending rules by the bot so that anyone can edit those.
+- List all users with a role quickly and easily.
+
 
 #### Pony
 Search derpibooru for pony images. Ported from [Alzarath](https://github.com/Alzarath/Booru-Cogs).    
@@ -41,20 +63,25 @@ Port from [calebj](https://github.com/calebj/calebj-cogs) punish cog. Functional
 
 
 #### ReactPoll
-Modifed from [flapjax](https://github.com/flapjax/FlapJack-Cogs). Uses base of v2 version ported to v3, with the added functionality of watching reactions on polls to enforce one vote per user and no custom reactions adding. Also supports saving polls to disk incase bot shutdowns during poll.
+Modified from [flapjax](https://github.com/flapjax/FlapJack-Cogs). Uses base of v2 version ported to v3, with the added functionality of watching reactions on polls to enforce one vote per user and no custom reactions adding. Also supports saving polls to disk in case bot shutdowns during poll and resumes them on boot.
+
+
+#### Role Management
+Modified from [Sinbad](https://github.com/mikeshardmind/SinbadCogs). Adds in subscription based roles which renew every customized interval. Also allows settings messages through DM to users who obtain a specific role (such as role info). Renames srole to selfrole and removes Red's default selfrole, and makes listing roles a bit prettier.
 
 
 #### Roleplay
 Assorted roleplay commands. Uses ASCII art.    
 **Features:**
 - Improved hug, don't need to @ a user nor use quotes if their name has spaces.
-- Slap.
-- IQ test.
+- Slap users, with customizeable slaps.
+- IQ test, with customizeable messages.
 - Army (for [Champions of Equestria use only](http://discord.championsofequestria.town))
 - Boop.
 - Bap.
-- Improved Flip.
+- Improved Flip don't need to @ a user nor use quotes if their name has spaces.
 
 
 #### Welcome
 Modified from [tmerc](https://github.com/tmercswims/tmerc-cogs), adding a nicely formatted role list as an option for messages. Feature submitted to tmerc.
+- Also adds integration with my activitylog cog, allowing posting of user stats in welcome messages. (Such as leaving and wanting to know how active a person was when they leave.)

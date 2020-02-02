@@ -16,7 +16,7 @@ import json
 
 
 class RolePlay(commands.Cog):
-    def __init__(self):
+    def __init__(self, bot):
         super().__init__()
 
         mass_mentions = True
@@ -57,6 +57,9 @@ class RolePlay(commands.Cog):
         }
 
         self.config.register_guild(**self.default_guild)
+        # remove commands we are replacing
+        bot.remove_command("hug")
+        bot.remove_command("flip")
 
     @commands.command()
     @commands.guild_only()
@@ -382,7 +385,7 @@ class RolePlay(commands.Cog):
             msg = ""
             if user.id == ctx.bot.user.id:
                 user = ctx.author
-                msg = _("Nice try. You think this is funny?\n How about *this* instead:\n\n")
+                msg = "Nice try. You think this is funny?\n How about *this* instead:\n\n"
             char = "abcdefghijklmnopqrstuvwxyz"
             tran = "ɐqɔpǝɟƃɥᴉɾʞlɯuodbɹsʇnʌʍxʎz"
             table = str.maketrans(char, tran)
@@ -393,4 +396,4 @@ class RolePlay(commands.Cog):
             name = name.translate(table)
             await ctx.send(msg + "(╯°□°）╯︵ " + name[::-1])
         else:
-            await ctx.send(_("*flips a coin and... ") + choice([_("HEADS!*"), _("TAILS!*")]))
+            await ctx.send("*flips a coin and... " + choice(["HEADS!*", "TAILS!*"]))

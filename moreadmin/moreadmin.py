@@ -465,12 +465,12 @@ class MoreAdmin(commands.Cog):
         else:
             await ctx.send("Cancelled.")
 
-    @commands.command()
+    @commands.command(hidden=True)
     @commands.guild_only()
     async def say(self, ctx, *, content: str):
         await ctx.send(escape(content, mass_mentions=True))
 
-    @commands.command()
+    @commands.command(hidden=True)
     @commands.guild_only()
     async def selfdm(self, ctx, *, content: str):
         try:

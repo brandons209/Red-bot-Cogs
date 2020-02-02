@@ -428,8 +428,6 @@ class RoleManagement(
         if rsets["exclusive_to"]:
             rstring = ", ".join(r.name for r in ctx.guild.roles if r.id in rsets["exclusive_to"])
             output += f"\nThis role is mutually exclusive to the following roles: {rstring}"
-        if rsets["dm_msg"]:
-            output += f"\nDM Message: {box(dm_msg)}"
         if rsets["cost"]:
             curr = await bank.get_currency_name(ctx.guild)
             cost = rsets["cost"]
@@ -440,6 +438,10 @@ class RoleManagement(
         if rsets["subscription"]:
             s = rsets["subscription"]
             output += f"\nThis role has a subscription time of: {parse_seconds(s)}"
+
+        if rsets["dm_msg"]:
+            dm_msg = rsets["dm_msg"]
+            output += f"\nDM Message: {box(dm_msg)}"
 
         for page in pagify(output):
             await ctx.send(page)
