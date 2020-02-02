@@ -72,6 +72,7 @@ class RoleManagement(
             cost=0,
             subscription=0,
             subscribed_users={},
+            dm_msg=None,
         )  # subscribed_users maps str(user.id)-> end time in unix timestamp
         self.config.register_member(roles=[], forbidden=[])
         self.config.init_custom("REACTROLE", 2)
@@ -381,6 +382,30 @@ class RoleManagement(
             else:
                 await ctx.send(page)
 
+    @rgroup.command(name="dm-message")
+    async def rg_dm_message(self, ctx: GuildContext, role: discord.Role, *, msg: str = None):
+        """
+        Set message to DM to user when they obtain the role.
+        Will send it in the channel they ran the command if DM fails to send.
+
+        Run with no message to get the current message of the role.
+        Set message to message_clear to clear the message for the role.
+        """
+        if not msg:
+            curr = await self.config.role(role).dm_msg()
+            if not curr:
+                await ctx.send("No message set for that role.")
+            else:
+                await ctx.send(curr)
+            return
+        elif msg.lower() == "message_clear":
+            await self.config.role(role).dm_msg.set(None)
+            await ctx.tick()
+            return
+
+        await self.config.role(role).dm_msg.set(msg)
+        await ctx.tick()
+
     @rgroup.command(name="viewrole")
     async def rg_view_role(self, ctx: GuildContext, *, role: discord.Role):
         """
@@ -403,6 +428,8 @@ class RoleManagement(
         if rsets["exclusive_to"]:
             rstring = ", ".join(r.name for r in ctx.guild.roles if r.id in rsets["exclusive_to"])
             output += f"\nThis role is mutually exclusive to the following roles: {rstring}"
+        if rsets["dm_msg"]:
+            output += f"\nDM Message: {box(dm_msg)}"
         if rsets["cost"]:
             curr = await bank.get_currency_name(ctx.guild)
             cost = rsets["cost"]
@@ -764,6 +791,7 @@ class RoleManagement(
                             s.append(role.id)
 
                 await self.update_roles_atomically(who=ctx.author, give=[role], remove=remove)
+                await self.dm_user(ctx, role)
                 await ctx.tick()
 
     @selfrole.command(name="add")
@@ -792,6 +820,7 @@ class RoleManagement(
                 )
             else:
                 await self.update_roles_atomically(who=ctx.author, give=[role], remove=remove)
+                await self.dm_user(ctx, role)
                 await ctx.tick()
 
     @selfrole.command(name="remove")
@@ -850,6 +879,20 @@ class RoleManagement(
 
                 react_m = f"{role.name} is bound to {emoji} on {link}"
                 yield react_m
+
+    async def dm_user(self, ctx: GuildContext, role: discord.Role):
+        """
+        DM user if dm_msg set for role.
+        """
+        dm_msg = await self.config.role(role).dm_msg()
+        if not dm_msg:
+            return
+
+        try:
+            await ctx.author.send(dm_msg)
+        except:
+            await ctx.send(f"Hey {ctx.author.mention}, please allow server members to DM you so I can send you messages! Here is the message for this role:")
+            await ctx.send(dm_msg)
 
     async def get_react_role_entries(self, role: discord.Role) -> AsyncIterator[Tuple[str, str, dict]]:
         """

@@ -3,8 +3,6 @@ from redbot.core import Config, checks, commands, bank
 from redbot.core.bot import Red
 import discord
 
-from collections import defaultdict
-
 
 class PoorError(commands.CommandError):
     pass
@@ -367,6 +365,7 @@ class CostManager(commands.Cog):
             await ctx.send(box(m, lang="python"))
 
     @commands.command(name="cost")
+    @commands.guild_only()
     async def get_cost_command(self, ctx, command: str):
         """
         Get cost of a command.
