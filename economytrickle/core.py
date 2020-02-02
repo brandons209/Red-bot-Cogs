@@ -24,9 +24,7 @@ class EconomyTrickle(commands.Cog):
     def __init__(self, bot, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.bot = bot
-        self.config = Config.get_conf(
-            self, identifier=78631113035100160, force_registration=True
-        )
+        self.config = Config.get_conf(self, identifier=78631113035100160, force_registration=True)
         self.config.register_guild(
             active=False,
             mode="blacklist",
@@ -65,9 +63,7 @@ class EconomyTrickle(commands.Cog):
                 if g.id in data and data[g.id]["active"]:
                     minutes[g] += 1
                     if minutes[g] % data[g.id]["interval"]:
-                        tsk = self.bot.loop.create_task(
-                            self.do_rewards_for(g, now, data[g.id])
-                        )
+                        tsk = self.bot.loop.create_task(self.do_rewards_for(g, now, data[g.id]))
                         self.extra_tasks.append(tsk)
 
     async def do_rewards_for(self, guild: discord.Guild, now: datetime, data: dict):
@@ -92,11 +88,7 @@ class EconomyTrickle(commands.Cog):
                 with contextlib.suppress(AttributeError):
                     return mem.voice.channel.id in data["whitelist"] and not mem.bot
 
-        has_active_message = set(
-            self.recordhandler.get_active_for_guild(
-                guild=guild, after=after, message_check=mpred
-            )
-        )
+        has_active_message = set(self.recordhandler.get_active_for_guild(guild=guild, after=after, message_check=mpred))
 
         is_active_voice = {m for m in guild.members if vpred(m)}
 
@@ -200,9 +192,7 @@ class EconomyTrickle(commands.Cog):
         await ctx.tick()
 
     @ect.command(name="addchan")
-    async def rset_add_chan(
-        self, ctx, *channels: Union[discord.TextChannel, discord.VoiceChannel]
-    ):
+    async def rset_add_chan(self, ctx, *channels: Union[discord.TextChannel, discord.VoiceChannel]):
         """
         Adds one or more channels to the current mode's settings
         """
@@ -213,9 +203,7 @@ class EconomyTrickle(commands.Cog):
         gsets = await self.config.guild(ctx.guild).all()
         mode = gsets["mode"]
         if not mode:
-            return await ctx.send(
-                f"You need to set a mode using `{ctx.clean_prefix}redirectset mode` first"
-            )
+            return await ctx.send(f"You need to set a mode using `{ctx.clean_prefix}redirectset mode` first")
 
         for channel in channels:
             if channel.id not in gsets[mode]:
@@ -225,9 +213,7 @@ class EconomyTrickle(commands.Cog):
         await ctx.tick()
 
     @ect.command(name="remchan")
-    async def rset_rem_chan(
-        self, ctx, *channels: Union[discord.TextChannel, discord.VoiceChannel]
-    ):
+    async def rset_rem_chan(self, ctx, *channels: Union[discord.TextChannel, discord.VoiceChannel]):
         """
         removes one or more channels from the current mode's settings
         """
@@ -238,9 +224,7 @@ class EconomyTrickle(commands.Cog):
         gsets = await self.config.guild(ctx.guild).all()
         mode = gsets["mode"]
         if not mode:
-            return await ctx.send(
-                f"You need to set a mode using `{ctx.clean_prefix}trickleset mode` first"
-            )
+            return await ctx.send(f"You need to set a mode using `{ctx.clean_prefix}trickleset mode` first")
 
         for channel in channels:
             while channel.id in gsets[mode]:

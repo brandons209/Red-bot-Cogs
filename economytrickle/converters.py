@@ -32,9 +32,7 @@ def settings_converter(user_input: str) -> dict:
             assert args["interval"] == int(args["interval"])
             assert args["interval"] >= 5
         except AssertionError:
-            raise commands.BadArgument(
-                "Interval must be an integer value 5 or greater"
-            ) from None
+            raise commands.BadArgument("Interval must be an integer value 5 or greater") from None
 
     for value in (
         "econ_per_interval",
@@ -49,19 +47,13 @@ def settings_converter(user_input: str) -> dict:
             try:
                 assert args[value] == int(args[value]) and args[value] >= 0
             except AssertionError:
-                raise commands.BadArgument(
-                    f"{value} must be a non-negative integer value"
-                )
+                raise commands.BadArgument(f"{value} must be a non-negative integer value")
 
     for value in ("maximum_level", "maximum_bonus"):
         if value in args:
             try:
-                assert args[value] is None or (
-                    args[value] == int(args[value]) and args[value] >= 0
-                )
+                assert args[value] is None or (args[value] == int(args[value]) and args[value] >= 0)
             except AssertionError:
-                raise commands.BadArgument(
-                    f"{value} must be a non-negative integer value or `null`"
-                )
+                raise commands.BadArgument(f"{value} must be a non-negative integer value or `null`")
 
     return args
