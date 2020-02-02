@@ -642,6 +642,24 @@ class MoreAdmin(commands.Cog):
             await channel.send(embed=data)
 
     ### DATA LOADING FROM V2, WILL REMOVE LATER ###
+    @commands.command(name="loadcasino")
+    @checks.is_owner()
+    async def loadcasino(self, ctx, *, path: str):
+        import json
+        from redbot.core import bank
+
+        with open(path, "r") as f:
+            settings = json.load(f)
+
+            for guild_id, member_data in settings.items():
+                guild = self.bot.get_guild(int(guild_id))
+                for mid, mdata in member_data["Players"].items():
+                    user = guild.get_member(int(mid))
+                    try:
+                        await bank.deposit_credits(user, mdata["Chips"])
+                    except Exception as e:
+                        print(e)
+
     @commands.command(name="loadecon")
     @checks.is_owner()
     async def load_econ(self, ctx, *, path: str):
