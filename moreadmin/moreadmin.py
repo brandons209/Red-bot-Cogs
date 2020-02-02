@@ -28,6 +28,7 @@ TIME_RE = re.compile(TIME_RE_STRING, re.I)
 
 PURGE_DM_MESSAGE = "**__Notice of automatic inactivity removal__**\n\nYou have been kicked from {0.name} for lack of activity in the server; this is merely routine, and you are welcome to join back here: {1}"
 
+
 def parse_timedelta(argument: str) -> Optional[timedelta]:
     matches = TIME_RE.match(argument)
     if matches:
@@ -46,15 +47,9 @@ class MoreAdmin(commands.Cog):
         self.bot = bot
         self.config = Config.get_conf(self, identifier=213438438248, force_registration=True)
 
-        default_guild = {
-            "user_count_channel": None,
-            "sus_user_channel": None,
-            "sus_user_threshold": None
-        }
+        default_guild = {"user_count_channel": None, "sus_user_channel": None, "sus_user_threshold": None}
 
-        default_role = {
-            "addable": [] # role ids who can add this role
-        }
+        default_role = {"addable": []}  # role ids who can add this role
         self.config.register_role(**default_role)
         self.config.register_guild(**default_guild)
         self.loop = asyncio.get_event_loop()
@@ -140,7 +135,9 @@ class MoreAdmin(commands.Cog):
                 await ctx.send("No channel defined.")
                 return
 
-            await ctx.send(f"Would you like to clear the current channel? ({ctx.guild.get_channel(curr_channel).mention})")
+            await ctx.send(
+                f"Would you like to clear the current channel? ({ctx.guild.get_channel(curr_channel).mention})"
+            )
             try:
                 await self.bot.wait_for("message", check=pred, timeout=30)
             except asyncio.TimeoutError:
@@ -171,7 +168,9 @@ class MoreAdmin(commands.Cog):
                 await ctx.send("No channel defined.")
                 return
 
-            await ctx.send(f"Would you like to clear the current channel? ({ctx.guild.get_channel(curr_channel).mention})")
+            await ctx.send(
+                f"Would you like to clear the current channel? ({ctx.guild.get_channel(curr_channel).mention})"
+            )
             try:
                 await self.bot.wait_for("message", check=pred, timeout=30)
             except asyncio.TimeoutError:
@@ -274,7 +273,6 @@ class MoreAdmin(commands.Cog):
             msg += "Removed: {}".format(humanize_list(list(removed)))
 
         await ctx.send(msg)
-
 
     @commands.command(name="giverole")
     @checks.mod_or_permissions(manage_roles=True)
@@ -397,7 +395,7 @@ class MoreAdmin(commands.Cog):
             if role in member.roles:
                 if check_messages:
                     last_msg = last_msgs.get(member.id, -1)
-                    if last_msg == -1: # shouldn't happen, but just a sanity check
+                    if last_msg == -1:  # shouldn't happen, but just a sanity check
                         errored.append(member)
                     elif (ctx.message.created_at - last_msg.created_at) > threshold:
                         to_purge.append(member)
@@ -407,7 +405,9 @@ class MoreAdmin(commands.Cog):
 
         if errored:
             errored = [m.mention for m in errored]
-            await ctx.send(f"Some user's last message could not be found. Please check them manually:\n\n{humanize_list(errored)}")
+            await ctx.send(
+                f"Some user's last message could not be found. Please check them manually:\n\n{humanize_list(errored)}"
+            )
 
         if not to_purge:
             await ctx.send("No one to purge.")
@@ -450,13 +450,15 @@ class MoreAdmin(commands.Cog):
                     _purge = user.joined_at
                     msg = "Account Age"
 
-                _purge = (ctx.message.created_at - _purge)
+                _purge = ctx.message.created_at - _purge
                 _purge = parse_seconds(_purge.total_seconds())
                 threshold = parse_seconds(threshold.total_seconds())
                 reason = f"Purged by moreadmins cog. {msg}: {_purge}, Threshold: {threshold}"
 
                 await user.kick(reason=reason)
-                await modlog.create_case(self.bot, guild, ctx.message.created_at, "Purge", user, moderator=ctx.author, reason=reason)
+                await modlog.create_case(
+                    self.bot, guild, ctx.message.created_at, "Purge", user, moderator=ctx.author, reason=reason
+                )
 
             await ctx.send(f"Purge completed. Took {parse_seconds(time.time() - start_time)}.")
 
@@ -474,7 +476,9 @@ class MoreAdmin(commands.Cog):
         try:
             await ctx.author.send(content)
         except:
-            await ctx.send("I couldn't send you the DM, make sure to turn on messages from server members! Here is the message:")
+            await ctx.send(
+                "I couldn't send you the DM, make sure to turn on messages from server members! Here is the message:"
+            )
             await ctx.send(content)
 
     @commands.command()
@@ -555,7 +559,6 @@ class MoreAdmin(commands.Cog):
             await ctx.send("(no message content)")
         else:
             await ctx.send("{}".format(escape(message.content, formatting=True, mass_mentions=True)))
-
 
     @commands.command()
     @commands.guild_only()
@@ -644,6 +647,7 @@ class MoreAdmin(commands.Cog):
     async def load_econ(self, ctx, *, path: str):
         import json
         from redbot.core import bank
+
         with open(path, "r") as f:
             settings = json.load(f)
 
@@ -660,6 +664,7 @@ class MoreAdmin(commands.Cog):
     @checks.is_owner()
     async def load_stats(self, ctx, *, path: str):
         import json
+
         act_log = self.bot.get_cog("ActivityLogger")
         with open(path, "r") as f:
             settings = json.load(f)

@@ -891,7 +891,9 @@ class RoleManagement(
         try:
             await ctx.author.send(dm_msg)
         except:
-            await ctx.send(f"Hey {ctx.author.mention}, please allow server members to DM you so I can send you messages! Here is the message for this role:")
+            await ctx.send(
+                f"Hey {ctx.author.mention}, please allow server members to DM you so I can send you messages! Here is the message for this role:"
+            )
             await ctx.send(dm_msg)
 
     async def get_react_role_entries(self, role: discord.Role) -> AsyncIterator[Tuple[str, str, dict]]:

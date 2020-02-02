@@ -54,6 +54,7 @@ def parse_seconds(seconds) -> str:
 
     return ", ".join(msg)
 
+
 def role_from_string(guild, role_name):
 
     role = discord.utils.find(lambda r: r.name == role_name, guild.roles)
