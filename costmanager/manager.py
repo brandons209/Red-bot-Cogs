@@ -1,10 +1,9 @@
 from redbot.core.utils.chat_formatting import *
 from redbot.core import Config, checks, commands, bank
-from redbot.core.bot import Red
 import discord
 
 
-class PoorError(commands.CommandError):
+class PoorError(commands.CheckFailure):
     pass
 
 

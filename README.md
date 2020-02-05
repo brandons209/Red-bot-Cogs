@@ -18,10 +18,13 @@ Full V2 port with most of the cog rewritten from [calebj](https://github.com/cal
 
 #### Cost Manager
 Allows dynamically setting costs for any commands registered to Red. Supports setting costs on a hierarchy that follows user > role > guild. Also can set guild wide roles that can use commands for free, and overriding these for certain commands. It also sends receipts to users and edits that message as they run commands so they can track their spending.    
-**Warning:** from the way its setup, it will print a custom exception message to console every time a user tries running a command but doesn't have enough money. It's the only way I figured out how to get the command to cancel before invoke, raising an exception. I am currently figuring out how to add a permission hook instead to cancel the command without needed to raise an error. Currently the hook won't process removing credits from a user.    
 **Features:**
 - DM receipts will only notify the user once if it fails to send the message.
 - Follows hierarchy, checks user cost first, then role cost, then guild wide cost and guild wide free roles.
+
+
+#### Disable
+Disable all bot commands except for admins in a guild. Customizable error message.
 
 
 #### Economy Trickle
@@ -67,7 +70,15 @@ Modified from [flapjax](https://github.com/flapjax/FlapJack-Cogs). Uses base of 
 
 
 #### Role Management
-Modified from [Sinbad](https://github.com/mikeshardmind/SinbadCogs). Adds in subscription based roles which renew every customized interval. Also allows settings messages through DM to users who obtain a specific role (such as role info). Renames srole to selfrole and removes Red's default selfrole, and makes listing roles a bit prettier.
+Modified from [Sinbad](https://github.com/mikeshardmind/SinbadCogs).    
+**Features:***
+- Adds in subscription based roles which renew every customized interval.
+- Allows settings messages through DM to users who obtain a specific role (such as role info).
+- Renames srole to selfrole and removes Red's default selfrole.
+**In progress:**
+- Makes listing roles a bit prettier.
+- Allow setting roles to automatically add on guild join.
+- Enhance exclusive roles, allow setting custom role groups where the bot enforces only one role to be on a user at a time, even if it isn't a selfrole. The bot will automatically remove the old role if a new role from the same group is added. Also lists name of role group in list command to make it clearer.
 
 
 #### Roleplay
