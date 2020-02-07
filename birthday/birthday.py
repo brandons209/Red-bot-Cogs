@@ -6,6 +6,7 @@ import datetime
 import discord
 import itertools
 
+
 from redbot.core import commands, Config, checks
 from redbot.core.bot import Red
 from redbot.core.config import Group
@@ -14,16 +15,20 @@ from redbot.core.commands import Context, Cog
 
 T_ = Translator("Birthdays", __file__)
 
+
 def _(s):
     def func(*args, **kwargs):
         real_args = list(args)
         real_args.pop(0)
         return T_(s).format(*real_args, **kwargs)
+
     return func
+
 
 @cog_i18n(T_)
 class Birthdays(Cog):
     """Announces people's birthdays and gives them a birthday role for the whole day"""
+
     __author__ = "PancakeSparkle#8243"
 
     # Just some constants
@@ -39,10 +44,12 @@ class Birthdays(Cog):
     ROLE_SET = _("<:aureliaagree:616091883013144586> The birthday role on **{g}** has been set to: **{r}**.")
     BDAY_INVALID = _(":x: The birthday date you entered is invalid. It must be `MM-DD`.")
     BDAY_SET = _("<:aureliaagree:616091883013144586> Your birthday has been set to: **{}**.")
-    CHANNEL_SET = _("<:aureliaagree:616091883013144586> "
-                    "The channel for announcing birthdays on **{g}** has been set to: **{c}**.")
+    CHANNEL_SET = _(
+        "<:aureliaagree:616091883013144586> "
+        "The channel for announcing birthdays on **{g}** has been set to: **{c}**."
+    )
     BDAY_REMOVED = _(":put_litter_in_its_place: Your birthday has been removed.")
-
+    BDAY_DM = _(":tada: Aurelia wishes you a very happy birthday! :tada:")
 
     def __init__(self, bot):
         super().__init__()
@@ -63,9 +70,9 @@ class Birthdays(Cog):
             while self == self.bot.get_cog(self.__class__.__name__):
                 now = datetime.datetime.utcnow()
                 tomorrow = (now + datetime.timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
-                await asyncio.sleep((tomorrow - now).total_seconds())
                 await self.clean_yesterday_bdays()
                 await self.do_today_bdays()
+                await asyncio.sleep((tomorrow - now).total_seconds())
 
     def cog_unload(self):
         self.bday_loop.cancel()
@@ -103,7 +110,7 @@ class Birthdays(Cog):
         await message.channel.send(self.BDAY_REMOVED())
 
     @bday.command(name="set")
-    async def bday_set(self, ctx: Context, date, year: int=None):
+    async def bday_set(self, ctx: Context, date, year: int = None):
         """Sets your birthday date
 
         The given date must be given as: MM-DD
@@ -117,7 +124,7 @@ class Birthdays(Cog):
             await channel.send(self.BDAY_INVALID())
         else:
             await self.remove_user_bday(message.guild.id, author.id)
-            await self.get_date_config(message.guild.id, birthday.toordinal()).get_attr(author.id).set(year)
+            await self.get_date_config(message.guild.id, birthday.toordinal()).get_attr(author.id)
             bday_month_str = birthday.strftime("%B")
             bday_day_str = birthday.strftime("%d").lstrip("0")
             await channel.send(self.BDAY_SET(bday_month_str + " " + bday_day_str))
@@ -132,14 +139,20 @@ class Birthdays(Cog):
         bdays = await self.get_guild_date_configs(message.guild.id)
         this_year = datetime.date.today().year
         embed = discord.Embed(title=self.BDAY_LIST_TITLE(), color=discord.Colour.lighter_grey())
-        for k, g in itertools.groupby(sorted(datetime.datetime.fromordinal(int(o)) for o in bdays.keys()),
-                                      lambda i: i.month):
+        for k, g in itertools.groupby(
+            sorted(datetime.datetime.fromordinal(int(o)) for o in bdays.keys()), lambda i: i.month
+        ):
 
-            value = "\n".join(date.strftime("%d").lstrip("0") + ": "
-                              + ", ".join("<@!{}>".format(u_id)
-                                          + ("" if year is None else " ({})".format(this_year - int(year)))
-                                          for u_id, year in bdays.get(str(date.toordinal()), {}).items())
-                              for date in g if len(bdays.get(str(date.toordinal()))) > 0)
+            value = "\n".join(
+                date.strftime("%d").lstrip("0")
+                + ": "
+                + ", ".join(
+                    "<@!{}>".format(u_id) + ("" if year is None else " ({})".format(this_year - int(year)))
+                    for u_id, year in bdays.get(str(date.toordinal()), {}).items()
+                )
+                for date in g
+                if len(bdays.get(str(date.toordinal()))) > 0
+            )
             if not value.isspace():
                 embed.add_field(name=datetime.datetime(year=1, month=k, day=1).strftime("%B"), value=value)
         await message.channel.send(embed=embed)
@@ -182,6 +195,7 @@ class Birthdays(Cog):
                     channel = guild.get_channel(guild_config.get("channel"))
                     if channel is not None:
                         await channel.send(embed=embed)
+                        await member.send(self.BDAY_DM())
 
     async def clean_bdays(self):
         birthdays = await self.get_all_date_configs()
@@ -201,7 +215,6 @@ class Birthdays(Cog):
         for date, user_ids in birthdays.items():
             if user_id in user_ids:
                 await self.get_date_config(guild_id, date).get_attr(user_id).clear()
-
 
     async def clean_yesterday_bdays(self):
         all_guild_configs = await self.config.all_guilds()
@@ -243,8 +256,6 @@ class Birthdays(Cog):
             else:
                 await self.config.custom(self.GUILD_DATE_GROUP, "backup").set_raw(value=previous)
                 self.logger.info("Previous birthdays have been backed up in the config file.")
-
-
 
     def get_date_config(self, guild_id: int, date: int) -> Group:
         return self.config.custom(self.GUILD_DATE_GROUP, str(guild_id), str(date))
