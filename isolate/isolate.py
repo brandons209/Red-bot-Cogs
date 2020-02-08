@@ -23,7 +23,9 @@ __version__ = "3.0.0"
 PURGE_MESSAGES = 1  # for cisolate
 
 DEFAULT_ROLE_NAME = "Isolated"
-DEFAULT_TEXT_OVERWRITE = discord.PermissionOverwrite(send_messages=False, send_tts_messages=False, add_reactions=False, read_messages=False)
+DEFAULT_TEXT_OVERWRITE = discord.PermissionOverwrite(
+    send_messages=False, send_tts_messages=False, add_reactions=False, read_messages=False
+)
 DEFAULT_VOICE_OVERWRITE = discord.PermissionOverwrite(speak=False, connect=False, view_channel=False)
 DEFAULT_TIMEOUT_OVERWRITE = discord.PermissionOverwrite(send_messages=True, read_messages=True)
 
@@ -1205,7 +1207,9 @@ class Isolate(commands.Cog):
             self.bot.loop.create_task(self.bot.request_offline_members(guild))
             return False
 
-    async def _unisolate(self, member, reason=None, apply_roles=True, update=False, moderator=None, quiet=False) -> bool:
+    async def _unisolate(
+        self, member, reason=None, apply_roles=True, update=False, moderator=None, quiet=False
+    ) -> bool:
         """
         Remove isolate role, delete record and task handle
         """
