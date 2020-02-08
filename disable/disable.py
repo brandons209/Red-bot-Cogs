@@ -27,6 +27,8 @@ class Disable(commands.Cog):
         self.bot.remove_before_invoke_hook(self.disabler)
 
     async def disabler(self, ctx):
+        if isinstance(ctx.channel, discord.DMChannel):
+            return
         if await self.config.guild(ctx.guild).disabled() and not await is_admin_or_superior(self.bot, ctx.author):
             raise DisabledError(f"Command {ctx.command.name} is disabled in {ctx.guild.name}.")
 
