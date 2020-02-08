@@ -1,4 +1,4 @@
-# redbot/discord
+limit=2# redbot/discord
 from redbot.core.utils.chat_formatting import *
 from redbot.core import Config, checks, commands, modlog
 from redbot.core.data_manager import cog_data_path
@@ -159,6 +159,14 @@ class ActivityLogger(commands.Cog):
             for guild in guilds:
                 for channel in guild.channels:
                     self.cache[channel.id] = self.default_channel.copy()
+
+        for guild in self.bot.guilds:
+            async with self.config.guild(guild).prefixes() as prefixes:
+                if not prefixes:
+                    curr = await self.bot.get_valid_prefixes()
+                    prefixes.extend(curr)
+                    self.cache[ctx.guild.id]["prefixes"] = curr
+
 
     @commands.command(aliases=["uinfo"])
     @commands.guild_only()
@@ -805,7 +813,7 @@ class ActivityLogger(commands.Cog):
 
     @logset.command(name="prefixes")
     @commands.guild_only()
-    async def set_prefixes(self, ctx, *, prefixes: list = None):
+    async def set_prefixes(self, ctx, *, prefixes: str = None):
         """Set list of prefixes to mark messages as bot commands for user stats.
            Seperate prefixes with spaces
         """
@@ -819,7 +827,7 @@ class ActivityLogger(commands.Cog):
             await ctx.send("Current Prefixes: " + format_list(*curr, delim=", "))
             return
 
-        prefixes = [p for p in prefixes if p != " "]
+        prefixes = [p for p in prefixes.split(" ")]
         await self.config.guild(ctx.guild).prefixes.set(prefixes)
         self.cache[ctx.guild.id]["prefixes"] = prefixes
         prefixes = [f"`{p}`" for p in prefixes]
@@ -1081,8 +1089,11 @@ class ActivityLogger(commands.Cog):
         if message.author.id != self.bot.user.id and isinstance(message.author, discord.Member):
             async with self.config.member(message.author).stats() as stats:
                 stats["total_msg"] += 1
-                if len(message.content) > 0 and message.content[0] in self.cache[message.guild.id]["prefixes"]:
-                    stats["bot_cmd"] += 1
+                if len(message.content) > 0:
+                    for prefix in self.cache[message.guild.id]["prefixes"]:
+                        if prefix == message.content[:len(prefix)]:
+                            stats["bot_cmd"] += 1
+                            break
                 else:
                     stats["avg_len"] += len(message.content.split(" "))
 
@@ -1117,7 +1128,7 @@ class ActivityLogger(commands.Cog):
         entry_s = None
         timestamp = message.created_at.strftime(TIMESTAMP_FORMAT)
         try:
-            async for entry in message.guild.audit_logs(limit=1):
+            async for entry in message.guild.audit_logs(limit=2):
                 # target is user who had message deleted
                 if entry.action is discord.AuditLogAction.message_delete:
                     if (
@@ -1207,7 +1218,7 @@ class ActivityLogger(commands.Cog):
     async def on_guild_role_create(self, role):
         user = None
         try:
-            async for entry in role.guild.audit_logs(limit=1):
+            async for entry in role.guild.audit_logs(limit=2):
                 if entry.action is discord.AuditLogAction.role_create:
                     if entry.target.id == role.id:
                         user = entry.user
@@ -1225,7 +1236,7 @@ class ActivityLogger(commands.Cog):
     async def on_guild_role_delete(self, role):
         user = None
         try:
-            async for entry in role.guild.audit_logs(limit=1):
+            async for entry in role.guild.audit_logs(limit=2):
                 if entry.action is discord.AuditLogAction.role_delete:
                     if entry.target.id == role.id:
                         user = entry.user
@@ -1244,7 +1255,7 @@ class ActivityLogger(commands.Cog):
         entries = []
         user = None
         try:
-            async for entry in after.guild.audit_logs(limit=1):
+            async for entry in after.guild.audit_logs(limit=2):
                 if entry.action is discord.AuditLogAction.role_update:
                     if entry.target.id == after.id:
                         user = entry.user
@@ -1337,7 +1348,7 @@ class ActivityLogger(commands.Cog):
     async def on_member_remove(self, member):
         user = None
         try:
-            async for entry in member.guild.audit_logs(limit=1):
+            async for entry in member.guild.audit_logs(limit=2):
                 if entry.action is discord.AuditLogAction.kick:
                     if entry.target.id == member.id:
                         user = entry.user
@@ -1360,7 +1371,7 @@ class ActivityLogger(commands.Cog):
     async def on_member_ban(self, guild, member):
         user = None
         try:
-            async for entry in guild.audit_logs(limit=1):
+            async for entry in guild.audit_logs(limit=2):
                 if entry.action is discord.AuditLogAction.ban:
                     if entry.target.id == member.id:
                         user = entry.user
@@ -1378,7 +1389,7 @@ class ActivityLogger(commands.Cog):
     async def on_member_unban(self, guild, member):
         user = None
         try:
-            async for entry in guild.audit_logs(limit=1):
+            async for entry in guild.audit_logs(limit=2):
                 if entry.action is discord.AuditLogAction.unban:
                     if entry.target.id == member.id:
                         user = entry.user
@@ -1397,7 +1408,7 @@ class ActivityLogger(commands.Cog):
         entries = []
         user = None
         try:
-            async for entry in after.guild.audit_logs(limit=1):
+            async for entry in after.guild.audit_logs(limit=2):
                 if (
                     entry.action is discord.AuditLogAction.member_update
                     or entry.action is discord.AuditLogAction.member_role_update
@@ -1471,7 +1482,7 @@ class ActivityLogger(commands.Cog):
     async def on_guild_channel_create(self, channel):
         user = None
         try:
-            async for entry in channel.guild.audit_logs(limit=1):
+            async for entry in channel.guild.audit_logs(limit=2):
                 if entry.action is discord.AuditLogAction.channel_create:
                     if entry.target.id == after.id:
                         user = entry.user
@@ -1491,7 +1502,7 @@ class ActivityLogger(commands.Cog):
     async def on_guild_channel_delete(self, channel):
         user = None
         try:
-            async for entry in channel.guild.audit_logs(limit=1):
+            async for entry in channel.guild.audit_logs(limit=2):
                 if entry.action is discord.AuditLogAction.channel_delete:
                     if entry.target.id == after.id:
                         user = entry.user
@@ -1511,7 +1522,7 @@ class ActivityLogger(commands.Cog):
     async def on_guild_channel_update(self, before, after):
         user = None
         try:
-            async for entry in after.guild.audit_logs(limit=1):
+            async for entry in after.guild.audit_logs(limit=2):
                 if entry.action is discord.AuditLogAction.channel_update:
                     if entry.target.id == after.id:
                         user = entry.user
@@ -1528,13 +1539,14 @@ class ActivityLogger(commands.Cog):
             else:
                 entries.append('Channel rename: "{0.name}" (id {0.id}) renamed to "{1.name}"')
 
-        if before.topic != after.topic:
-            if user:
-                entries.append(
-                    'Channel topic by @{2.name}#{2.discriminator}(id:{2.id}): "{0.name}" (id {0.id}) topic was set to "{1.topic}"'
-                )
-            else:
-                entries.append('Channel topic: "{0.name}" (id {0.id}) topic was set to "{1.topic}"')
+        if isinstance(before, discord.TextChannel):
+            if before.topic != after.topic:
+                if user:
+                    entries.append(
+                        'Channel topic by @{2.name}#{2.discriminator}(id:{2.id}): "{0.name}" (id {0.id}) topic was set to "{1.topic}"'
+                    )
+                else:
+                    entries.append('Channel topic: "{0.name}" (id {0.id}) topic was set to "{1.topic}"')
 
         if before.position != after.position:
             if user:
