@@ -316,7 +316,7 @@ class MoreAdmin(commands.Cog):
     @commands.command(name="giverole")
     @checks.mod_or_permissions(manage_roles=True)
     @checks.bot_has_permissions(manage_roles=True)
-    async def admin_addrole(self, ctx, role: discord.Role, *, user: discord.Member):
+    async def admin_addrole(self, ctx, user: discord.Member, *, role: discord.Role):
         """
         Add a role to a user.
         **Must be setup before hand with `[p]adminset`**
@@ -343,7 +343,7 @@ class MoreAdmin(commands.Cog):
     @commands.command(name="remrole")
     @checks.mod()
     @checks.bot_has_permissions(manage_roles=True)
-    async def admin_remrole(self, ctx, role: discord.Role, *, user: discord.Member):
+    async def admin_remrole(self, ctx, user: discord.Member, *, role: discord.Role):
         """
         Removes a role to a user.
         **Must be setup before hand with `[p]adminset`**
