@@ -11,10 +11,10 @@ import discord
 from discord.ext.commands import CogMeta as DPYCogMeta
 from redbot.core import checks, commands, bank
 from redbot.core.config import Config
-from redbot.core.utils.chat_formatting import box, pagify, warning
+from redbot.core.utils.chat_formatting import box, pagify, warning, humanize_list
 
 from .events import EventMixin
-from .exceptions import RoleManagementException, PermissionOrHierarchyException
+from .exceptions import RoleManagementException, PermissionOrHierarchyException, MissingRequirementsException, ConflictingRoleException
 from .massmanager import MassManagementMixin
 from .utils import UtilMixin, variation_stripper_re, parse_timedelta, parse_seconds
 
@@ -41,7 +41,7 @@ class CompositeMetaClass(DPYCogMeta, ABCMeta):
 
 MIN_SUB_TIME = 3600
 SLEEP_TIME = 300
-
+MAX_EMBED = 25
 
 class RoleManagement(
     UtilMixin, MassManagementMixin, EventMixin, commands.Cog, metaclass=CompositeMetaClass,
@@ -62,7 +62,7 @@ class RoleManagement(
         self.config = Config.get_conf(self, identifier=78631113035100160, force_registration=True)
         self.config.register_global(handled_variation=False, handled_full_str_emoji=False)
         self.config.register_role(
-            exclusive_to=[],
+            exclusive_to={},
             requires_any=[],
             requires_all=[],
             sticky=False,
@@ -79,7 +79,7 @@ class RoleManagement(
         self.config.register_custom(
             "REACTROLE", roleid=None, channelid=None, guildid=None
         )  # ID : Message.id, str(React)
-        self.config.register_guild(notify_channel=None, s_roles=[], free_roles=[])
+        self.config.register_guild(notify_channel=None, s_roles=[], free_roles=[], join_roles=[])
         self._ready = asyncio.Event()
         self._start_task: Optional[asyncio.Task] = None
         self.loop = asyncio.get_event_loop()
@@ -153,6 +153,10 @@ class RoleManagement(
             if end_time <= now_time:
                 member = guild.get_member(int(user_id))
                 if not member:  # clean absent members
+                    del role_data["subscribed_users"][user_id]
+                    continue
+                # make sure they still have the role
+                if role not in member.roles:
                     del role_data["subscribed_users"][user_id]
                     continue
                 # charge user
@@ -406,6 +410,56 @@ class RoleManagement(
         await self.config.role(role).dm_msg.set(msg)
         await ctx.tick()
 
+    @rgroup.group(name="join")
+    async def join_roles(self, ctx: GuildContext):
+        """
+        Set roles to add to users on join.
+        """
+        pass
+
+    @join_roles.command(name="add")
+    async def join_roles_add(self, ctx: GuildContext, *, role: discord.Role):
+        """
+        Add a role to the join list.
+        """
+        async with self.config.guild(ctx.guild).join_roles() as join_roles:
+            if role.id not in join_roles:
+                join_roles.append(role.id)
+
+        await ctx.tick()
+
+    @join_roles.command(name="rem")
+    async def join_roles_rem(self, ctx: GuildContext, *, role: discord.Role):
+        """
+        Remove a role from the join list.
+        """
+        async with self.config.guild(ctx.guild).join_roles() as join_roles:
+            try:
+                join_roles.remove(role.id)
+            except:
+                await ctx.send("Role not in join list!")
+                return
+
+        await ctx.tick()
+
+    @join_roles.command(name="list")
+    async def join_roles_list(self, ctx: GuildContext):
+        """
+        List join roles.
+        """
+        roles = await self.config.guild(ctx.guild).join_roles()
+        if not roles:
+            await ctx.send("No roles defined.")
+            return
+        roles = [ctx.guild.get_role(role) for role in roles]
+        missing = len([role for role in roles if role is None])
+        roles = [f"{i+1}.{role.name}" for i, role in enumerate(roles) if role is not None]
+
+        msg = "\n".join(sorted(roles))
+        msg = pagify(msg)
+        for m in msg:
+            await ctx.send(box(m))
+
     @rgroup.command(name="viewrole")
     async def rg_view_role(self, ctx: GuildContext, *, role: discord.Role):
         """
@@ -426,8 +480,12 @@ class RoleManagement(
             rstring = ", ".join(r.name for r in ctx.guild.roles if r.id in rsets["requires_all"])
             output += f"\nThis role requires all of the following roles: {rstring}"
         if rsets["exclusive_to"]:
-            rstring = ", ".join(r.name for r in ctx.guild.roles if r.id in rsets["exclusive_to"])
-            output += f"\nThis role is mutually exclusive to the following roles: {rstring}"
+            rstring = ""
+            for group, roles in rsets["exclusive_to"].items():
+                rstring = f"`{group}`: "
+                rstring += ", ".join(r.name for r in ctx.guild.roles if r.id in roles)
+                rstring += "\n"
+            output += f"\nThis role is mutually exclusive to the following role groups:\n{rstring}"
         if rsets["cost"]:
             curr = await bank.get_currency_name(ctx.guild)
             cost = rsets["cost"]
@@ -535,9 +593,13 @@ class RoleManagement(
         await ctx.tick()
 
     @rgroup.command(name="exclusive")
-    async def set_exclusivity(self, ctx: GuildContext, *roles: discord.Role):
+    async def set_exclusivity(self, ctx: GuildContext, group: str, *roles: discord.Role):
         """
+        Set exclusive roles for group
         Takes 2 or more roles and sets them as exclusive to eachother
+
+        The group can be any name, use spaces for names with spaces.
+        Groups will show up in role list etc.
         """
 
         _roles = set(roles)
@@ -547,13 +609,20 @@ class RoleManagement(
 
         for role in _roles:
             async with self.config.role(role).exclusive_to() as ex_list:
-                ex_list.extend([r.id for r in _roles if r != role and r.id not in ex_list])
+                if group not in ex_list.keys():
+                    ex_list[group] = []
+                ex_list[group].extend([r.id for r in _roles if r != role and r.id not in ex_list[group]])
+
         await ctx.tick()
 
     @rgroup.command(name="unexclusive")
-    async def unset_exclusivity(self, ctx: GuildContext, *roles: discord.Role):
+    async def unset_exclusivity(self, ctx: GuildContext, group: str, *roles: discord.Role):
         """
+        Remove exclusive roles for group
         Takes any number of roles, and removes their exclusivity settings
+
+        The group can be any name, use spaces for names with spaces.
+        If all roles are removed from a group then
         """
 
         _roles = set(roles)
@@ -563,7 +632,11 @@ class RoleManagement(
 
         for role in _roles:
             ex_list = await self.config.role(role).exclusive_to()
-            ex_list = [idx for idx in ex_list if idx not in [r.id for r in _roles]]
+            if group not in ex_list.keys():
+                continue
+            ex_list[group] = [idx for idx in ex_list if idx not in [r.id for r in _roles]]
+            if not ex_list[group]:
+                del ex_list[group]
             await self.config.role(role).exclusive_to.set(ex_list)
         await ctx.tick()
 
@@ -586,7 +659,6 @@ class RoleManagement(
 
         await ctx.tick()
 
-    # TODO set roles who don't need to pay for roles
     @rgroup.command(name="requireall")
     async def reqall(self, ctx: GuildContext, role: discord.Role, *roles: discord.Role):
         """
@@ -724,7 +796,7 @@ class RoleManagement(
                     data[role] = vals["cost"]
         else:
             data = {
-                role: (vals["cost"], vals["subscription"])
+                role: (vals["cost"], vals["subscription"], vals["exclusive_to"])
                 for role_id, vals in (await self.config.all_roles()).items()
                 if (role := ctx.guild.get_role(role_id)) and vals["self_role"]
             }
@@ -734,15 +806,20 @@ class RoleManagement(
 
         embed = discord.Embed(title="Roles", colour=ctx.guild.me.colour)
         i = 0
-        for role, (cost, sub) in sorted(data.items(), key=lambda kv: kv[1]):
+        for role, (cost, sub, ex_groups) in sorted(data.items(), key=lambda kv: kv[1][0]):
+            if ex_groups:
+                groups = humanize_list(list(ex_groups.keys()))
+            else:
+                groups = None
             embed.add_field(
                 name=f"__**{i+1}. {role.name}**__",
-                value="%s%s"
-                % ((f"Cost: {cost}" if cost else "Free"), (f", every {parse_seconds(sub)}" if sub else "")),
+                value="%s%s%s"
+                % ((f"Cost: {cost}" if cost else "Free"), (f", every {parse_seconds(sub)}" if sub else ""), (f"\nunique groups: `{groups}`" if groups else ""))
             )
             i += 1
-            if i % 25 == 0:
+            if i % MAX_EMBED == 0:
                 await ctx.send(embed=embed)
+        embed.set_footer(text="You can only have one role in the same unique group!")
 
         await ctx.send(embed=embed)
 
@@ -759,10 +836,21 @@ class RoleManagement(
             eligible = await self.config.role(role).self_role()
             cost = await self.config.role(role).cost()
             subscription = await self.config.role(role).subscription()
-        except RoleManagementException:
-            return
         except PermissionOrHierarchyException:
             await ctx.send("I cannot assign roles which I can not manage. (Discord Hierarchy)")
+        except MissingRequirementsException as e:
+            msg = ""
+            if e.miss_all:
+                roles = [r for r in ctx.guild.roles if r in e.miss_all]
+                msg += f"You need all of these roles in order to get this role: {humanize_list(roles)}\n"
+            if e.miss_any:
+                roles = [r for r in ctx.guild.roles if r in e.miss_any]
+                msg += f"You need one of these roles in order to get this role: {humanize_list(roles)}\n"
+            await ctx.send(msg)
+        except ConflictingRoleException as e:
+            roles = [r for r in ctx.guild.roles if r in e.conflicts]
+            plural = "are" if len(roles) > 1 else "is"
+            await ctx.send(f"You have {humanize_list(roles)}, which you are not allowed to remove and {plural} exclusive to: {role.name}")
         else:
             if not eligible:
                 return await ctx.send(f"You aren't allowed to add `{role}` to yourself {ctx.author.mention}!")
@@ -792,6 +880,9 @@ class RoleManagement(
                         if role.id not in s:
                             s.append(role.id)
 
+                if remove:
+                    plural = "s" if len(remove) > 1 else ""
+                    await ctx.send(f"Removed `{humanize_list([r.name for r in remove])}` role{plural} since they are exclusive to the role you added.")
                 await self.update_roles_atomically(who=ctx.author, give=[role], remove=remove)
                 await self.dm_user(ctx, role)
                 await ctx.tick()
@@ -808,10 +899,22 @@ class RoleManagement(
             remove = await self.is_self_assign_eligible(ctx.author, role)
             eligible = await self.config.role(role).self_role()
             cost = await self.config.role(role).cost()
-        except RoleManagementException:
-            return
         except PermissionOrHierarchyException:
             await ctx.send("I cannot assign roles which I can not manage. (Discord Hierarchy)")
+        except MissingRequirementsException as e:
+            msg = ""
+            if e.miss_all:
+                roles = [r for r in ctx.guild.roles if r in e.miss_all]
+                msg += f"You need all of these roles in order to get this role: {humanize_list(roles)}\n"
+            if e.miss_any:
+                roles = [r for r in ctx.guild.roles if r in e.miss_any]
+                msg += f"You need one of these roles in order to get this role: {humanize_list(roles)}\n"
+            await ctx.send(msg)
+        except ConflictingRoleException as e:
+            print(e.conflicts)
+            roles = [r for r in ctx.guild.roles if r in e.conflicts]
+            plural = "are" if len(roles) > 1 else "is"
+            await ctx.send(f"You have {humanize_list(roles)}, which you are not allowed to remove and {plural} exclusive to: {role.name}")
         else:
             if not eligible:
                 await ctx.send(f"You aren't allowed to add `{role}` to yourself {ctx.author.mention}!")
@@ -821,6 +924,9 @@ class RoleManagement(
                     "This role is not free. " "Please use `[p]selfrole buy` if you would like to purchase it."
                 )
             else:
+                if remove:
+                    plural = "s" if len(remove) > 1 else ""
+                    await ctx.send(f"Removed `{humanize_list([r.name for r in remove])}` role{plural} since they are exclusive to the role you added.")
                 await self.update_roles_atomically(who=ctx.author, give=[role], remove=remove)
                 await self.dm_user(ctx, role)
                 await ctx.tick()

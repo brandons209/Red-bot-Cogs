@@ -51,6 +51,17 @@ class EventMixin(MixinMeta):
         lost, gained = lost - gained, gained - lost
         sym_diff = lost | gained
 
+        # check if new member roles are exclusive to others.
+        ex = []
+        for r in gained:
+            ex_groups = (await self.config.role_from_id(r).exclusive_to()).values()
+            for ex_roles in ex_groups:
+                ex.extend(ex_roles)
+
+        to_remove = [r for r in after.roles if r.id in ex]
+        if to_remove:
+            await after.remove_roles(*to_remove, reason="conflict with exclusive roles")
+
         for r in sym_diff:
             if not await self.config.role_from_id(r).sticky():
                 lost.discard(r)
@@ -78,6 +89,17 @@ class EventMixin(MixinMeta):
                 if not role:
                     continue
                 if await self.config.role(role).sticky():
+                    to_add.append(role)
+            if to_add:
+                to_add = [r for r in to_add if r < guild.me.top_role]
+                await member.add_roles(*to_add)
+
+        # join roles
+        async with self.config.guild(guild).join_roles() as join_roles:
+            to_add: List[discord.Role] = []
+            for role_id in join_roles:
+                role = discord.utils.get(guild.roles, id=role_id)
+                if role:
                     to_add.append(role)
             if to_add:
                 to_add = [r for r in to_add if r < guild.me.top_role]

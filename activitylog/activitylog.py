@@ -154,10 +154,10 @@ class ActivityLogger(commands.Cog):
             for guild in guilds:
                 self.cache[guild.id] = self.default_guild.copy()
 
-        if not channel_data:
-            guilds = self.bot.guilds
-            for guild in guilds:
-                for channel in guild.channels:
+        guilds = self.bot.guilds
+        for guild in guilds:
+            for channel in guild.channels:
+                if not channel.id in self.cache.keys():
                     self.cache[channel.id] = self.default_channel.copy()
 
         for guild in self.bot.guilds:

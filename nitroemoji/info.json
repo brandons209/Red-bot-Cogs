@@ -1,0 +1,21 @@
+{
+  "author": [
+    "Brandons209"
+  ],
+  "bot_version": [
+    3,
+    3,
+    0
+  ],
+  "description": "Allow nitro boosters to add an emoji to the server, with channel logging.",
+  "hidden": false,
+  "install_msg": "Thank you for using this cog! Please make sure to set the log channel using `[p]nitroset`",
+  "requirements": ["aiohttp"],
+  "short": "Allow boosters to have a server emoji.",
+  "tags": [
+    "brandons209",
+    "nitro",
+    "boost",
+    "emoji"
+  ]
+}

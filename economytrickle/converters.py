@@ -4,6 +4,8 @@ from redbot.core import commands
 
 configable_guild_defaults = {
     "interval": 5,
+    "fail_rate": 0.2,
+    "decay_rate": 0.5,
     "level_xp_base": 100,
     "xp_lv_increase": 50,
     "maximum_level": None,
@@ -55,5 +57,13 @@ def settings_converter(user_input: str) -> dict:
                 assert args[value] is None or (args[value] == int(args[value]) and args[value] >= 0)
             except AssertionError:
                 raise commands.BadArgument(f"{value} must be a non-negative integer value or `null`")
+
+    for value in ("fail_rate", "decay_rate"):
+        if value in args:
+            try:
+                assert args[value] >= 0
+                assert args[value] <= 1
+            except AssertionError:
+                raise commands.BadArgument(f"{value} must be a decimal value between 0 and 1.")
 
     return args

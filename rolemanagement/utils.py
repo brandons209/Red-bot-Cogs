@@ -170,7 +170,10 @@ class UtilMixin(MixinMeta):
         """
 
         data = await self.config.all_roles()
-        ex = data.get(role.id, {}).get("exclusive_to", [])
+        ex_data = data.get(role.id, {}).get("exclusive_to", {}).values()
+        ex = []
+        for ex_roles in ex_data:
+            ex.extend(ex_roles)
         conflicts: List[discord.Role] = [r for r in who.roles if r.id in ex]
 
         for r in conflicts:

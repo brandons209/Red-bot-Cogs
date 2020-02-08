@@ -48,6 +48,10 @@ More admin commands that provide various functionality.
 - List all users with a role/roles quickly and easily.
 
 
+#### Nitro Emoji
+Allows nitro boosters to add one emoji to your server. Log's additions and removal of custom emojis to a channel. Can turn this off to stop more people from adding, but those who added can remove their emoji.
+
+
 #### Pony
 Search derpibooru for pony images. Ported from [Alzarath](https://github.com/Alzarath/Booru-Cogs).    
 **Features:**   
@@ -75,7 +79,6 @@ Modified from [Sinbad](https://github.com/mikeshardmind/SinbadCogs).
 - Adds in subscription based roles which renew every customized interval.
 - Allows settings messages through DM to users who obtain a specific role (such as role info).
 - Renames srole to selfrole and removes Red's default selfrole.
-**In progress:**
 - Makes listing roles a bit prettier.
 - Allow setting roles to automatically add on guild join.
 - Enhance exclusive roles, allow setting custom role groups where the bot enforces only one role to be on a user at a time, even if it isn't a selfrole. The bot will automatically remove the old role if a new role from the same group is added. Also lists name of role group in list command to make it clearer.

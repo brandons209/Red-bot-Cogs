@@ -47,7 +47,7 @@ class MoreAdmin(commands.Cog):
         self.bot = bot
         self.config = Config.get_conf(self, identifier=213438438248, force_registration=True)
 
-        default_guild = {"user_count_channel": None, "sus_user_channel": None, "sus_user_threshold": None}
+        default_guild = {"user_count_channel": None, "sus_user_channel": None, "sus_user_threshold": None, "prefixes": []}
 
         default_role = {"addable": []}  # role ids who can add this role
         self.config.register_role(**default_role)
@@ -58,6 +58,11 @@ class MoreAdmin(commands.Cog):
 
     async def initialize(self):
         await self.register_casetypes()
+        for guild in self.bot.guilds:
+            async with self.config.guild(guild).prefixes() as prefixes:
+                if not prefixes:
+                    curr = await self.bot.get_valid_prefixes()
+                    prefixes.extend(curr)
 
     def cog_unload(self):
         self.user_task.cancel()
@@ -65,19 +70,18 @@ class MoreAdmin(commands.Cog):
     @staticmethod
     async def register_casetypes():
         # register mod case
-        punish_case = {
+        purge_case = {
             "name": "Purge",
             "default_setting": True,
             "image": "\N{WOMANS BOOTS}",
             "case_str": "Purge",
         }
         try:
-            await modlog.register_casetype(**punish_case)
+            await modlog.register_casetype(**purge_case)
         except RuntimeError:
             pass
 
-    @staticmethod
-    async def find_last_message(guild: discord.Guild, role: discord.Role):
+    async def find_last_message(self, guild: discord.Guild, role: discord.Role, include_bot_commands: bool):
         """
         Finds last message of EVERY user with role in a guild.
         **WARNING VERY SLOW AND COSTLY OPERATION!**
@@ -86,12 +90,21 @@ class MoreAdmin(commands.Cog):
         """
         last_msgs = {}
         text_channels = [channel for channel in guild.channels if isinstance(channel, discord.TextChannel)]
+        prefixes = await self.config.guild(guild).prefixes()
         for channel in text_channels:
             async for message in channel.history(limit=None):
                 if isinstance(message.author, discord.Member) and role in message.author.roles:
-                    if message.author.id not in last_msgs.keys():
+                    # prefix check
+                    skip = False
+                    if include_bot_commands:
+                        for prefix in prefixes:
+                            if message.content and prefix == message.content[:len(prefix)]:
+                                skip = True
+                                break
+
+                    if message.author.id not in last_msgs.keys() and not skip:
                         last_msgs[message.author.id] = message
-                    else:
+                    elif not skip:
                         curr_last = last_msgs[message.author.id]
                         if message.created_at > curr_last.created_at:
                             last_msgs[message.author.id] = message
@@ -208,6 +221,26 @@ class MoreAdmin(commands.Cog):
 
         await self.config.guild(ctx.guild).sus_user_threshold.set(int(threshold.total_seconds()))
         await ctx.tick()
+
+    @adminset.command(name="prefixes")
+    async def adminset_prefixes(self, ctx, *, prefixes: str = None):
+        """
+        Set prefixes for bot commands to check for when purging.
+
+        Seperate prefixes with spaces.
+
+        Used for purge command.
+        """
+        if not prefixes:
+            prefixes = await self.config.guild(ctx.guild).prefixes()
+            curr = [f"`{p}`" for p in prefixes]
+            await ctx.send("Current Prefixes: " + humanize_list(curr))
+            return
+
+        prefixes = [p for p in prefixes.split(" ")]
+        await self.config.guild(ctx.guild).prefixes.set(prefixes)
+        prefixes = [f"`{p}`" for p in prefixes]
+        await ctx.send("Prefixes set to: " + humanize_list(prefixes))
 
     @adminset.command(name="addable")
     async def adminset_addable(self, ctx, role: discord.Role, *, role_list: str = None):
@@ -358,7 +391,7 @@ class MoreAdmin(commands.Cog):
     @commands.command(name="purge")
     @checks.admin_or_permissions(administrator=True)
     @checks.bot_has_permissions(kick_members=True)
-    async def purge(self, ctx, role: discord.Role, check_messages: bool = True, *, threshold: str = None):
+    async def purge(self, ctx, role: discord.Role, check_messages: bool = True, include_bot_commands: bool = False, *, threshold: str = None):
         """
         Purge inactive users with role.
 
@@ -367,6 +400,9 @@ class MoreAdmin(commands.Cog):
 
         If check_messages is yes/true/1 then purging is dictated by the user's last message.
         If check_messages is no/false/0 then purging is dictated by the user's join date.
+
+        If checking last message and bot is yes/true/1 then the bot won't count bot include_bot_commands as a valid last message for purge.
+        **Make sure to set prefixes with [p]adminset**
 
         Threshold should be an interval.
 
@@ -389,7 +425,7 @@ class MoreAdmin(commands.Cog):
         errored = []
         start_time = time.time()
         if check_messages:
-            last_msgs = await self.find_last_message(guild, role)
+            last_msgs = await self.find_last_message(guild, role, include_bot_commands)
 
         for member in guild.members:
             if role in member.roles:

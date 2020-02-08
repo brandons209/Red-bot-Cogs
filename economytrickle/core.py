@@ -4,6 +4,7 @@ import contextlib
 from typing import no_type_check, Union
 from datetime import datetime, timedelta
 from collections import defaultdict
+import random
 
 import discord
 from redbot.core import commands, checks
@@ -19,7 +20,7 @@ class EconomyTrickle(commands.Cog):
     Automatic Economy gains for active users
     """
 
-    __version__ = "2.0.2"
+    __version__ = "2.1.0"
 
     def __init__(self, bot, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -30,6 +31,7 @@ class EconomyTrickle(commands.Cog):
             mode="blacklist",
             blacklist=[],
             whitelist=[],
+            min_voice_members=2,
             **configable_guild_defaults,
             # custom_level_table={},  # TODO
         )
@@ -55,21 +57,24 @@ class EconomyTrickle(commands.Cog):
 
         while self is self.bot.get_cog(self.__class__.__name__):
             await asyncio.sleep(60)
-            now = datetime.utcnow()
 
             data = await self.config.all_guilds()
 
             for g in self.bot.guilds:
                 if g.id in data and data[g.id]["active"]:
                     minutes[g] += 1
-                    if minutes[g] % data[g.id]["interval"]:
+                    if minutes[g] % data[g.id]["interval"] == 0:
+                        minutes[g] = 0
+                        print(f"processing...{minutes[g]}, {data[g.id]['interval']}")
+                        now = datetime.utcnow()
                         tsk = self.bot.loop.create_task(self.do_rewards_for(g, now, data[g.id]))
                         self.extra_tasks.append(tsk)
 
     async def do_rewards_for(self, guild: discord.Guild, now: datetime, data: dict):
 
-        after = now - timedelta(minutes=data["interval"])
-
+        after = now - timedelta(minutes=data["interval"], seconds=10)
+        print(f"after: {after}")
+        voice_mem = await self.config.guild(guild).min_voice_members()
         if data["mode"] == "blacklist":
 
             def mpred(m: discord.Message):
@@ -77,7 +82,7 @@ class EconomyTrickle(commands.Cog):
 
             def vpred(mem: discord.Member):
                 with contextlib.suppress(AttributeError):
-                    return mem.voice.channel.id not in data["blacklist"] and not mem.bot
+                    return len(mem.voice.channel.members) > voice_mem and mem.voice.channel.id not in data["blacklist"] and not mem.bot
 
         else:
 
@@ -86,16 +91,42 @@ class EconomyTrickle(commands.Cog):
 
             def vpred(mem: discord.Member):
                 with contextlib.suppress(AttributeError):
-                    return mem.voice.channel.id in data["whitelist"] and not mem.bot
+                    return len(mem.voice.channel.members) > voice_mem and mem.voice.channel.id in data["whitelist"] and not mem.bot
 
         has_active_message = set(self.recordhandler.get_active_for_guild(guild=guild, after=after, message_check=mpred))
 
         is_active_voice = {m for m in guild.members if vpred(m)}
-
+        print(f"active: {[m.name for m in has_active_message]}")
         is_active = has_active_message | is_active_voice
 
-        for member in is_active:
+        # take exp away from inactive users
+        for member in guild.members:
+            if member in is_active:
+                continue
 
+            # loose exp per interval
+            xp = min(data["xp_per_interval"] * data["decay_rate"], 1)
+            xp = await self.config.member(member).xp() - xp
+            xp = max(xp, 0)
+            await self.config.member(member).xp.set(xp)
+
+            # update level on these users
+            level, next_needed = 0, data["level_xp_base"]
+
+            while xp >= next_needed:
+                level += 1
+                xp -= next_needed
+                next_needed += data["xp_lv_increase"]
+
+            if data["maximum_level"] is not None:
+                level = min(data["maximum_level"], level)
+
+            await self.config.member(member).level.set(level)
+
+        for member in is_active:
+            # failed for this member, skip
+            if data["fail_rate"] > random.random():
+                continue
             # xp processing first
             xp = data["xp_per_interval"]
             if member in has_active_message:
@@ -155,15 +186,17 @@ class EconomyTrickle(commands.Cog):
 
     @ect.command()
     @no_type_check
-    async def setstuff(self, ctx, *, data: settings_converter):
+    async def setstuff(self, ctx, *, data: settings_converter = None):
         """
         Set other variables
 
-        format for this (and defaults):
+        format *example* for this (and defaults):
 
         ```yaml
         bonus_per_level: 5
         econ_per_interval: 20
+        fail_rate: 0.2
+        decay_rate: 0.5
         extra_message_xp: 0
         extra_voice_xp: 0
         interval: 5
@@ -174,6 +207,17 @@ class EconomyTrickle(commands.Cog):
         xp_per_interval: 10
         ```
         """
+        if not data:
+            data = await self.config.guild(ctx.guild).all()
+            keys = list(configable_guild_defaults.keys())
+            msg = "Current data: (run `help trickleset setstuff to set`)\n```yaml\n"
+            for key in keys:
+                msg += f"{key}: {data[key]}\n"
+            msg += "```"
+
+            await ctx.send(msg)
+            return
+
         for k, v in data.items():
             await self.config.guild(ctx.guild).get_attr(k).set(v)
         await ctx.tick()
@@ -189,6 +233,23 @@ class EconomyTrickle(commands.Cog):
             return await ctx.send_help()
 
         await self.config.guild(ctx.guild).mode.set(mode)
+        await ctx.tick()
+
+    @ect.command(name="voice")
+    async def rset_voicemem(self, ctx, min_voice_members: int = 0):
+        """
+        Minimum number of voice members needed to count as active.
+
+        If users are in a voice chat, only trickle if there are at least min_voice_members
+        in there.
+        """
+
+        if min_voice_members < 1:
+            curr = await self.config.guild(ctx.guild).min_voice_members()
+            await ctx.send(f"Current: {curr}")
+            return
+
+        await self.config.guild(ctx.guild).min_voice_members.set(min_voice_members)
         await ctx.tick()
 
     @ect.command(name="addchan")

@@ -1,0 +1,19 @@
+{
+  "author": [
+    "Brandons209"
+  ],
+  "bot_version": [
+    3,
+    3,
+    0
+  ],
+  "description": "Small cog that allows disabling all bot commands for everyone except Admins/owner in a guild. Nice for things like bot setup. You can also set the error message when a person trys using a command when its disabled.",
+  "hidden": false,
+  "install_msg": "Thank you for using this cog!",
+  "requirements": [],
+  "short": "Disable all commands for everyone except admins.",
+  "tags": [
+    "brandons209",
+    "redbot"
+  ]
+}
