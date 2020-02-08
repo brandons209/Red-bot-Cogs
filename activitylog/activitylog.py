@@ -167,7 +167,6 @@ class ActivityLogger(commands.Cog):
                     prefixes.extend(curr)
                     self.cache[ctx.guild.id]["prefixes"] = curr
 
-
     @commands.command(aliases=["uinfo"])
     @commands.guild_only()
     @commands.cooldown(rate=1, per=5, type=commands.BucketType.user)
@@ -1093,7 +1092,7 @@ class ActivityLogger(commands.Cog):
                 stats["total_msg"] += 1
                 if len(message.content) > 0:
                     for prefix in self.cache[message.guild.id]["prefixes"]:
-                        if prefix == message.content[:len(prefix)]:
+                        if prefix == message.content[: len(prefix)]:
                             stats["bot_cmd"] += 1
                             break
                 else:
@@ -1593,7 +1592,7 @@ class ActivityLogger(commands.Cog):
                 msg = "Voice channel leave: {0} (id {0.id})"
 
                 async with self.config.member(member).stats() as stats:
-                    if stats["last_vc_time"]: # incase someone joins when bot is offline
+                    if stats["last_vc_time"]:  # incase someone joins when bot is offline
                         stats["vc_time_sec"] += time.time() - stats["last_vc_time"]
                         stats["last_vc_time"] = None
 

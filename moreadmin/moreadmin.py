@@ -47,7 +47,12 @@ class MoreAdmin(commands.Cog):
         self.bot = bot
         self.config = Config.get_conf(self, identifier=213438438248, force_registration=True)
 
-        default_guild = {"user_count_channel": None, "sus_user_channel": None, "sus_user_threshold": None, "prefixes": []}
+        default_guild = {
+            "user_count_channel": None,
+            "sus_user_channel": None,
+            "sus_user_threshold": None,
+            "prefixes": [],
+        }
 
         default_role = {"addable": []}  # role ids who can add this role
         self.config.register_role(**default_role)
@@ -98,7 +103,7 @@ class MoreAdmin(commands.Cog):
                     skip = False
                     if include_bot_commands:
                         for prefix in prefixes:
-                            if message.content and prefix == message.content[:len(prefix)]:
+                            if message.content and prefix == message.content[: len(prefix)]:
                                 skip = True
                                 break
 
@@ -391,7 +396,15 @@ class MoreAdmin(commands.Cog):
     @commands.command(name="purge")
     @checks.admin_or_permissions(administrator=True)
     @checks.bot_has_permissions(kick_members=True)
-    async def purge(self, ctx, role: discord.Role, check_messages: bool = True, include_bot_commands: bool = False, *, threshold: str = None):
+    async def purge(
+        self,
+        ctx,
+        role: discord.Role,
+        check_messages: bool = True,
+        include_bot_commands: bool = False,
+        *,
+        threshold: str = None,
+    ):
         """
         Purge inactive users with role.
 

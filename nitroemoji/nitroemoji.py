@@ -12,16 +12,12 @@ class NitroEmoji(commands.Cog):
     """
     Reward nitro boosters with a custom emoji.
     """
+
     def __init__(self, bot):
         self.bot = bot
         self.config = Config.get_conf(self, identifier=123859659843, force_registration=True)
-        default_guild = {
-            "channel": None,
-            "disabled": False
-        }
-        default_member = {
-            "emojis": []
-        }
+        default_guild = {"channel": None, "disabled": False}
+        default_member = {"emojis": []}
         self.config.register_guild(**default_guild)
         self.config.register_member(**default_member)
 
@@ -49,7 +45,6 @@ class NitroEmoji(commands.Cog):
         if not emoji:
             emoji = discord.utils.get(guild.emojis, name=name)
         return emoji
-
 
     async def add_emoji(self, member, name, attachment_or_url, reason=None):
         path = str(cog_data_path(cog_instance=self))
@@ -148,7 +143,6 @@ class NitroEmoji(commands.Cog):
         await self.config.guild(ctx.guild).disabled.set(on_off)
         await ctx.tick()
 
-
     @commands.group(name="nitroemoji")
     @checks.bot_has_permissions(manage_emojis=True)
     async def nitroemoji(self, ctx):
@@ -184,13 +178,14 @@ class NitroEmoji(commands.Cog):
             except PIL.UnidentifiedImageError:
                 await ctx.send("That is not a valid picture! Pictures must be in PNG, JPEG, or GIF format.")
             except:
-                await ctx.send("Something went wrong, make sure to add a valid picture (PNG, JPG, or GIF) of the right size (256KB) and a valid name.")
+                await ctx.send(
+                    "Something went wrong, make sure to add a valid picture (PNG, JPG, or GIF) of the right size (256KB) and a valid name."
+                )
                 return
         elif not boosts:
             await ctx.send("Sorry, you need to be a nitro booster to add an emoji!")
         elif curr:
             await ctx.send("You already have a custom emoji, please delete it first before adding another one.")
-
 
     @nitroemoji.command(name="rem")
     async def nitroemoji_rem(self, ctx, name: str):
@@ -207,7 +202,6 @@ class NitroEmoji(commands.Cog):
                 await ctx.send("That isn't your custom emoji.")
         else:
             await ctx.send(warning("Emoji not found."))
-
 
     @nitroemoji.command(name="list")
     async def nitroemoji_list(self, ctx):
@@ -228,7 +222,6 @@ class NitroEmoji(commands.Cog):
 
         for page in pagify(msg):
             await ctx.send(page)
-
 
     @commands.Cog.listener()
     async def on_member_update(self, before, after):

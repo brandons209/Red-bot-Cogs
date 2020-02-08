@@ -14,7 +14,12 @@ from redbot.core.config import Config
 from redbot.core.utils.chat_formatting import box, pagify, warning, humanize_list
 
 from .events import EventMixin
-from .exceptions import RoleManagementException, PermissionOrHierarchyException, MissingRequirementsException, ConflictingRoleException
+from .exceptions import (
+    RoleManagementException,
+    PermissionOrHierarchyException,
+    MissingRequirementsException,
+    ConflictingRoleException,
+)
 from .massmanager import MassManagementMixin
 from .utils import UtilMixin, variation_stripper_re, parse_timedelta, parse_seconds
 
@@ -42,6 +47,7 @@ class CompositeMetaClass(DPYCogMeta, ABCMeta):
 MIN_SUB_TIME = 3600
 SLEEP_TIME = 300
 MAX_EMBED = 25
+
 
 class RoleManagement(
     UtilMixin, MassManagementMixin, EventMixin, commands.Cog, metaclass=CompositeMetaClass,
@@ -814,7 +820,11 @@ class RoleManagement(
             embed.add_field(
                 name=f"__**{i+1}. {role.name}**__",
                 value="%s%s%s"
-                % ((f"Cost: {cost}" if cost else "Free"), (f", every {parse_seconds(sub)}" if sub else ""), (f"\nunique groups: `{groups}`" if groups else ""))
+                % (
+                    (f"Cost: {cost}" if cost else "Free"),
+                    (f", every {parse_seconds(sub)}" if sub else ""),
+                    (f"\nunique groups: `{groups}`" if groups else ""),
+                ),
             )
             i += 1
             if i % MAX_EMBED == 0:
@@ -850,7 +860,9 @@ class RoleManagement(
         except ConflictingRoleException as e:
             roles = [r for r in ctx.guild.roles if r in e.conflicts]
             plural = "are" if len(roles) > 1 else "is"
-            await ctx.send(f"You have {humanize_list(roles)}, which you are not allowed to remove and {plural} exclusive to: {role.name}")
+            await ctx.send(
+                f"You have {humanize_list(roles)}, which you are not allowed to remove and {plural} exclusive to: {role.name}"
+            )
         else:
             if not eligible:
                 return await ctx.send(f"You aren't allowed to add `{role}` to yourself {ctx.author.mention}!")
@@ -882,7 +894,9 @@ class RoleManagement(
 
                 if remove:
                     plural = "s" if len(remove) > 1 else ""
-                    await ctx.send(f"Removed `{humanize_list([r.name for r in remove])}` role{plural} since they are exclusive to the role you added.")
+                    await ctx.send(
+                        f"Removed `{humanize_list([r.name for r in remove])}` role{plural} since they are exclusive to the role you added."
+                    )
                 await self.update_roles_atomically(who=ctx.author, give=[role], remove=remove)
                 await self.dm_user(ctx, role)
                 await ctx.tick()
@@ -914,7 +928,9 @@ class RoleManagement(
             print(e.conflicts)
             roles = [r for r in ctx.guild.roles if r in e.conflicts]
             plural = "are" if len(roles) > 1 else "is"
-            await ctx.send(f"You have {humanize_list(roles)}, which you are not allowed to remove and {plural} exclusive to: {role.name}")
+            await ctx.send(
+                f"You have {humanize_list(roles)}, which you are not allowed to remove and {plural} exclusive to: {role.name}"
+            )
         else:
             if not eligible:
                 await ctx.send(f"You aren't allowed to add `{role}` to yourself {ctx.author.mention}!")
@@ -926,7 +942,9 @@ class RoleManagement(
             else:
                 if remove:
                     plural = "s" if len(remove) > 1 else ""
-                    await ctx.send(f"Removed `{humanize_list([r.name for r in remove])}` role{plural} since they are exclusive to the role you added.")
+                    await ctx.send(
+                        f"Removed `{humanize_list([r.name for r in remove])}` role{plural} since they are exclusive to the role you added."
+                    )
                 await self.update_roles_atomically(who=ctx.author, give=[role], remove=remove)
                 await self.dm_user(ctx, role)
                 await ctx.tick()
