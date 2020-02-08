@@ -275,6 +275,7 @@ class MoreAdmin(commands.Cog):
                     await ctx.send(f"Addable Roles: {humanize_list(curr)}")
             return
 
+        guild = ctx.guild
         role_list = role_list.strip().split(",")
         role_list = [r.strip() for r in role_list]
         not_found = set()
