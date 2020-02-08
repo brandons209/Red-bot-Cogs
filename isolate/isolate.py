@@ -16,15 +16,15 @@ import logging
 import time
 import textwrap
 
-log = logging.getLogger("red.punish")
+log = logging.getLogger("red.isolate")
 
 __version__ = "3.0.0"
 
-PURGE_MESSAGES = 1  # for cpunish
+PURGE_MESSAGES = 1  # for cisolate
 
-DEFAULT_ROLE_NAME = "Punished"
-DEFAULT_TEXT_OVERWRITE = discord.PermissionOverwrite(send_messages=False, send_tts_messages=False, add_reactions=False)
-DEFAULT_VOICE_OVERWRITE = discord.PermissionOverwrite(speak=False, connect=False)
+DEFAULT_ROLE_NAME = "Isolated"
+DEFAULT_TEXT_OVERWRITE = discord.PermissionOverwrite(send_messages=False, send_tts_messages=False, add_reactions=False, read_messages=False)
+DEFAULT_VOICE_OVERWRITE = discord.PermissionOverwrite(speak=False, connect=False, view_channel=False)
 DEFAULT_TIMEOUT_OVERWRITE = discord.PermissionOverwrite(send_messages=True, read_messages=True)
 
 QUEUE_TIME_CUTOFF = 30
@@ -33,7 +33,7 @@ DEFAULT_TIMEOUT = "5m"
 DEFAULT_CASE_MIN_LENGTH = "5m"  # only create modlog cases when length is longer than this
 
 
-class Punish(commands.Cog):
+class Isolate(commands.Cog):
     """
     Put misbehaving users in timeout where they are unable to speak, read, or
     do other things that can be denied using discord permissions. Includes
@@ -47,10 +47,9 @@ class Punish(commands.Cog):
         self.config = Config.get_conf(self, identifier=1574368792)
         # config
         default_guild = {
-            "PUNISHED": {},
+            "ISOLATED": {},
             "CASE_MIN_LENGTH": parse_time(DEFAULT_CASE_MIN_LENGTH),
             "PENDING_UNMUTE": [],
-            "REMOVE_ROLE_LIST": [],
             "TEXT_OVERWRITE": overwrite_to_dict(DEFAULT_TEXT_OVERWRITE),
             "VOICE_OVERWRITE": overwrite_to_dict(DEFAULT_VOICE_OVERWRITE),
             "ROLE_ID": None,
@@ -76,41 +75,41 @@ class Punish(commands.Cog):
     @staticmethod
     async def register_casetypes():
         # register mod case
-        punish_case = {
+        isolate_case = {
             "name": "Timed Mute",
             "default_setting": True,
             "image": "\N{HOURGLASS WITH FLOWING SAND}\N{SPEAKER WITH CANCELLATION STROKE}",
             "case_str": "Timed Mute",
         }
         try:
-            await modlog.register_casetype(**punish_case)
+            await modlog.register_casetype(**isolate_case)
         except RuntimeError:
             pass
 
     @commands.group(invoke_without_command=True)
     @commands.guild_only()
     @checks.mod()
-    async def punish(self, ctx, user: discord.Member, duration: str = None, *, reason: str = None):
+    async def isolate(self, ctx, user: discord.Member, duration: str = None, *, reason: str = None):
         """
         Puts a user into timeout for a specified time, with optional reason.
 
         Time specification is any combination of number with the units s,m,h,d,w.
-        Example: !punish @idiot 1.1h10m Breaking rules
+        Example: !isolate @idiot 1.1h10m Breaking rules
         """
         if ctx.invoked_subcommand:
             return
         elif user:
-            await self._punish_cmd_common(ctx, user, duration, reason)
+            await self._isolate_cmd_common(ctx, user, duration, reason)
 
-    @punish.command(name="cstart")
+    @isolate.command(name="cstart")
     @commands.guild_only()
     @checks.mod()
-    async def punish_cstart(self, ctx, user: discord.Member, duration: str = None, *, reason: str = None):
+    async def isolate_cstart(self, ctx, user: discord.Member, duration: str = None, *, reason: str = None):
         """
-        Same as [p]punish start, but cleans up the target's last message.
+        Same as [p]isolate start, but cleans up the target's last message.
         """
 
-        success = await self._punish_cmd_common(ctx, user, duration, reason, quiet=True)
+        success = await self._isolate_cmd_common(ctx, user, duration, reason, quiet=True)
 
         if not success:
             return
@@ -121,28 +120,28 @@ class Punish(commands.Cog):
         try:
             await ctx.message.channel.purge(limit=PURGE_MESSAGES + 1, check=check)
         except discord.errors.Forbidden:
-            await ctx.send("Punishment set, but I need permissions to manage messages to clean up.")
+            await ctx.send("Isolation set, but I need permissions to manage messages to clean up.")
 
-    @punish.command(name="list")
+    @isolate.command(name="list")
     @commands.guild_only()
     @checks.mod()
-    async def punish_list(self, ctx):
+    async def isolate_list(self, ctx):
         """
-        Shows a table of punished users with time, mod and reason.
+        Shows a table of isolated users with time, mod and reason.
 
-        Displays punished users, time remaining, responsible moderator and
-        the reason for punishment, if any.
+        Displays isolated users, time remaining, responsible moderator and
+        the reason for isolation, if any.
         """
 
         guild = ctx.guild
         guild_id = guild.id
         now = time.time()
         headers = ["Member", "Remaining", "Moderator", "Reason"]
-        punished = await self.config.guild(guild).PUNISHED()
+        isolated = await self.config.guild(guild).ISOLATED()
 
         embeds = []
-        num_p = len(punished)
-        for i, data in enumerate(punished.items()):
+        num_p = len(isolated)
+        for i, data in enumerate(isolated.items()):
             member_id, data = data
             member_name = getmname(member_id, guild)
             moderator = getmname(data["by"], guild)
@@ -152,7 +151,7 @@ class Punish(commands.Cog):
             remaining = generate_timespec(until - now, short=True) if until else "forever"
 
             row = [member_name, remaining, moderator, reason or "No reason set."]
-            embed = discord.Embed(title="Punish List", colour=discord.Colour.from_rgb(255, 0, 0))
+            embed = discord.Embed(title="Isolate List", colour=discord.Colour.from_rgb(255, 0, 0))
 
             for header, row_val in zip(headers, row):
                 embed.add_field(name=header, value=row_val)
@@ -160,32 +159,32 @@ class Punish(commands.Cog):
             embed.set_footer(text=f"Page {i+1} out of {num_p}")
             embeds.append(embed)
 
-        if not punished:
-            await ctx.send("No users are currently punished.")
+        if not isolated:
+            await ctx.send("No users are currently isolated.")
             return
 
         await menu(ctx, embeds, DEFAULT_CONTROLS)
 
-    @punish.command(name="clean")
+    @isolate.command(name="clean")
     @commands.guild_only()
     @checks.mod()
-    async def punish_clean(self, ctx, clean_pending: bool = False):
+    async def isolate_clean(self, ctx, clean_pending: bool = False):
         """
-        Removes absent members from the punished list.
+        Removes absent members from the isolated list.
 
         If run without an argument, it only removes members who are no longer
         present but whose timer has expired. If the argument is 'yes', 1,
         or another trueish value, it will also remove absent members whose
         timers have yet to expire.
 
-        Use this option with care, as removing them will prevent the punished
+        Use this option with care, as removing them will prevent the isolated
         role from being re-added if they rejoin before their timer expires.
         """
 
         count = 0
         now = time.time()
         guild = ctx.guild
-        data = await self.config.guild(guild).PUNISHED()
+        data = await self.config.guild(guild).ISOLATED()
 
         for mid, mdata in data.copy().items():
             if not mid.isdigit() or guild.get_member(mid):
@@ -195,20 +194,20 @@ class Punish(commands.Cog):
                 del data[mid]
                 count += 1
 
-        await self.config.guild(guild).PUNISHED.set(data)
+        await self.config.guild(guild).ISOLATED.set(data)
         await ctx.send("Cleaned %i absent members from the list." % count)
 
-    @punish.command(name="clean-bans")
+    @isolate.command(name="clean-bans")
     @commands.guild_only()
     @checks.mod()
-    async def punish_clean_bans(self, ctx):
+    async def isolate_clean_bans(self, ctx):
         """
-        Removes banned members from the punished list.
+        Removes banned members from the isolated list.
         """
 
         count = 0
         guild = ctx.guild
-        data = await self.config.guild(guild).PUNISHED()
+        data = await self.config.guild(guild).ISOLATED()
 
         try:
             bans = await guild.bans()
@@ -225,13 +224,13 @@ class Punish(commands.Cog):
                 del data[mid]
                 count += 1
 
-        await self.config.guild(guild).PUNISHED.set(data)
+        await self.config.guild(guild).ISOLATED.set(data)
         await ctx.send("Cleaned %i banned users from the list." % count)
 
-    @punish.command(name="warn")
+    @isolate.command(name="warn")
     @commands.guild_only()
     @checks.mod_or_permissions(manage_messages=True)
-    async def punish_warn(self, ctx, user: discord.Member, *, reason: str = None):
+    async def isolate_warn(self, ctx, user: discord.Member, *, reason: str = None):
         """
         Warns a user with boilerplate about the rules
         """
@@ -244,12 +243,12 @@ class Punish(commands.Cog):
         msg.append("Be sure to review the guild rules.")
         await ctx.send(" ".join(msg))
 
-    @punish.command(name="end", aliases=["remove"])
+    @isolate.command(name="end", aliases=["remove"])
     @commands.guild_only()
     @checks.mod()
-    async def punish_end(self, ctx, user: discord.Member, *, reason: str = None):
+    async def isolate_end(self, ctx, user: discord.Member, *, reason: str = None):
         """
-        Removes punishment from a user before time has expired
+        Removes Isolation from a user before time has expired
 
         This is the same as removing the role directly.
         """
@@ -259,12 +258,12 @@ class Punish(commands.Cog):
         guild = user.guild
         moderator = ctx.author
         now = time.time()
-        punished = await self.config.guild(guild).PUNISHED()
-        data = punished.get(str(user.id), {})
+        isolated = await self.config.guild(guild).ISOLATED()
+        data = isolated.get(str(user.id), {})
         removed_roles_parsed = resolve_role_list(guild, data.get("removed_roles", []))
 
         if role and role in user.roles:
-            msg = "Punishment manually ended early by %s." % ctx.author
+            msg = "Isolation manually ended early by %s." % ctx.author
 
             original_start = data.get("start")
             original_end = data.get("until")
@@ -290,8 +289,8 @@ class Punish(commands.Cog):
                 names_list = format_list(*(r.name for r in removed_roles_parsed))
                 msg += "\nRestored role(s): {}".format(names_list)
 
-            if not await self._unpunish(user, reason=updated_reason, update=True, moderator=moderator):
-                msg += "\n\n(failed to send punishment end notification DM)"
+            if not await self._unisolate(user, reason=updated_reason, update=True, moderator=moderator):
+                msg += "\n\n(failed to send Isolation end notification DM)"
 
             await ctx.send(msg)
         elif data:  # This shouldn't happen, but just in case
@@ -306,8 +305,8 @@ class Punish(commands.Cog):
                     "**Moderator**: %s" % (user.guild.get_member(data.get("by")) or "Missing ID#%s" % data.get("by")),
                 ]
             )
-            del punished[str(user.id)]
-            await self.config.guild(guild).PUNISHED.set(punished)
+            del isolated[str(user.id)]
+            await self.config.guild(guild).ISOLATED.set(isolated)
 
             await ctx.send(
                 "That user doesn't have the %s role, but they still have a data entry. I removed it, "
@@ -316,28 +315,28 @@ class Punish(commands.Cog):
         elif role:
             await ctx.send("That user doesn't have the %s role." % role.name)
         else:
-            await ctx.send("The punish role couldn't be found in this guild.")
+            await ctx.send("The isolate role couldn't be found in this guild.")
 
-    @punish.command(name="reason")
+    @isolate.command(name="reason")
     @commands.guild_only()
     @checks.mod()
-    async def punish_reason(self, ctx, user: discord.Member, *, reason: str = None):
+    async def isolate_reason(self, ctx, user: discord.Member, *, reason: str = None):
         """
-        Updates the reason for a punishment, including the modlog if a case exists.
+        Updates the reason for a Isolation, including the modlog if a case exists.
         """
         guild = ctx.guild
-        punished = await self.config.guild(guild).PUNISHED()
-        data = punished.get(str(user.id), None)
+        isolated = await self.config.guild(guild).ISOLATED()
+        data = isolated.get(str(user.id), None)
 
         if not data:
             await ctx.send(
-                "That user doesn't have an active punishment entry. To update modlog "
+                "That user doesn't have an active Isolation entry. To update modlog "
                 "cases manually, use the `%sreason` command." % ctx.prefix
             )
             return
 
-        punished[str(user.id)]["reason"] = reason
-        await self.config.guild(guild).PUNISHED.set(punished)
+        isolated[str(user.id)]["reason"] = reason
+        await self.config.guild(guild).ISOLATED.set(isolated)
 
         if reason:
             msg = "Reason updated."
@@ -371,82 +370,13 @@ class Punish(commands.Cog):
     @commands.group()
     @commands.guild_only()
     @checks.admin_or_permissions(administrator=True)
-    async def punishset(self, ctx):
+    async def isolateset(self, ctx):
         pass
 
-    @punishset.command(name="remove-roles")
-    async def punishset_remove_role_list(self, ctx, *, rolelist=None):
-        """Set what roles to remove when punishing.
-
-        COMMA SEPARATED LIST (e.g. Admin,Staff,Mod), Can also use role IDs as well.
-
-        To get current remove role list, run command with no roles.
-
-        Add role_list_clear as the role to clear the guild's remove role list.
+    @isolateset.command(name="nitro-role")
+    async def isolateset_nitro_role(self, ctx, *, role: str = None):
         """
-        guild = ctx.guild
-        role_list = await self.config.guild(guild).REMOVE_ROLE_LIST()
-        punished = await self.config.guild(guild).PUNISHED()
-        current_roles = resolve_role_list(guild, role_list)
-
-        if rolelist is None:
-            if current_roles:
-                names_list = format_list(*(r.name for r in current_roles))
-                await ctx.send(f"Current list of roles removed when a user is punished: {names_list}")
-            else:
-                await ctx.send("No roles defined for removal.")
-            return
-        elif "role_list_clear" in rolelist.lower():
-            await ctx.send("Remove role list cleared.")
-            await self.config.guild(guild).REMOVE_ROLE_LIST.set([])
-            return
-
-        found_roles = set()
-        notfound_names = set()
-        punish_role = await self.get_role(guild, quiet=True)
-
-        for lookup in rolelist.split(","):
-            lookup = lookup.strip()
-            role = role_from_string(guild, lookup)
-
-            if role:
-                found_roles.add(role)
-            else:
-                notfound_names.add(lookup)
-
-        if notfound_names:
-            fmt_list = format_list(*("`{}`".format(x) for x in notfound_names))
-            await ctx.send(warning(f"These roles were not found: {fmt_list}\n\nPlease try again."))
-        elif punish_role and punish_role in found_roles:
-            await ctx.send(warning("The punished role cannot be removed.\n\nPlease try again."))
-        elif guild.default_role in found_roles:
-            await ctx.send(warning("The everyone role cannot be removed.\n\nPlease try again."))
-        elif found_roles == set(current_roles):
-            await ctx.send("No changes to make.")
-        else:
-            if punished:
-                extra = f"\n\nRun `{ctx.prefix}punishset sync-roles` to apply the changes to punished members."
-            else:
-                extra = ""
-
-            too_high = {r for r in found_roles if r > guild.me.top_role}
-
-            if too_high:
-                fmt_list = format_list(*(r.name for r in too_high))
-                extra += "\n\n" + warning(
-                    "These roles are too high for me to manage, and cannot be autoremoved until "
-                    f"they are moved under my highest role ({guild.me.top_role}): {fmt_list}."
-                )
-
-            await self.config.guild(guild).REMOVE_ROLE_LIST.set([r.id for r in found_roles])
-
-            fmt_list = format_list(*(r.name for r in found_roles))
-            await ctx.send(f"Will remove these roles when a user is punished: {fmt_list}.{extra}")
-
-    @punishset.command(name="nitro-role")
-    async def punishset_nitro_role(self, ctx, *, role: str = None):
-        """
-        Set nitro booster role so its not removed when punishing.
+        Set nitro booster role so its not removed when isolateing.
         If your server doesn't have a nitro role, run this command with the role string `no_nitro_role`
         """
         guild = ctx.guild
@@ -473,16 +403,17 @@ class Punish(commands.Cog):
         await self.config.guild(guild).NITRO_ID.set(role.id)
         await ctx.send("Nitro role set!")
 
-    @punishset.command(name="sync-roles")
-    async def punishset_sync_roles(self, ctx):
+    @isolateset.command(name="sync-roles")
+    async def isolateset_sync_roles(self, ctx):
         """
-        Applies the remove-roles list to all punished users
+        Applies the remove-roles list to all isolated users
 
         This operation may take some time to complete, depending on the number of members.
         """
         guild = ctx.guild
-        punished = await self.config.guild(guild).PUNISHED()
-        remove_roles = await self.config.guild(guild).REMOVE_ROLE_LIST()
+        isolated = await self.config.guild(guild).ISOLATED()
+        role = await self.config.guild(guild).ROLE_ID()
+        nitro = await self.config.guild(guild).NITRO_ID()
         role_memo = Memoizer(role_from_string, guild)
         highest_role = guild.me.top_role
         count = 0
@@ -496,10 +427,7 @@ class Punish(commands.Cog):
         if guild.large:
             await self.bot.request_offline_members(guild)
 
-        # Get current set of roles to remove
-        guild_remove_roles = set(role_memo.filter(remove_roles, skip_nulls=True))
-
-        for member_id, member_data in punished.items():
+        for member_id, member_data in isolated.items():
 
             member = guild.get_member(member_id)
 
@@ -515,9 +443,11 @@ class Punish(commands.Cog):
             except KeyError:
                 pass
 
+            guild_remove_roles = [r for r in member_roles if r.id != role and r.id != nitro and r.name != "@everyone"]
+
             # update new removed roles with intersection of guild removal list and baseline
             new_removed = guild_remove_roles & member_roles
-            punished[str(member.id)]["removed_roles"] = [r.id for r in new_removed]
+            isolated[str(member.id)]["removed_roles"] = [r.id for r in new_removed]
 
             member_roles -= guild_remove_roles
 
@@ -534,7 +464,7 @@ class Punish(commands.Cog):
             # Now update roles if we need to
             if member_roles != original_roles:
                 try:
-                    await member.edit(roles=member_roles, reason="punish sync roles")
+                    await member.edit(roles=member_roles, reason="isolate sync roles")
                 except Exception:
                     log.exception(f"Couldn't modify roles in sync-roles command in {guild.name}!")
                     errors += 1
@@ -548,10 +478,10 @@ class Punish(commands.Cog):
 
         await ctx.send(msg)
 
-    @punishset.command(name="setup")
-    async def punishset_setup(self, ctx):
+    @isolateset.command(name="setup")
+    async def isolateset_setup(self, ctx):
         """
-        (Re)configures the punish role and channel overrides
+        (Re)configures the isolate role and channel overrides
         """
         guild = ctx.guild
         default_name = DEFAULT_ROLE_NAME
@@ -573,7 +503,7 @@ class Punish(commands.Cog):
             msgobj = await ctx.send(msg)
 
             perms = discord.Permissions.none()
-            role = await guild.create_role(name=default_name, permissions=perms, reason="punish cog.")
+            role = await guild.create_role(name=default_name, permissions=perms, reason="isolate cog.")
         else:
             msgobj = await ctx.send("%s role exists... " % role.name)
 
@@ -597,17 +527,17 @@ class Punish(commands.Cog):
         if role and role.id != role_id:
             await self.config.guild(guild).ROLE_ID.set(role.id)
 
-    @punishset.command(name="channel")
-    async def punishset_channel(self, ctx, channel: discord.TextChannel = None):
+    @isolateset.command(name="channel")
+    async def isolateset_channel(self, ctx, channel: discord.TextChannel = None):
         """
-        Sets or shows the punishment "timeout" channel.
+        Sets or shows the isolation "timeout" channel.
 
-        This channel has special settings to allow punished users to discuss their
+        This channel has special settings to allow isolated users to discuss their
         infraction(s) with moderators.
 
-        If there is a role deny on the channel for the punish role, it is
+        If there is a role deny on the channel for the isolate role, it is
         automatically set to allow. If the default permissions don't allow the
-        punished role to see or speak in it, an overwrite is created to allow
+        isolated role to see or speak in it, an overwrite is created to allow
         them to do so.
         """
         guild = ctx.guild
@@ -622,7 +552,7 @@ class Punish(commands.Cog):
         else:
             if current == channel:
                 await ctx.send(
-                    "The timeout channel is already %s. If you need to repair its permissions, use `%spunishset setup`."
+                    "The timeout channel is already %s. If you need to repair its permissions, use `%sisolateset setup`."
                     % (current.mention, ctx.prefix)
                 )
                 return
@@ -673,8 +603,8 @@ class Punish(commands.Cog):
 
             await ctx.send("Timeout channel set to %s." % channel.mention)
 
-    @punishset.command(name="clear-channel")
-    async def punishset_clear_channel(self, ctx):
+    @isolateset.command(name="clear-channel")
+    async def isolateset_clear_channel(self, ctx):
         """
         Clears the timeout channel and resets its permissions
         """
@@ -697,12 +627,12 @@ class Punish(commands.Cog):
         else:
             await ctx.send("No timeout channel has been set yet.")
 
-    @punishset.command(name="case-min")
-    async def punishset_case_min(self, ctx, *, timespec: str = None):
+    @isolateset.command(name="case-min")
+    async def isolateset_case_min(self, ctx, *, timespec: str = None):
         """
-        Set/disable or display the minimum punishment case duration
+        Set/disable or display the minimum isolation case duration
 
-        If the punishment duration is less than this value, a case will not be created.
+        If the isolation duration is less than this value, a case will not be created.
         Specify 'disable' to turn off case creation altogether.
         """
         guild = ctx.guild
@@ -710,9 +640,9 @@ class Punish(commands.Cog):
 
         if not timespec:
             if current:
-                await ctx.send("Punishments longer than %s will create cases." % generate_timespec(current))
+                await ctx.send("Isolations longer than %s will create cases." % generate_timespec(current))
             else:
-                await ctx.send("Punishment case creation is disabled.")
+                await ctx.send("Isolation case creation is disabled.")
         else:
             if timespec.strip("'\"").lower() == "disable":
                 value = None
@@ -725,16 +655,16 @@ class Punish(commands.Cog):
 
             await self.config.guild(guild).CASE_MIN_LENGTH.set(value)
 
-            await ctx.send("Punishments longer than %s will create cases." % generate_timespec(value))
+            await ctx.send("Isolations longer than %s will create cases." % generate_timespec(value))
 
-    @punishset.command(name="overrides")
-    async def punishset_overrides(self, ctx, *, channel_id: int = None):
+    @isolateset.command(name="overrides")
+    async def isolateset_overrides(self, ctx, *, channel_id: int = None):
         """
-        Copy or display the punish role overrides
+        Copy or display the isolate role overrides
 
         If a channel id is specified, the allow/deny settings for it are saved
         and applied to new channels when they are created. To apply the new
-        settings to existing channels, use [p]punishset setup.
+        settings to existing channels, use [p]isolateset setup.
 
         An important caveat: voice channel and text channel overrides are
         configured separately! To set the overrides for a channel type,
@@ -748,7 +678,7 @@ class Punish(commands.Cog):
         channel = guild.get_channel(channel_id)
 
         if not role:
-            await ctx.send(error("Punish role has not been created yet. Run `%spunishset setup` first." % ctx.prefix))
+            await ctx.send(error("Isolate role has not been created yet. Run `%sisolateset setup` first." % ctx.prefix))
             return
 
         if channel:
@@ -792,7 +722,7 @@ class Punish(commands.Cog):
             await ctx.send(
                 "{} channel overrides set to:\n".format(key.title())
                 + format_permissions(overwrite)
-                + "\n\nRun `%spunishset setup` to apply them to all channels." % ctx.prefix
+                + "\n\nRun `%sisolateset setup` to apply them to all channels." % ctx.prefix
             )
         else:
             msg = []
@@ -812,10 +742,10 @@ class Punish(commands.Cog):
 
             await ctx.send("\n\n".join(msg))
 
-    @punishset.command(name="reset-overrides")
-    async def punishset_reset_overrides(self, ctx, channel_type: str = "both"):
+    @isolateset.command(name="reset-overrides")
+    async def isolateset_reset_overrides(self, ctx, channel_type: str = "both"):
         """
-        Resets the punish role overrides for text, voice or both (default)
+        Resets the isolate role overrides for text, voice or both (default)
 
         This command exists in case you want to restore the default settings
         for newly created channels.
@@ -841,7 +771,7 @@ class Punish(commands.Cog):
             await ctx.send("Invalid channel type. Use `text`, `voice`, or `both` (the default, if not specified)")
             return
 
-        msg.append("Run `%spunishset setup` to apply them to all channels." % ctx.prefix)
+        msg.append("Run `%sisolateset setup` to apply them to all channels." % ctx.prefix)
 
         await ctx.send("\n\n".join(msg))
 
@@ -865,9 +795,9 @@ class Punish(commands.Cog):
                 if not quiet:
                     msgobj = await ctx.send(msg)
 
-                log.debug("Creating punish role in %s" % guild.name)
+                log.debug("Creating isolate role in %s" % guild.name)
                 perms = discord.Permissions.none()
-                role = await guild.create_role(name=DEFAULT_ROLE_NAME, permissions=perms, reason="punish cog.")
+                role = await guild.create_role(name=DEFAULT_ROLE_NAME, permissions=perms, reason="isolate cog.")
                 await role.edit(position=guild.me.top_role.position - 1)
 
                 if not quiet:
@@ -905,7 +835,7 @@ class Punish(commands.Cog):
         else:
             perms = defaults
 
-        await channel.set_permissions(role, overwrite=perms, reason="punish cog")
+        await channel.set_permissions(role, overwrite=perms, reason="isolate cog")
 
     async def on_load(self):
         await self.bot.wait_until_ready()
@@ -915,27 +845,27 @@ class Punish(commands.Cog):
             role = await self.get_role(guild, quiet=True, create=True)
 
             if not role:
-                log.error("Needed to create punish role in %s, but couldn't." % guild.name)
+                log.error("Needed to create isolate role in %s, but couldn't." % guild.name)
                 continue
 
             role_memo = Memoizer(role_from_string, guild)
-            punished = await self.config.guild(guild).PUNISHED()
+            isolated = await self.config.guild(guild).ISOLATED()
 
-            for member_id, data in punished.items():
+            for member_id, data in isolated.items():
 
                 until = data["until"]
                 member = guild.get_member(member_id)
 
                 if until and (until - time.time()) < 0:
                     if member:
-                        reason = "Punishment removal overdue, maybe the bot was offline. "
+                        reason = "Isolation removal overdue, maybe the bot was offline. "
 
                         if data["reason"]:
                             reason += data["reason"]
 
-                        await self._unpunish(member, reason=reason)
+                        await self._unisolate(member, reason=reason)
                     else:  # member disappeared
-                        del punished[str(member_id)]
+                        del isolated[str(member_id)]
                 elif member:
                     # re-check roles
                     user_roles = set(member.roles)
@@ -947,16 +877,16 @@ class Punish(commands.Cog):
 
                     if role not in user_roles:
                         if role >= me.top_role:
-                            log.error("Needed to re-add punish role to %s in %s, but couldn't." % (member, guild.name))
+                            log.error("Needed to re-add isolate role to %s in %s, but couldn't." % (member, guild.name))
                         else:
-                            user_roles.add(role)  # add punish role to the set
+                            user_roles.add(role)  # add isolate role to the set
                             apply_roles = True
 
                     if apply_roles:
-                        await member.edit(roles=member_roles, reason="punish ending")
+                        await member.edit(roles=member_roles, reason="isolate ending")
 
                     if until:
-                        await self.schedule_unpunish(until, member)
+                        await self.schedule_unisolate(until, member)
 
         while True:
             try:
@@ -1041,31 +971,29 @@ class Punish(commands.Cog):
         self.enqueued.discard(args)
 
         try:
-            return self.execute_unpunish(*args)
+            return self.execute_unisolate(*args)
         except Exception:
             log.exception("failed to execute scheduled event")
 
-    async def _punish_cmd_common(self, ctx, member, duration, reason, quiet=False):
+    async def _isolate_cmd_common(self, ctx, member, duration, reason, quiet=False):
         guild = ctx.guild
         using_default = False
         updating_case = False
         case_error = None
 
-        remove_role_set = await self.config.guild(guild).REMOVE_ROLE_LIST()
-        remove_role_set = set(resolve_role_list(guild, remove_role_set))
-        punished = await self.config.guild(guild).PUNISHED()
-        current = punished.get(str(member.id), {})
+        isolated = await self.config.guild(guild).ISOLATED()
+        current = isolated.get(str(member.id), {})
         reason = reason or current.get("reason")  # don't clear if not given
         hierarchy_allowed = ctx.author.top_role > member.top_role
         case_min_length = await self.config.guild(guild).CASE_MIN_LENGTH()
         nitro_role = await self.config.guild(guild).NITRO_ID()
 
         if nitro_role is None:
-            await ctx.send(f"Please set the nitro role using `{ctx.prefix}punishset nitro-role`")
+            await ctx.send(f"Please set the nitro role using `{ctx.prefix}isolateset nitro-role`")
             return
 
         if member == guild.me:
-            await ctx.send("You can't punish the bot.")
+            await ctx.send("You can't isolate the bot.")
             return
 
         if duration and duration.lower() in ["forever", "inf", "infinite"]:
@@ -1108,7 +1036,7 @@ class Punish(commands.Cog):
                     except:  # shouldn't happen
                         await ctx.send(
                             warning(
-                                "Error, modlog case not found, but user is punished with case.\nTry unpunishing and punishing again."
+                                "Error, modlog case not found, but user is isolated with case.\nTry unisolating and isolating again."
                             )
                         )
                         return
@@ -1150,7 +1078,7 @@ class Punish(commands.Cog):
 
         subject = "the %s role" % role.name
 
-        if str(member.id) in punished:
+        if str(member.id) in isolated:
             if role in member.roles:
                 msg = "{0} already had the {1.name} role; resetting their timer."
             else:
@@ -1195,19 +1123,19 @@ class Punish(commands.Cog):
 
         overwrite_denies_speak = (voice_overwrite.speak is False) or (voice_overwrite.connect is False)
 
-        # remove all roles from user that are specified in remove_role_list, only if its a new punish
-        if str(member.id) not in punished:
+        # remove all roles from user that are specified in remove_role_list, only if its a new isolati
+        if str(member.id) not in isolated:
+            user_roles = {r for r in member.roles if r.name != "@everyone"}
+            removed_roles = user_roles.copy()
             if nitro_role != "no_nitro_role":
                 nitro_role = role_from_string(guild, nitro_role)
-                remove_role_set.discard(nitro_role)
+                removed_roles.discard(nitro_role)
 
-            user_roles = set(member.roles)
             # build lists of roles that *should* be removed and ones that *can* be
-            removed_roles = user_roles & remove_role_set
             too_high_to_remove = {r for r in removed_roles if r >= guild.me.top_role}
             user_roles -= removed_roles - too_high_to_remove
-            user_roles.add(role)  # add punish role to the set
-            await member.edit(roles=user_roles, reason=f"punish {member}")
+            user_roles.add(role)  # add isolate role to the set
+            await member.edit(roles=user_roles, reason=f"isolate {member}")
 
         else:
             removed_roles = set(resolve_role_list(guild, current.get("removed_roles", [])))
@@ -1222,15 +1150,15 @@ class Punish(commands.Cog):
                 fmt_list = format_list(*(r.name for r in removed_roles))
                 msg += "\n" + warning(
                     "These roles were too high to remove (fix hierarchy, then run "
-                    "`{}punishset sync-roles`): {}".format(ctx.prefix, fmt_list)
+                    "`{}isolateset sync-roles`): {}".format(ctx.prefix, fmt_list)
                 )
         if member.voice:
             muted = member.voice.mute
         else:
             muted = False
 
-        async with self.config.guild(guild).PUNISHED() as punished:
-            punished[str(member.id)] = {
+        async with self.config.guild(guild).ISOLATED() as isolated:
+            isolated[str(member.id)] = {
                 "start": current.get("start") or now,  # don't override start time if updating
                 "until": until,
                 "by": current.get("by") or ctx.author.id,  # don't override original moderator
@@ -1242,27 +1170,27 @@ class Punish(commands.Cog):
 
         if member.voice and overwrite_denies_speak:
             if member.voice.channel:
-                await member.edit(mute=True)
+                await member.edit(mute=True, deafen=True)
 
         # schedule callback for role removal
         if until:
-            await self.schedule_unpunish(until, member)
+            await self.schedule_unisolate(until, member)
 
         if not quiet:
             await ctx.send(msg)
 
         return True
 
-    # Functions related to unpunishing
+    # Functions related to unisolateing
 
-    async def schedule_unpunish(self, until, member):
+    async def schedule_unisolate(self, until, member):
         """
         Schedules role removal, canceling and removing existing tasks if present
         """
 
         await self.put_queue_event(until, member.guild.id, member.id)
 
-    def execute_unpunish(self, guild_id, member_id) -> bool:
+    def execute_unisolate(self, guild_id, member_id) -> bool:
         guild = self.bot.get_guild(guild_id)
 
         if not guild:
@@ -1271,40 +1199,40 @@ class Punish(commands.Cog):
         member = guild.get_member(member_id)
 
         if member:
-            self.bot.loop.create_task(self._unpunish(member))
+            self.bot.loop.create_task(self._unisolate(member))
             return True
         else:
             self.bot.loop.create_task(self.bot.request_offline_members(guild))
             return False
 
-    async def _unpunish(self, member, reason=None, apply_roles=True, update=False, moderator=None, quiet=False) -> bool:
+    async def _unisolate(self, member, reason=None, apply_roles=True, update=False, moderator=None, quiet=False) -> bool:
         """
-        Remove punish role, delete record and task handle
+        Remove isolate role, delete record and task handle
         """
         guild = member.guild
         role = await self.get_role(guild, quiet=True)
         nitro_role = await self.config.guild(guild).NITRO_ID()
 
         if role:
-            data = await self.config.guild(guild).PUNISHED()
+            data = await self.config.guild(guild).ISOLATED()
             member_data = data.get(str(member.id), {})
             caseno = member_data.get("caseno")
             removed_roles = set(resolve_role_list(guild, member_data.get("removed_roles", [])))
 
             # Has to be done first to prevent triggering listeners
-            await self._unpunish_data(member)
+            await self._unisolate_data(member)
             await self.cancel_queue_event(member.guild.id, member.id)
 
             if apply_roles:
 
                 # readd removed roles from user, by replacing user's roles with all of their roles plus the ones that
-                # were removed (and can be re-added), minus the punish role
+                # were removed (and can be re-added), minus the isolate role
                 user_roles = set(member.roles)
                 too_high_to_restore = {r for r in removed_roles if r >= guild.me.top_role}
                 removed_roles -= too_high_to_restore
                 user_roles |= removed_roles
                 user_roles.discard(role)
-                await member.edit(roles=user_roles, reason="punish end")
+                await member.edit(roles=user_roles, reason="isolate end")
 
             if update and caseno:
                 until = member_data.get("until") or False
@@ -1331,7 +1259,7 @@ class Punish(commands.Cog):
             if member_data.get("unmute", False):
                 if member.voice:
                     if member.voice.channel:
-                        await member.edit(mute=False)
+                        await member.edit(mute=False, deafen=False)
                 else:
                     async with self.config.guild(guild).PENDING_UNMUTE() as unmute_list:
                         if member.id not in unmute_list:
@@ -1340,7 +1268,7 @@ class Punish(commands.Cog):
             if quiet:
                 return True
 
-            msg = "Your punishment in %s has ended." % member.guild.name
+            msg = "Your Isolation in %s has ended." % member.guild.name
 
             if reason:
                 msg += "\nReason: %s" % reason
@@ -1360,13 +1288,13 @@ class Punish(commands.Cog):
             except Exception:
                 return False
 
-    async def _unpunish_data(self, member):
-        """Removes punish data entry and cancels any present callback"""
+    async def _unisolate_data(self, member):
+        """Removes isolate data entry and cancels any present callback"""
         guild = member.guild
 
-        async with self.config.guild(guild).PUNISHED() as punished:
-            if str(member.id) in punished:
-                del punished[str(member.id)]
+        async with self.config.guild(guild).ISOLATED() as isolated:
+            if str(member.id) in isolated:
+                del isolated[str(member.id)]
 
     # Listeners
     @commands.Cog.listener()
@@ -1380,10 +1308,10 @@ class Punish(commands.Cog):
 
     @commands.Cog.listener()
     async def on_member_update(self, before, after):
-        """Remove scheduled unpunish when manually removed role"""
+        """Remove scheduled unisolate when manually removed role"""
         try:
             assert before.roles != after.roles
-            guild_data = await self.config.guild(before.guild).PUNISHED()
+            guild_data = await self.config.guild(before.guild).ISOLATED()
             member_data = guild_data[str(before.id)]
             role = await self.get_role(before.guild, quiet=True)
             assert role
@@ -1393,12 +1321,12 @@ class Punish(commands.Cog):
         new_roles = {role.id: role for role in after.roles}
 
         if role in before.roles and role.id not in new_roles:
-            msg = "Punishment manually ended early by a moderator/admin."
+            msg = "Isolation manually ended early by a moderator/admin."
 
             if member_data["reason"]:
                 msg += "\nReason was: " + member_data["reason"]
 
-            await self._unpunish(after, reason=msg, update=True)
+            await self._unisolate(after, reason=msg, update=True)
         else:
             to_remove = {new_roles.get(role_id) for role_id in member_data.get("removed_roles", [])}
             to_remove = [r for r in to_remove if r and r < after.guild.me.top_role]
@@ -1408,10 +1336,10 @@ class Punish(commands.Cog):
 
     @commands.Cog.listener()
     async def on_member_join(self, member):
-        """Restore punishment if punished user leaves/rejoins"""
+        """Restore Isolation if isolated user leaves/rejoins"""
         guild = member.guild
-        punished = await self.config.guild(guild).PUNISHED()
-        data = punished.get(str(member.id), {})
+        isolated = await self.config.guild(guild).ISOLATED()
+        data = isolated.get(str(member.id), {})
 
         if not data:
             return
@@ -1425,7 +1353,7 @@ class Punish(commands.Cog):
         duration = until - time.time()
 
         if role and duration > 0:
-            await self.schedule_unpunish(until, member)
+            await self.schedule_unisolate(until, member)
 
             if role not in member.roles:
                 await member.add_roles(role)
@@ -1436,14 +1364,14 @@ class Punish(commands.Cog):
             return
 
         guild = member.guild
-        data = await self.config.guild(guild).PUNISHED()
+        data = await self.config.guild(guild).ISOLATED()
         member_data = data.get(str(member.id), {})
         unmute_list = await self.config.guild(guild).PENDING_UNMUTE()
 
         if member_data and not after.mute:
-            await member.edit(mute=True)
+            await member.edit(mute=True, deafen=True)
         elif member.id in unmute_list:
-            await member.edit(mute=False)
+            await member.edit(mute=False, deafen=False)
             if member.id in unmute_list:
                 unmute_list.remove(member.id)
 
@@ -1451,17 +1379,17 @@ class Punish(commands.Cog):
 
     @commands.Cog.listener()
     async def on_member_ban(self, member):
-        """Remove punishment record when member is banned."""
+        """Remove Isolation record when member is banned."""
         guild = member.guild
-        data = await self.config.guild(guild).PUNISHED()
+        data = await self.config.guild(guild).ISOLATED()
         member_data = data.get(str(member.id))
 
         if member_data is None:
             return
 
-        msg = "Punishment ended early due to ban."
+        msg = "Isolation ended early due to ban."
 
         if member_data.get("reason"):
             msg += "\n\nOriginal reason was: " + member_data["reason"]
 
-        await self._unpunish(member, reason=msg, apply_roles=False, update=True, quiet=True)
+        await self._unisolate(member, reason=msg, apply_roles=False, update=True, quiet=True)

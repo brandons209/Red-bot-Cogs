@@ -1,0 +1,20 @@
+{
+  "author": [
+    "Brandons209",
+    "calebj"
+  ],
+  "bot_version": [
+    3,
+    0,
+    0
+  ],
+  "description": "Provides a way to quickly remove a user for all chats and isolate them to a single channel. Supports setting times, automatic removal of isolate, modlog integration, custom role overrides, automatic server setup, and a lot more. This is different from punish as it always remove all a user's roles and by default makes the user not read all channels.",
+  "hidden": false,
+  "install_msg": "Thank you for using this cog! Please make sure to setup the cog using [p]isolateset",
+  "requirements": [],
+  "short": "Provides a way to quickly remove a user for all chats and isolate them to a single channel.",
+  "tags": [
+    "brandons209",
+    "isolate"
+  ]
+}
