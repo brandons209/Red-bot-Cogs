@@ -65,7 +65,6 @@ class EconomyTrickle(commands.Cog):
                     minutes[g] += 1
                     if minutes[g] % data[g.id]["interval"] == 0:
                         minutes[g] = 0
-                        print(f"processing...{minutes[g]}, {data[g.id]['interval']}")
                         now = datetime.utcnow()
                         tsk = self.bot.loop.create_task(self.do_rewards_for(g, now, data[g.id]))
                         self.extra_tasks.append(tsk)
@@ -73,7 +72,6 @@ class EconomyTrickle(commands.Cog):
     async def do_rewards_for(self, guild: discord.Guild, now: datetime, data: dict):
 
         after = now - timedelta(minutes=data["interval"], seconds=10)
-        print(f"after: {after}")
         voice_mem = await self.config.guild(guild).min_voice_members()
         if data["mode"] == "blacklist":
 
@@ -104,7 +102,6 @@ class EconomyTrickle(commands.Cog):
         has_active_message = set(self.recordhandler.get_active_for_guild(guild=guild, after=after, message_check=mpred))
 
         is_active_voice = {m for m in guild.members if vpred(m)}
-        print(f"active: {[m.name for m in has_active_message]}")
         is_active = has_active_message | is_active_voice
 
         # take exp away from inactive users
