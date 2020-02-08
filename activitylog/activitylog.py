@@ -1,4 +1,4 @@
-limit=2# redbot/discord
+# redbot/discord
 from redbot.core.utils.chat_formatting import *
 from redbot.core import Config, checks, commands, modlog
 from redbot.core.data_manager import cog_data_path
@@ -209,6 +209,8 @@ class ActivityLogger(commands.Cog):
             activity = "Listening to {}".format(user.activity.name)
         elif user.activity.type == discord.ActivityType.watching:
             activity = "Watching {}".format(user.activity.name)
+        else:
+            activity = None
 
         if roles:
             roles = " ".join([x.mention for x in roles])
