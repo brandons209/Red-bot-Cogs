@@ -110,7 +110,7 @@ class EconomyTrickle(commands.Cog):
                 continue
 
             # loose exp per interval
-            xp = min(data["xp_per_interval"] * data["decay_rate"], 1)
+            xp = max(data["xp_per_interval"] * data["decay_rate"], 1)
             xp = await self.config.member(member).xp() - xp
             xp = max(xp, 0)
             await self.config.member(member).xp.set(xp)
