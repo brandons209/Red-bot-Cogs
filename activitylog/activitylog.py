@@ -213,7 +213,7 @@ class ActivityLogger(commands.Cog):
             activity = None
 
         if roles:
-            roles = " ".join([x.mention for x in roles])
+            roles = " ".join([x.mention for x in sorted(roles, reverse=True)])
         else:
             roles = "None"
 
@@ -1593,8 +1593,9 @@ class ActivityLogger(commands.Cog):
                 msg = "Voice channel leave: {0} (id {0.id})"
 
                 async with self.config.member(member).stats() as stats:
-                    stats["vc_time_sec"] += time.time() - stats["last_vc_time"]
-                    stats["last_vc_time"] = None
+                    if stats["last_vc_time"]: # incase someone joins when bot is offline
+                        stats["vc_time_sec"] += time.time() - stats["last_vc_time"]
+                        stats["last_vc_time"] = None
 
                 if after.channel:
                     msg += " moving to {1.channel}"
