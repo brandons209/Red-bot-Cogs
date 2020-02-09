@@ -62,6 +62,7 @@ class RolePlay(commands.Cog):
         bot.remove_command("flip")
 
     def get_user_and_intensity(self, guild: discord.Guild, target: str):
+        target = target.strip()
         user = None
         intensity = 1
         if "<@!" == target[:3] and ">" == target[-1]:
