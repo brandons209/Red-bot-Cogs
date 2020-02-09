@@ -75,7 +75,7 @@ class RolePlay(commands.Cog):
         # has intensity
         if not user:
             try:
-                args = target.split(" ")
+                args = target.split()
                 intensity = int(args[-1])
                 name = " ".join(args[:-1])
                 user = guild.get_member_named(name)
