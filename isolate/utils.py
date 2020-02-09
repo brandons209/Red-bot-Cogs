@@ -181,7 +181,7 @@ def permissions_for_roles(channel, *roles):
     # Apply channel specific role permission overwrites
     for target, overwrite in channel.overwrites.items():
         # Handle default role first, if present
-        if overwrite.id == default.id:
+        if overwrite == default:
             base.handle_overwrite(allow=overwrite.allow, deny=overwrite.deny)
 
         if isinstance(target, discord.Role) and target.id in role_ids:
