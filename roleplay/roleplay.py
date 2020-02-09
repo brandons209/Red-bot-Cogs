@@ -61,27 +61,41 @@ class RolePlay(commands.Cog):
         bot.remove_command("hug")
         bot.remove_command("flip")
 
+    def get_user_and_intensity(self, guild: discord.Guild, target: str, intensity: str):
+        user = None
+        if "<@!" == target[:3] and ">" == target[-1]:
+            user = guild.get_member(int(target[3:-1]))
+
+        if not user and intensity != "":
+            user = guild.get_member_named(target + " " + intensity)
+            if user:
+                intensity = "1"
+
+        if not user:
+            user = guild.get_member_named(target)
+
+        args = intensity.split(" ")
+        if not user:
+            args.insert(0, target)
+            user = guild.get_member_named(" ".join(args[:-1]))
+
+        try:
+            intensity = int(args[-1])
+        except:
+            intensity = 1
+
+        return user, intensity
+
+
     @commands.command()
     @commands.guild_only()
-    async def hug(self, ctx, hug_target, *, intensity):
+    async def hug(self, ctx, hug_target: str, *, intensity: str = ""):
         """Hugs a user with optional intensity!
         Example: .hug *username* 4
 
         Up to 10 intensity levels."""
-        user = ctx.guild.get_member_named(hug_target + " " + intensity)
-        if user is not None:
-            name = italics(user.display_name)
-            msg = "(っ´▽｀)っ" + name
-            await ctx.send(msg)
-            return
-        args = intensity.split(" ")
-        try:
-            intensity = int(args[-1])
-        except:
-            await ctx.send("Member not found.")
-            return
-        args.insert(0, hug_target)
-        user = ctx.guild.get_member_named(" ".join(args[:-1]))
+        user, intensity = self.get_user_and_intensity(ctx.guild, hug_target, intensity)
+
         if user is not None:
             name = italics(user.display_name)
             if intensity <= 0:
@@ -333,24 +347,11 @@ class RolePlay(commands.Cog):
 
     @commands.command()
     @commands.guild_only()
-    async def boop(self, ctx, boop_target, *, intensity):
+    async def boop(self, ctx, boop_target: str, *, intensity: str = ""):
         """
         Boops a user. 10 intensity levels.
         """
-        user = ctx.guild.get_member_named(boop_target + " " + intensity)
-        if user is not None:
-            name = italics(user.display_name)
-            msg = "/) {}" + name
-            await ctx.send(msg)
-            return
-        args = intensity.split(" ")
-        try:
-            intensity = int(args[-1])
-        except:
-            await ctx.send("Can't boop what I can't see!")
-            return
-        args.insert(0, boop_target)
-        user = ctx.guild.get_member_named(" ".join(args[:-1]))
+        user, intensity = self.get_user_and_intensity(ctx.guild, boop_target, intensity)
         if user is not None:
             name = italics(user.display_name)
             if intensity <= 3:
@@ -360,7 +361,7 @@ class RolePlay(commands.Cog):
             elif intensity <= 9:
                 msg = "**__/)__** {}".format(name)
             elif intensity >= 10:
-                msg = "**__/)__** {} **__(\\__**".format(name)
+                msg = "**__/)__** {} **__(\\\__**".format(name)
             await ctx.send(msg)
         else:
             await ctx.send("Can't boop what I can't see!")
