@@ -144,6 +144,12 @@ class EventMixin(MixinMeta):
         except (RoleManagementException, PermissionOrHierarchyException):
             pass
         else:
+            dm_msg = await self.config.role(role).dm_msg()
+            if dm_msg:
+                try:
+                    await member.send(dm_msg)
+                except:
+                    pass
             await self.update_roles_atomically(who=member, give=[role], remove=remove)
 
     @commands.Cog.listener()
