@@ -86,7 +86,6 @@ class RolePlay(commands.Cog):
 
         return user, intensity
 
-
     @commands.command()
     @commands.guild_only()
     async def hug(self, ctx, hug_target: str, *, intensity: str = ""):
