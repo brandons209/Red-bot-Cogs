@@ -811,6 +811,7 @@ class RoleManagement(
             return await ctx.send("There aren't any self roles here.")
 
         embed = discord.Embed(title="Roles", colour=ctx.guild.me.colour)
+        embed.set_footer(text="You can only have one role in the same unique group!")
         i = 0
         for role, (cost, sub, ex_groups) in sorted(data.items(), key=lambda kv: kv[1][0]):
             if ex_groups:
@@ -829,9 +830,10 @@ class RoleManagement(
             i += 1
             if i % MAX_EMBED == 0:
                 await ctx.send(embed=embed)
-        embed.set_footer(text="You can only have one role in the same unique group!")
+                embed.clear_fields()
 
-        await ctx.send(embed=embed)
+        if i % MAX_EMBED != 0:
+            await ctx.send(embed=embed)
 
     @selfrole.command(name="buy")
     async def selfrole_buy(self, ctx: GuildContext, *, role: discord.Role):
