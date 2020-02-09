@@ -656,7 +656,7 @@ class MoreAdmin(commands.Cog):
         msg_pages = pagify(msg)
 
         for page in msg_pages:
-            await ctx.send(msg)
+            await ctx.send(page)
 
         num = len(results)
         plural = "s" if num > 1 else ""
