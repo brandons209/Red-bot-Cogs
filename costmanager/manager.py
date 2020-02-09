@@ -331,7 +331,7 @@ class CostManager(commands.Cog):
         await ctx.send(msg)
 
     @costset.command(name="list")
-    async def cost_set_free_roles(self, ctx):
+    async def cost_set_list(self, ctx):
         """
         List current cost settings for the guild
         """
