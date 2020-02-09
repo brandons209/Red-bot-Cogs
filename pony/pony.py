@@ -36,7 +36,7 @@ class Pony(commands.Cog):
         """
         Gives a random picture of our mascot!
         """
-        await fetch_image(self, ctx, randomize=True, mascot=True, tags=["safe,", "coe"])
+        await self.fetch_image(self, ctx, randomize=True, mascot=True, tags=["safe,", "coe"])
 
     @commands.group()
     @commands.guild_only()

@@ -61,6 +61,8 @@ class CostManager(commands.Cog):
         """
         Get cost of a command, respecting hierarchy
         """
+        if isinstance(ctx.channel, discord.DMChannel):
+            return 0
         guild = ctx.guild
         if not member:
             member = ctx.author
