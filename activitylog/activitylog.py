@@ -278,6 +278,7 @@ class ActivityLogger(commands.Cog):
         bans = 0
         kicks = 0
         mutes = 0
+        warns = 0
         for case in cases:
             if "mute" in case.action_type.lower():
                 mutes += 1
@@ -285,6 +286,8 @@ class ActivityLogger(commands.Cog):
                 bans += 1
             elif "kick" in case.action_type.lower():
                 kicks += 1
+            elif "warn" in case.action_type.lower():
+                warns += 1
 
         msg = "Total Number of Messages: `{}`\n".format(num_messages)
         msg += "Number of bot commands: `{}`\n".format(num_bot_commands)
@@ -296,7 +299,7 @@ class ActivityLogger(commands.Cog):
         msg += "Time spent in voice chat: `{:.0f}` {}.\n".format(
             minutes if minutes <= 120 else hours, "minutes" if minutes <= 120 else "hours"
         )
-        msg += f"Bans: `{bans}`, Kicks: `{kicks}`, Mutes: `{mutes}`"
+        msg += f"Bans: `{bans}`, Kicks: `{kicks}`, Mutes: `{mutes}`, Warnings: `{warns}`"
         if len(names) > 1:
             return msg, format_list(*names)
 
