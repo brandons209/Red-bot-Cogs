@@ -76,12 +76,12 @@ class CostManager(commands.Cog):
             return 0
 
         command_data = command_data[command]
-        charged_roles = set(command_data["role_ids"].keys())
+        charged_roles = set(command_data.get("role_ids", {}).keys())
         found_roles = charged_roles & member_roles
         cost = 0
 
         # check user cost
-        if str(member.id) in command_data["user_ids"].keys():
+        if str(member.id) in command_data.get("user_ids", {}).keys():
             cost = command_data["user_ids"][str(member.id)]
         # check role cost, choose lowest cost if mutliple roles found.
         elif found_roles:
@@ -346,14 +346,14 @@ class CostManager(commands.Cog):
         for command_name, data in commands.items():
             msg += f"\t{command_name}: {data['cost']}\n"
             msg += "\t\tRole Costs:\n"
-            for role_id, cost in data["role_ids"].items():
+            for role_id, cost in data.get("role_ids", {}).items():
                 role = guild.get_role(int(role_id))
                 if not role:
                     continue
                 msg += f"\t\t\t{role.name}: {cost}\n"
 
             msg += "\t\tUser Costs:\n"
-            for user_id, cost in data["user_ids"].items():
+            for user_id, cost in data.get("user_ids", {}).items():
                 user = guild.get_member(int(user_id))
                 if not user:
                     continue
