@@ -119,7 +119,7 @@ class EventMixin(MixinMeta):
 
         cfg = self.config.custom("REACTROLE", str(payload.message_id), eid)
         rid = await cfg.roleid()
-        if rid is None or not await self.config.role_from_id(rid).self_role():
+        if rid is None:
             return
 
         guild = self.bot.get_guild(payload.guild_id)
@@ -165,16 +165,15 @@ class EventMixin(MixinMeta):
         if rid is None:
             return
 
-        if await self.config.role_from_id(rid).self_removable():
-            guild = self.bot.get_guild(payload.guild_id)
-            if not guild:
-                # Where's it go?
-                return
-            member = guild.get_member(payload.user_id)
-            if not member or member.bot:
-                return
-            role = discord.utils.get(guild.roles, id=rid)
-            if not role or role not in member.roles:
-                return
-            if guild.me.guild_permissions.manage_roles and guild.me.top_role > role:
-                await self.update_roles_atomically(who=member, give=None, remove=[role])
+        guild = self.bot.get_guild(payload.guild_id)
+        if not guild:
+            # Where's it go?
+            return
+        member = guild.get_member(payload.user_id)
+        if not member or member.bot:
+            return
+        role = discord.utils.get(guild.roles, id=rid)
+        if not role or role not in member.roles:
+            return
+        if guild.me.guild_permissions.manage_roles and guild.me.top_role > role:
+            await self.update_roles_atomically(who=member, give=None, remove=[role])
