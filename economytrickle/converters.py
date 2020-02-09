@@ -58,7 +58,7 @@ def settings_converter(user_input: str) -> dict:
             except AssertionError:
                 raise commands.BadArgument(f"{value} must be a non-negative integer value or `null`")
 
-    for value in ("fail_rate"):
+    for value in "fail_rate":
         if value in args:
             try:
                 assert args[value] >= 0
@@ -66,7 +66,7 @@ def settings_converter(user_input: str) -> dict:
             except AssertionError:
                 raise commands.BadArgument(f"{value} must be a decimal value between 0 and 1.")
 
-    for value in ("decay_rate"):
+    for value in "decay_rate":
         if value in args:
             try:
                 assert args[value] >= 0
