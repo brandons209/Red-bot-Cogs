@@ -130,6 +130,8 @@ class ReactPoll(commands.Cog):
     async def on_raw_reaction_add(self, payload):
         # parse payload
         guild = self.bot.get_guild(payload.guild_id)
+        if not guild:
+            return
         user = guild.get_member(payload.user_id)
         message = await self.bot.get_channel(payload.channel_id).fetch_message(payload.message_id)
         # Listener is required to remove bad reactions
