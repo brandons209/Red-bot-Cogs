@@ -135,7 +135,7 @@ class ReactPoll(commands.Cog):
         user = guild.get_member(payload.user_id)
         message = await self.bot.get_channel(payload.channel_id).fetch_message(payload.message_id)
         # Listener is required to remove bad reactions
-        if user == self.bot.user:
+        if user == self.bot.user or not guild:
             return  # Don't remove bot's own reactions
 
         emoji = payload.emoji
