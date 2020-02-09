@@ -189,7 +189,7 @@ class RolePlay(commands.Cog):
             return
         guild = ctx.guild
         high_iq_msgs = await self.config.guild(guild).high_iq_msgs()
-        low_iq_messages = await self.config.guild(guild).low_iq_messages()
+        low_iq_msgs = await self.config.guild(guild).low_iq_msgs()
         state = random.getstate()
         iqs = {}
         msg = ""
@@ -205,7 +205,7 @@ class RolePlay(commands.Cog):
 
         for user, iq in iqs:
             msg += "{}'s iq is {}, {}\n".format(
-                user.display_name, iq, choice(high_iq_msgs) if int(iq) > 130 else choice(low_iq_messages)
+                user.display_name, iq, choice(high_iq_msgs) if int(iq) > 130 else choice(low_iq_msgs)
             )
 
         await ctx.send(msg)
