@@ -1123,7 +1123,8 @@ class Isolate(commands.Cog):
         else:
             voice_overwrite = DEFAULT_VOICE_OVERWRITE
 
-        overwrite_denies_speak = (voice_overwrite.speak is False) or (voice_overwrite.connect is False)
+        voice_deny = voice_overwrite.pair()[1]
+        overwrite_denies_speak = (voice_deny.speak is False) or (voice_deny.connect is False)
 
         # remove all roles from user that are specified in remove_role_list, only if its a new isolati
         if str(member.id) not in isolated:
