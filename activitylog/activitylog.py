@@ -165,7 +165,7 @@ class ActivityLogger(commands.Cog):
                 if not prefixes:
                     curr = await self.bot.get_valid_prefixes()
                     prefixes.extend(curr)
-                    self.cache[ctx.guild.id]["prefixes"] = curr
+                    self.cache[guild.id]["prefixes"] = curr
 
     @commands.command(aliases=["uinfo"])
     @commands.guild_only()
