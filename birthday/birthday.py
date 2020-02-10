@@ -5,11 +5,15 @@ import contextlib
 import datetime
 import discord
 import itertools
+from typing import (
+    Any,
+    Dict,
+)
 
 
 from redbot.core import commands, Config, checks
 from redbot.core.bot import Red
-from redbot.core.config import Group
+from redbot.core.config import _ValueCtxManager, Group, Value
 from redbot.core.i18n import Translator, cog_i18n
 from redbot.core.commands import Context, Cog
 
@@ -124,9 +128,10 @@ class Birthdays(Cog):
             await channel.send(self.BDAY_INVALID())
         else:
             await self.remove_user_bday(message.guild.id, author.id)
-            await self.get_date_config(message.guild.id, birthday.toordinal()).get_attr(author.id)
+            self.get_date_config(message.guild.id, birthday.toordinal()).get_attr(author.id)
             bday_month_str = birthday.strftime("%B")
             bday_day_str = birthday.strftime("%d").lstrip("0")
+
             await channel.send(self.BDAY_SET(bday_month_str + " " + bday_day_str))
 
     @bday.command(name="list")
@@ -257,14 +262,14 @@ class Birthdays(Cog):
                 await self.config.custom(self.GUILD_DATE_GROUP, "backup").set_raw(value=previous)
                 self.logger.info("Previous birthdays have been backed up in the config file.")
 
-    def get_date_config(self, guild_id: int, date: int) -> Group:
+    def get_date_config(self, guild_id: int, date: int):
         return self.config.custom(self.GUILD_DATE_GROUP, str(guild_id), str(date))
 
-    def get_guild_date_config(self, guild_id: int) -> Group:
+    def get_guild_date_config(self, guild_id: int):
         return self.config.custom(self.GUILD_DATE_GROUP, str(guild_id))
 
-    async def get_guild_date_configs(self, guild_id: int) -> dict:
-        return await self.get_guild_date_config(guild_id).all()
+    async def get_guild_date_configs(self, guild_id: int) -> _ValueCtxManager[Dict[str, Any]]:
+        return (await self.get_guild_date_config(guild_id).all())
 
-    async def get_all_date_configs(self) -> dict:
-        return await self.config.custom(self.GUILD_DATE_GROUP).all()
+    def get_all_date_configs(self):
+        return self.config.custom(self.GUILD_DATE_GROUP).all()
