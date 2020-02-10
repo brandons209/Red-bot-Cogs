@@ -65,22 +65,25 @@ class RolePlay(commands.Cog):
         target = target.strip()
         user = None
         intensity = 1
-        if "<@!" == target[:3] and ">" == target[-1]:
+        # user is mentioned w/ no intensity
+        if "<@" == target[:3] and ">" == target[-1]:
             user = guild.get_member(int(target[3:-1]))
 
-        # try with no intensity specified
+        # try with no intensity specified and not a mention
         if not user:
             user = guild.get_member_named(target)
 
-        # has intensity
+        # has intensity, could be a mention/text
         if not user:
             try:
                 args = target.split()
                 intensity = int(args[-1])
                 name = " ".join(args[:-1])
+                # not a mention
                 user = guild.get_member_named(name)
+                # parse mention
                 if not user:
-                    if "<@!" == name[:3] and ">" == name[-1]:
+                    if "<@" == name[:3] and ">" == name[-1]:
                         user = guild.get_member(int(name[3:-1]))
             except:
                 pass
