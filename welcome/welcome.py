@@ -779,7 +779,9 @@ class Welcome(commands.Cog):
 
         channel = await self.__get_channel(guild, event)
         if isinstance(user, discord.Member):
-            roles = [r.name for r in user.roles if r.name != "@everyone"]
+            roles = [r for r in user.roles if r.name != "@everyone"]
+            roles.sort(reverse=True)
+            roles = [r.name for r in roles]
             roles = self.format_list(*roles)
         else:
             roles = []
