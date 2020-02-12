@@ -2,6 +2,7 @@ import logging
 import hashlib
 import asyncio
 import contextlib
+from dateutil import parser
 import datetime
 import discord
 import itertools
@@ -46,7 +47,7 @@ class Birthdays(Cog):
     BDAY_WITH_YEAR = _("<@!{}> is now **{} years old**. <:aureliahappy:548738609763713035>")
     BDAY_WITHOUT_YEAR = _("Everypony say Happy Hirthday to <@!{}>! <:aureliahappy:548738609763713035>")
     ROLE_SET = _("<:aureliaagree:616091883013144586> The birthday role on **{g}** has been set to: **{r}**.")
-    BDAY_INVALID = _(":x: The birthday date you entered is invalid. It must be `MM-DD`.")
+    BDAY_INVALID = _(":x: The birthday date you entered is invalid.")
     BDAY_SET = _("<:aureliaagree:616091883013144586> Your birthday has been set to: **{}**.")
     CHANNEL_SET = _(
         "<:aureliaagree:616091883013144586> "
@@ -114,21 +115,27 @@ class Birthdays(Cog):
         await message.channel.send(self.BDAY_REMOVED())
 
     @bday.command(name="set")
-    async def bday_set(self, ctx: Context, date, year: int = None):
+    async def bday_set(self, ctx: Context, *, date: str):
         """Sets your birthday date
 
-        The given date must be given as: MM-DD
+        The given date can either be month day, or day month
         Year is optional. If not given, the age won't be displayed."""
         message = ctx.message
         channel = message.channel
         author = message.author
+        year = None
         birthday = self.parse_date(date)
+        # An Invalid date was entered.
         if birthday is None:
             print(self.BDAY_INVALID())
             await channel.send(self.BDAY_INVALID())
         else:
+            print(type(birthday))
+            if(datetime.datetime.utcnow().year != birthday.year):
+                year = birthday.year
+            birthday = datetime.date(1, birthday.month, birthday.day)
             await self.remove_user_bday(message.guild.id, author.id)
-            self.get_date_config(message.guild.id, birthday.toordinal()).get_attr(author.id)
+            await self.get_date_config(message.guild.id, birthday.toordinal()).get_attr(author.id).set(year)
             bday_month_str = birthday.strftime("%B")
             bday_day_str = birthday.strftime("%d").lstrip("0")
 
@@ -241,10 +248,10 @@ class Birthdays(Cog):
             if not guild.chunked or any(m.joined_at is None for m in guild.members):
                 await self.bot.request_offline_members(guild)
 
-    def parse_date(self, date_str: str):
+    def parse_date(self, date: str):
         result = None
         try:
-            result = datetime.datetime.strptime(date_str, "%m-%d").date().replace(year=1)
+            result = parser.parse(date)
         except ValueError:
             pass
         return result
