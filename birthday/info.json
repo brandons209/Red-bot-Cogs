@@ -11,7 +11,7 @@
     "description": "Cog used for setting birthdays and announcing them and giving people roles on their birthday",
     "hidden": false,
     "install_msg": "Use [p]bday to bring up the help menu",
-    "requirements": [],
+    "requirements": ["python-dateutil"],
     "short": "Cog used for setting birthdays and announcing them and giving people roles on their birthday",
     "tags": [
       "brandons209",
