@@ -44,11 +44,19 @@ class Birthdays(Cog):
     BDAY_LIST_TITLE = _("Birthday List")
 
     # Even more constants
-    BDAY_WITH_YEAR = _("<@!{}> is now **{} years old**. <:aureliahappy:548738609763713035>")
-    BDAY_WITHOUT_YEAR = _("Everypony say Happy Hirthday to <@!{}>! <:aureliahappy:548738609763713035>")
-    ROLE_SET = _("<:aureliaagree:616091883013144586> The birthday role on **{g}** has been set to: **{r}**.")
+    BDAY_WITH_YEAR = _(
+        "<@!{}> is now **{} years old**. <:aureliahappy:548738609763713035>"
+    )
+    BDAY_WITHOUT_YEAR = _(
+        "Everypony say Happy Hirthday to <@!{}>! <:aureliahappy:548738609763713035>"
+    )
+    ROLE_SET = _(
+        "<:aureliaagree:616091883013144586> The birthday role on **{g}** has been set to: **{r}**."
+    )
     BDAY_INVALID = _(":x: The birthday date you entered is invalid.")
-    BDAY_SET = _("<:aureliaagree:616091883013144586> Your birthday has been set to: **{}**.")
+    BDAY_SET = _(
+        "<:aureliaagree:616091883013144586> Your birthday has been set to: **{}**."
+    )
     CHANNEL_SET = _(
         "<:aureliaagree:616091883013144586> "
         "The channel for announcing birthdays on **{g}** has been set to: **{c}**."
@@ -60,7 +68,12 @@ class Birthdays(Cog):
         super().__init__()
         self.bot = bot
         self.logger = logging.getLogger("aurelia.cogs.birthdays")
-        unique_id = int(hashlib.sha512((self.__author__ + "@" + self.__class__.__name__).encode()).hexdigest(), 16)
+        unique_id = int(
+            hashlib.sha512(
+                (self.__author__ + "@" + self.__class__.__name__).encode()
+            ).hexdigest(),
+            16,
+        )
         self.config = Config.get_conf(self, identifier=unique_id)
         self.config.init_custom(self.DATE_GROUP, 1)
         self.config.init_custom(self.GUILD_DATE_GROUP, 2)
@@ -74,7 +87,9 @@ class Birthdays(Cog):
         with contextlib.suppress(RuntimeError):
             while self == self.bot.get_cog(self.__class__.__name__):
                 now = datetime.datetime.utcnow()
-                tomorrow = (now + datetime.timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+                tomorrow = (now + datetime.timedelta(days=1)).replace(
+                    hour=0, minute=0, second=0, microsecond=0
+                )
                 await self.clean_yesterday_bdays()
                 await self.do_today_bdays()
                 await asyncio.sleep((tomorrow - now).total_seconds())
@@ -131,11 +146,13 @@ class Birthdays(Cog):
             await channel.send(self.BDAY_INVALID())
         else:
             print(type(birthday))
-            if(datetime.datetime.utcnow().year != birthday.year):
+            if datetime.datetime.utcnow().year != birthday.year:
                 year = birthday.year
             birthday = datetime.date(1, birthday.month, birthday.day)
             await self.remove_user_bday(message.guild.id, author.id)
-            await self.get_date_config(message.guild.id, birthday.toordinal()).get_attr(author.id).set(year)
+            await self.get_date_config(message.guild.id, birthday.toordinal()).get_attr(
+                author.id
+            ).set(year)
             bday_month_str = birthday.strftime("%B")
             bday_day_str = birthday.strftime("%d").lstrip("0")
 
@@ -150,23 +167,30 @@ class Birthdays(Cog):
         await self.clean_bdays()
         bdays = await self.get_guild_date_configs(message.guild.id)
         this_year = datetime.date.today().year
-        embed = discord.Embed(title=self.BDAY_LIST_TITLE(), color=discord.Colour.lighter_grey())
+        embed = discord.Embed(
+            title=self.BDAY_LIST_TITLE(), color=discord.Colour.lighter_grey()
+        )
         for k, g in itertools.groupby(
-            sorted(datetime.datetime.fromordinal(int(o)) for o in bdays.keys()), lambda i: i.month
+            sorted(datetime.datetime.fromordinal(int(o)) for o in bdays.keys()),
+            lambda i: i.month,
         ):
 
             value = "\n".join(
                 date.strftime("%d").lstrip("0")
                 + ": "
                 + ", ".join(
-                    "<@!{}>".format(u_id) + ("" if year is None else " ({})".format(this_year - int(year)))
+                    "<@!{}>".format(u_id)
+                    + ("" if year is None else " ({})".format(this_year - int(year)))
                     for u_id, year in bdays.get(str(date.toordinal()), {}).items()
                 )
                 for date in g
                 if len(bdays.get(str(date.toordinal()))) > 0
             )
             if not value.isspace():
-                embed.add_field(name=datetime.datetime(year=1, month=k, day=1).strftime("%B"), value=value)
+                embed.add_field(
+                    name=datetime.datetime(year=1, month=k, day=1).strftime("%B"),
+                    value=value,
+                )
         await message.channel.send(embed=embed)
 
     async def clean_bday(self, guild_id: int, guild_config: dict, user_id: int):
@@ -202,7 +226,9 @@ class Birthdays(Cog):
                             except (discord.Forbidden, discord.HTTPException):
                                 pass
                             else:
-                                async with self.config.guild(guild).yesterdays() as yesterdays:
+                                async with self.config.guild(
+                                    guild
+                                ).yesterdays() as yesterdays:
                                     yesterdays.append(member.id)
                     channel = guild.get_channel(guild_config.get("channel"))
                     if channel is not None:
@@ -214,8 +240,12 @@ class Birthdays(Cog):
         for guild_id, guild_bdays in birthdays.items():
             for date, bdays in guild_bdays.items():
                 for user_id, year in bdays.items():
-                    if not any(g.get_member(int(user_id)) is not None for g in self.bot.guilds):
-                        async with self.get_date_config(guild_id, date)() as config_bdays:
+                    if not any(
+                        g.get_member(int(user_id)) is not None for g in self.bot.guilds
+                    ):
+                        async with self.get_date_config(
+                            guild_id, date
+                        )() as config_bdays:
                             del config_bdays[user_id]
                 config_bdays = await self.get_date_config(guild_id, date)()
                 if len(config_bdays) == 0:
@@ -233,7 +263,9 @@ class Birthdays(Cog):
         for guild_id, guild_config in all_guild_configs.items():
             for user_id in guild_config.get("yesterdays", []):
                 asyncio.ensure_future(self.clean_bday(guild_id, guild_config, user_id))
-            await self.config.guild(discord.Guild(data={"id": guild_id}, state=None)).yesterdays.clear()
+            await self.config.guild(
+                discord.Guild(data={"id": guild_id}, state=None)
+            ).yesterdays.clear()
 
     async def do_today_bdays(self):
         guild_configs = await self.get_all_date_configs()
@@ -263,11 +295,19 @@ class Birthdays(Cog):
             await self.config.custom(self.DATE_GROUP).clear()
             owner = self.bot.get_user(self.bot.owner_id)
             if len(self.bot.guilds) == 1:
-                await self.get_guild_date_config(self.bot.guilds[0].id).set_raw(value=previous)
-                self.logger.info("Birthdays are now per-guild. Previous birthdays have been copied.")
+                await self.get_guild_date_config(self.bot.guilds[0].id).set_raw(
+                    value=previous
+                )
+                self.logger.info(
+                    "Birthdays are now per-guild. Previous birthdays have been copied."
+                )
             else:
-                await self.config.custom(self.GUILD_DATE_GROUP, "backup").set_raw(value=previous)
-                self.logger.info("Previous birthdays have been backed up in the config file.")
+                await self.config.custom(self.GUILD_DATE_GROUP, "backup").set_raw(
+                    value=previous
+                )
+                self.logger.info(
+                    "Previous birthdays have been backed up in the config file."
+                )
 
     def get_date_config(self, guild_id: int, date: int):
         return self.config.custom(self.GUILD_DATE_GROUP, str(guild_id), str(date))
@@ -275,8 +315,10 @@ class Birthdays(Cog):
     def get_guild_date_config(self, guild_id: int):
         return self.config.custom(self.GUILD_DATE_GROUP, str(guild_id))
 
-    async def get_guild_date_configs(self, guild_id: int) -> _ValueCtxManager[Dict[str, Any]]:
-        return (await self.get_guild_date_config(guild_id).all())
+    async def get_guild_date_configs(
+        self, guild_id: int
+    ) -> _ValueCtxManager[Dict[str, Any]]:
+        return await self.get_guild_date_config(guild_id).all()
 
     def get_all_date_configs(self):
         return self.config.custom(self.GUILD_DATE_GROUP).all()
