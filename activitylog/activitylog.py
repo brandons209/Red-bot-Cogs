@@ -286,7 +286,7 @@ class ActivityLogger(commands.Cog):
                 bans += 1
             elif "kick" in case.action_type.lower():
                 kicks += 1
-            elif "warn" in case.action_type.lower():
+            elif "warning" in case.action_type.lower():
                 warns += 1
 
         msg = "Total Number of Messages: `{}`\n".format(num_messages)
