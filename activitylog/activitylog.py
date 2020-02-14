@@ -170,7 +170,7 @@ class ActivityLogger(commands.Cog):
     @commands.command(aliases=["uinfo"])
     @commands.guild_only()
     @commands.cooldown(rate=1, per=5, type=commands.BucketType.user)
-    async def userinfo(self, ctx, user: discord.Member = None):
+    async def userinfo(self, ctx, *, user: discord.Member = None):
         """
         Show information about a user.
         """
@@ -253,6 +253,8 @@ class ActivityLogger(commands.Cog):
                 await author.send(embed=data)
             except discord.HTTPException:
                 await ctx.send("Please allow messages from server members to get your info.")
+            except Exception as e:
+                print(f"Error in userinfo: {e}")
 
     async def userstats(self, guild, user):
         """
@@ -392,7 +394,6 @@ class ActivityLogger(commands.Cog):
                 return
 
         guild = ctx.guild
-        channel = ctx.channel
         log_files = sorted(glob.glob(os.path.join(PATH, str(guild.id), "*{}*.log".format(channel.id))), reverse=True)
 
         if interval:
@@ -428,7 +429,6 @@ class ActivityLogger(commands.Cog):
             return
 
         guild = ctx.guild
-        channel = ctx.channel
         log_files = sorted(glob.glob(os.path.join(PATH, str(guild.id), "*{}*.log".format(channel.id))), reverse=True)
 
         await self.log_sender(ctx, log_files, end, start=start)
@@ -509,7 +509,6 @@ class ActivityLogger(commands.Cog):
             return
 
         guild = ctx.guild
-        channel = ctx.channel
         log_files = sorted(glob.glob(os.path.join(PATH, str(guild.id), "*guild*.log")), reverse=True)
 
         await self.log_sender(ctx, log_files, end, start=start)
@@ -590,7 +589,6 @@ class ActivityLogger(commands.Cog):
             return
 
         guild = ctx.guild
-        channel = ctx.channel
         log_files = sorted(glob.glob(os.path.join(PATH, str(guild.id), "*guild*.log")), reverse=True)
 
         await self.log_sender(ctx, log_files, end, start=start, user=user)
