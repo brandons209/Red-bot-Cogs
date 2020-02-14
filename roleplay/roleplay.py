@@ -1,18 +1,16 @@
 import discord
-from discord.ext import commands
-from redbot.core.utils.chat_formatting import escape, italics, pagify, box
+from redbot.core.utils.chat_formatting import italics, pagify, box
 from redbot.core import Config, checks, commands
 import random
-from random import randint
 from random import choice
-from enum import Enum
-from urllib.parse import quote_plus
-import datetime
-import time
-import aiohttp
+
 import asyncio
 import os
 import json
+import re
+
+mention = re.compile("<@(\d{18})>")
+mention_bang = re.compile("<@!(\d{18})>")
 
 
 class RolePlay(commands.Cog):
@@ -66,12 +64,11 @@ class RolePlay(commands.Cog):
         user = None
         intensity = 1
         # mentions can be <@! or <@
-        # user is mentioned w/ no intensity
-        if "<@" == target[:2] and ">" == target[-1]:
-            user = guild.get_member(int(target[3:-1]))
+        user_ment = mention.match(target)
+        user_ment_b = mention_bang.match(target)
 
         # try with no intensity specified and not a mention
-        if not user:
+        if not user_ment or not user_ment_b:
             user = guild.get_member_named(target)
 
         # has intensity, could be a mention/text
@@ -84,10 +81,18 @@ class RolePlay(commands.Cog):
                 user = guild.get_member_named(name)
                 # parse mention
                 if not user:
-                    if "<@" == name[:2] and ">" == name[-1]:
-                        user = guild.get_member(int(name[3:-1]))
+                    user_ment = mention.match(name)
+                    user_ment_b = mention_bang.match(name)
             except:
                 pass
+
+        if not user:
+            if user_ment:
+                user = guild.get_member(int(user_ment.group(1)))
+            elif user_ment_b:
+                user = guild.get_member(int(user_ment_b.group(1)))
+            else:
+                user = None
 
         return user, intensity
 
