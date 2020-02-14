@@ -7,16 +7,12 @@ from redbot.core.utils.chat_formatting import pagify
 class SmartReact(commands.Cog):
     """Create automatic reactions when trigger words are typed in chat"""
 
-    default_guild_settings = {
-        "reactions": {}
-    }
+    default_guild_settings = {"reactions": {}}
 
     def __init__(self, bot):
         self.bot = bot
         self.conf = Config.get_conf(self, identifier=964952632)
-        self.conf.register_guild(
-            **self.default_guild_settings
-        )
+        self.conf.register_guild(**self.default_guild_settings)
 
     @checks.mod_or_permissions(administrator=True)
     @commands.guild_only()
@@ -43,7 +39,7 @@ class SmartReact(commands.Cog):
             return emoji
         for guild in self.bot.guilds:
             for e in guild.emojis:
-                if str(e.id) == emoji.split(':')[2][:-1]:
+                if str(e.id) == emoji.split(":")[2][:-1]:
                     return e
         return None
 
@@ -77,8 +73,7 @@ class SmartReact(commands.Cog):
             await message.channel.send("Successfully added this reaction.")
 
         except (discord.errors.HTTPException, discord.errors.InvalidArgument):
-            await message.channel.send("That's not an emoji I recognize. "
-                                       "(might be custom!)")
+            await message.channel.send("That's not an emoji I recognize. " "(might be custom!)")
 
     async def remove_smart_reaction(self, guild, word, emoji, message):
         try:
@@ -92,15 +87,12 @@ class SmartReact(commands.Cog):
                     await self.conf.guild(guild).reactions.set(reactions)
                     await message.channel.send("Removed this smart reaction.")
                 else:
-                    await message.channel.send("That emoji is not used as a reaction "
-                                               "for that word.")
+                    await message.channel.send("That emoji is not used as a reaction " "for that word.")
             else:
-                await message.channel.send("There are no smart reactions which use "
-                                           "this emoji.")
+                await message.channel.send("There are no smart reactions which use " "this emoji.")
 
         except (discord.errors.HTTPException, discord.errors.InvalidArgument):
-            await message.channel.send("That's not an emoji I recognize. "
-                               "(might be custom!)")
+            await message.channel.send("That's not an emoji I recognize. " "(might be custom!)")
 
     # Thanks irdumb#1229 for the help making this "more Pythonic"
     @commands.Cog.listener()
