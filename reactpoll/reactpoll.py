@@ -24,11 +24,12 @@ class ReactPoll(commands.Cog):
         self.config = Config.get_conf(self, identifier=9675846083, force_registration=True)
         self.config.register_global(poll_sessions={})
 
-        self.loop = asyncio.get_event_loop()
+        self.loop = bot.loop
         self.loop.create_task(self.load_polls())
         self.poll_task = self.loop.create_task(self.poll_closer())
 
     async def poll_closer(self):
+        await self.bot.wait_until_ready()
         while True:
             await asyncio.sleep(5)
             now_time = time.time()
@@ -49,7 +50,6 @@ class ReactPoll(commands.Cog):
             polls[str(poll.channel.id)] = poll.as_dict()
 
     async def load_polls(self):
-        await self.bot.wait_until_ready()
         polls = await self.config.poll_sessions()
         if not polls:
             await self.config.poll_sessions.set({})
