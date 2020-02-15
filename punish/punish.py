@@ -25,7 +25,9 @@ PURGE_MESSAGES = 1  # for cpunish
 DEFAULT_ROLE_NAME = "Punished"
 DEFAULT_TEXT_OVERWRITE = discord.PermissionOverwrite(send_messages=False, send_tts_messages=False, add_reactions=False)
 DEFAULT_VOICE_OVERWRITE = discord.PermissionOverwrite(speak=False, connect=False)
-DEFAULT_TIMEOUT_OVERWRITE = discord.PermissionOverwrite(send_messages=True, read_messages=True)
+DEFAULT_TIMEOUT_OVERWRITE = discord.PermissionOverwrite(
+    send_messages=True, read_messages=True, read_message_history=True
+)
 
 QUEUE_TIME_CUTOFF = 30
 

@@ -10,6 +10,7 @@ from .utils import *
 import asyncio
 from typing import Union
 import os
+import random
 
 from datetime import datetime
 import time
@@ -28,8 +29,11 @@ TIME_RE = re.compile(TIME_RE_STRING, re.I)
 
 MIN_MSG_LEN = 10
 
-# 0 is member object, 1 is invite link
+# 0 is guild object, 1 is invite link
 PURGE_DM_MESSAGE = "**__Notice of automatic inactivity removal__**\n\nYou have been kicked from {0.name} for lack of activity in the server; this is merely routine, and you are welcome to join back here: {1}"
+
+# 0 is guild object, number of messages is 1, 2 is anything extra to add.
+PURGE_DM_WARN_MESSAGE = "**__WARNING! You may be kicked from {0.name} soon!__**\n\nDue to your inactivity, it may happen that you get kicked. If you don't want that, then we recommend you chat with people in text channels! The minimum number of messages you need is **{1}** to be marked as active. {2}\n\nHowever, you can't just spam letters or messages! We aren't doing this to be rude but simply to try and keep active people within our community. We hope you understand and apologize for any inconvenience."
 
 
 def parse_timedelta(argument: str) -> Optional[timedelta]:
@@ -164,6 +168,28 @@ class MoreAdmin(commands.Cog):
                     await channel.edit(name=title)
 
             await asyncio.sleep(SLEEP_TIME)
+
+    async def get_purges(self, ctx, role, threshold, check_messages=True):
+        # returns users that can be purged given the settings.
+        guild = ctx.guild
+        to_purge = []
+
+        for member in guild.members:
+            if member.id == self.bot.user.id:  # don't want to purge the bot.
+                continue
+            if role in member.roles:
+                if check_messages:
+                    last_msgs = await self.config.member(member).last_msgs()
+                    keys = sorted([float(k) for k in last_msgs.keys()])
+                    if not keys:
+                        to_purge.append(member)
+                    elif (ctx.message.created_at - datetime.fromtimestamp(keys[0])) > threshold:
+                        to_purge.append(member)
+                else:
+                    if (ctx.message.created_at - member.joined_at) > threshold:
+                        to_purge.append(member)
+
+        return to_purge
 
     @commands.group(name="adminset")
     @commands.guild_only()
@@ -477,7 +503,7 @@ class MoreAdmin(commands.Cog):
             await role.edit(mentionable=False)
 
     @commands.command(name="lastmsg")
-    @checks.admin_or_permissions(administrator=True)
+    @checks.mod()
     async def last_msg(self, ctx, *, user: discord.Member):
         """
         Gets stored last messages for a user
@@ -509,7 +535,7 @@ class MoreAdmin(commands.Cog):
         for page in pages:
             await ctx.send(page)
 
-    @commands.command(name="purge")
+    @commands.group(name="purge", invoke_without_command=True)
     @checks.admin_or_permissions(administrator=True)
     @checks.bot_has_permissions(kick_members=True)
     async def purge(
@@ -536,29 +562,16 @@ class MoreAdmin(commands.Cog):
            5h30m
            (etc)
         """
+        if ctx.invoked_subcommand:
+            return
+
         threshold = parse_timedelta(threshold)
         if not threshold:
             await ctx.send("Invalid threshold!")
             return
 
-        guild = ctx.guild
-        to_purge = []
         start_time = time.time()
-
-        for member in guild.members:
-            if member.id == self.bot.user.id:  # don't want to purge the bot.
-                continue
-            if role in member.roles:
-                if check_messages:
-                    last_msgs = await self.config.member(member).last_msgs()
-                    keys = sorted([float(k) for k in last_msgs.keys()])
-                    if not keys:
-                        to_purge.append(member)
-                    elif (ctx.message.created_at - datetime.fromtimestamp(keys[0])) > threshold:
-                        to_purge.append(member)
-                else:
-                    if (ctx.message.created_at - member.joined_at) > threshold:
-                        to_purge.append(member)
+        to_purge = await self.get_purges(ctx, role, threshold, check_messages=check_messages)
 
         if not to_purge:
             await ctx.send("No one to purge.")
@@ -624,6 +637,91 @@ class MoreAdmin(commands.Cog):
 
         else:
             await ctx.send("Cancelled.")
+
+    @purge.command(name="audit")
+    async def purge_audit(self, ctx, role: discord.Role, check_messages: bool = True, *, threshold: str = None):
+        """
+        Audits a potential purge.
+
+        Gives number of users, the purge settings, and 10 potential purge users for you to check.
+        """
+        threshold = parse_timedelta(threshold)
+        if not threshold:
+            await ctx.send("Invalid threshold!")
+            return
+
+        to_purge = await self.get_purges(ctx, role, threshold, check_messages=check_messages)
+
+        if not to_purge:
+            await ctx.send("No one can be purged with those settings.")
+            return
+
+        purge_settings = await self.config.guild(ctx.guild).all()
+        msg = "**__Settings:__**\nIgnore bot commands: {}\nNumber of messages to check: {}\nPrefixes: {}\n**Number of users who can be purged: {}**\n\nHere are some users who can be purged:\n"
+        msg = msg.format(
+            purge_settings["ignore_bot_commands"],
+            purge_settings["last_msg_num"],
+            humanize_list([f"`{p}`" for p in purge_settings["prefixes"]]),
+            len(to_purge),
+        )
+
+        try:
+            sample = random.sample(to_purge, 10)
+        except ValueError:
+            sample = to_purge
+
+        for m in sample:
+            msg += f"{m.mention}"
+
+        await ctx.send(msg)
+
+    @purge.command(name="dm")
+    async def purge_dm(self, ctx, role: discord.Role, check_messages: bool = True, *, threshold: str = None):
+        """
+        DMs users warning them of their potential to be purged.
+        """
+        threshold = parse_timedelta(threshold)
+        if not threshold:
+            await ctx.send("Invalid threshold!")
+            return
+
+        to_purge = await self.get_purges(ctx, role, threshold, check_messages=check_messages)
+
+        if not to_purge:
+            await ctx.send("No one can be purged with those settings.")
+            return
+
+        num = len(to_purge)
+        plural = "s" if num > 1 else ""
+        await ctx.send(f"This will send DMs to {num} user{plural}, are you sure you want to continue?")
+        pred = MessagePredicate.yes_or_no(ctx)
+        try:
+            await self.bot.wait_for("message", check=pred, timeout=30)
+        except asyncio.TimeoutError:
+            await ctx.send("Took too long.")
+            return
+
+        if not pred.result:
+            await ctx.send("Cancelled.")
+            return
+
+        await ctx.send("Okay, here we go.")
+        progress_message = await ctx.send(f"Processed 0/{num} users...")
+
+        number = await self.config.guild(ctx.guild).last_msg_num()
+        ignore = await self.config.guild(ctx.guild).ignore_bot_commands()
+        if ignore:
+            msg = PURGE_DM_WARN_MESSAGE.format(ctx.guild, number, "**Bot commands do not count!**")
+        else:
+            msg = PURGE_DM_WARN_MESSAGE.format(ctx.guild, number, "")
+
+        for i, member in enumerate(to_purge):
+            try:
+                await member.send(msg)
+            except:
+                pass
+            if i % 10 == 0:
+                await progress_message.edit(content=f"Processed {i+1}/{num} users...")
 
     @commands.command(hidden=True)
     @commands.guild_only()

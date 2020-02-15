@@ -27,7 +27,9 @@ DEFAULT_TEXT_OVERWRITE = discord.PermissionOverwrite(
     send_messages=False, send_tts_messages=False, add_reactions=False, read_messages=False
 )
 DEFAULT_VOICE_OVERWRITE = discord.PermissionOverwrite(speak=False, connect=False, view_channel=False)
-DEFAULT_TIMEOUT_OVERWRITE = discord.PermissionOverwrite(send_messages=True, read_messages=True)
+DEFAULT_TIMEOUT_OVERWRITE = discord.PermissionOverwrite(
+    send_messages=True, read_messages=True, read_message_history=True
+)
 
 QUEUE_TIME_CUTOFF = 30
 
