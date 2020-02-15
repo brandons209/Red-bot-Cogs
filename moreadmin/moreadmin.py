@@ -671,7 +671,7 @@ class MoreAdmin(commands.Cog):
             sample = to_purge
 
         for m in sample:
-            msg += f"{m.mention}"
+            msg += f"{m.mention}\n"
 
         await ctx.send(msg)
 
