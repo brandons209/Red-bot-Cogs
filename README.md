@@ -38,7 +38,7 @@ Made for a friend, pretty messy. Send custom events and log time since that even
 #### MoreAdmin
 More admin commands that provide various functionality.    
 **Features**:
-- Purge(kick) inactive users with a specific role. Can purge by last message or account age. DM's user with a notice of removal and an invite link to rejoin the guild. Logs purges to modlog.
+- Purge(kick) inactive users with a specific role. Can purge by last message or account age. DM's user with a notice of removal and an invite link to rejoin the guild. ~~Logs purges to modlog.~~(removed logging for now)
 - Set channel to display online/total users for guild.
 - Log "suspicious" users who join. Suspicious users are new accounts, threshold to determine an account as new can be set.
 - Give and remove roles based on user's currents roles. This allows setting a role to be giveable by users who have a specific set role.
