@@ -27,7 +27,7 @@ def parse_timedelta(argument: str) -> timedelta:
     return None
 
 
-def parse_seconds(seconds) -> str:
+def parse_seconds(seconds: int) -> str:
     """
     Take seconds and converts it to larger units
     Returns parsed message string

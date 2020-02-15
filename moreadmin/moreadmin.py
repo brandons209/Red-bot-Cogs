@@ -26,6 +26,9 @@ TIME_RE_STRING = r"\s?".join(
 
 TIME_RE = re.compile(TIME_RE_STRING, re.I)
 
+MIN_MSG_LEN = 10
+
+# 0 is member object, 1 is invite link
 PURGE_DM_MESSAGE = "**__Notice of automatic inactivity removal__**\n\nYou have been kicked from {0.name} for lack of activity in the server; this is merely routine, and you are welcome to join back here: {1}"
 
 
@@ -45,18 +48,27 @@ class MoreAdmin(commands.Cog):
 
     def __init__(self, bot):
         self.bot = bot
-        self.config = Config.get_conf(self, identifier=213438438248, force_registration=True)
+        self.config = Config.get_conf(self, identifier=9468294573, force_registration=True)
 
         default_guild = {
             "user_count_channel": None,
             "sus_user_channel": None,
             "sus_user_threshold": None,
+            "ignore_bot_commands": False,
+            "last_msg_num": 5,
             "prefixes": [],
         }
 
         default_role = {"addable": []}  # role ids who can add this role
+
+        # maps message_time -> dict("channel_id":int, "message_id": int)
+        default_member = {"last_msgs": {}}
+
         self.config.register_role(**default_role)
+        self.config.register_member(**default_member)
         self.config.register_guild(**default_guild)
+
+        # initalize prefixes and add user count updater task
         self.loop = asyncio.get_event_loop()
         self.loop.create_task(self.initialize())
         self.user_task = self.loop.create_task(self.user_count_updater())
@@ -86,35 +98,57 @@ class MoreAdmin(commands.Cog):
         except RuntimeError:
             pass
 
-    async def find_last_message(self, guild: discord.Guild, role: discord.Role, include_bot_commands: bool):
+    async def check_prefix(self, message: discord.Message):
+        # check if prefixes appear in message
+        prefixes = await self.config.guild(message.guild).prefixes()
+        for prefix in prefixes:
+            if prefix == message.content[: len(prefix)]:
+                return False
+
+        return True
+
+    async def add_last_msg(self, message):
+        if not isinstance(message.author, discord.Member):
+            return
+
+        # length/attachment check
+        if not message.attachments and len(message.content) < MIN_MSG_LEN:
+            return
+
+        # adds last message for user
+        max_msg = await self.config.guild(message.guild).last_msg_num()
+        async with self.config.member(message.author).last_msgs() as last_msgs:
+            if len(last_msgs.keys()) < max_msg:
+                last_msgs[message.created_at.timestamp()] = {"channel_id": message.channel.id, "message_id": message.id}
+            else:
+                keys = sorted([float(k) for k in last_msgs.keys()])
+                # if oldest message saved is newer than the message to add, dont add it
+                if keys[0] > message.created_at.timestamp():
+                    return
+                del last_msgs[str(keys[0])]  # remove oldest entry
+                # append new entry
+                last_msgs[message.created_at.timestamp()] = {"channel_id": message.channel.id, "message_id": message.id}
+
+    async def last_message_sync(self, ctx: commands.Context):
         """
-        Finds last message of EVERY user with role in a guild.
+        Syncs last message of EVERY user in a guild.
         **WARNING VERY SLOW AND COSTLY OPERATION!**
-
-        returns: dictionary maping user ids -> last message
         """
-        last_msgs = {}
-        text_channels = [channel for channel in guild.channels if isinstance(channel, discord.TextChannel)]
-        prefixes = await self.config.guild(guild).prefixes()
-        for channel in text_channels:
+        text_channels = [channel for channel in ctx.guild.channels if isinstance(channel, discord.TextChannel)]
+        ignore = await self.config.guild(ctx.guild).ignore_bot_commands()
+        num_text_c = len(text_channels)
+        progress_message = await ctx.send(f"Processed 0/{num_text_c} channels...")
+
+        for i, channel in enumerate(text_channels):
             async for message in channel.history(limit=None):
-                if isinstance(message.author, discord.Member) and role in message.author.roles:
-                    # prefix check
-                    skip = False
-                    if include_bot_commands:
-                        for prefix in prefixes:
-                            if message.content and prefix == message.content[: len(prefix)]:
-                                skip = True
-                                break
+                to_add = True
+                if ignore:
+                    to_add = await self.check_prefix(message)
 
-                    if message.author.id not in last_msgs.keys() and not skip:
-                        last_msgs[message.author.id] = message
-                    elif not skip:
-                        curr_last = last_msgs[message.author.id]
-                        if message.created_at > curr_last.created_at:
-                            last_msgs[message.author.id] = message
+                if to_add:
+                    await self.add_last_msg(message)
 
-        return last_msgs
+            await progress_message.edit(content=f"Processed {i+1}/{num_text_c} channels...")
 
     async def user_count_updater(self):
         await self.bot.wait_until_ready()
@@ -227,26 +261,6 @@ class MoreAdmin(commands.Cog):
         await self.config.guild(ctx.guild).sus_user_threshold.set(int(threshold.total_seconds()))
         await ctx.tick()
 
-    @adminset.command(name="prefixes")
-    async def adminset_prefixes(self, ctx, *, prefixes: str = None):
-        """
-        Set prefixes for bot commands to check for when purging.
-
-        Seperate prefixes with spaces.
-
-        Used for purge command.
-        """
-        if not prefixes:
-            prefixes = await self.config.guild(ctx.guild).prefixes()
-            curr = [f"`{p}`" for p in prefixes]
-            await ctx.send("Current Prefixes: " + humanize_list(curr))
-            return
-
-        prefixes = [p for p in prefixes.split(" ")]
-        await self.config.guild(ctx.guild).prefixes.set(prefixes)
-        prefixes = [f"`{p}`" for p in prefixes]
-        await ctx.send("Prefixes set to: " + humanize_list(prefixes))
-
     @adminset.command(name="addable")
     async def adminset_addable(self, ctx, role: discord.Role, *, role_list: str = None):
         """
@@ -312,6 +326,74 @@ class MoreAdmin(commands.Cog):
             msg += "Removed: {}".format(humanize_list(list(removed)))
 
         await ctx.send(msg)
+
+    @commands.group(name="purgeset")
+    @commands.guild_only()
+    @checks.admin_or_permissions(administrator=True)
+    async def purgeset(self, ctx):
+        """
+        Manage purge settings.
+        """
+        pass
+
+    @purgeset.command(name="prefixes")
+    async def purgeset_prefixes(self, ctx, *, prefixes: str = None):
+        """
+        Set prefixes for bot commands to check for when purging.
+
+        Seperate prefixes with spaces.
+        """
+        if not prefixes:
+            prefixes = await self.config.guild(ctx.guild).prefixes()
+            curr = [f"`{p}`" for p in prefixes]
+            await ctx.send("Current Prefixes: " + humanize_list(curr))
+            return
+
+        prefixes = [p for p in prefixes.split(" ")]
+        await self.config.guild(ctx.guild).prefixes.set(prefixes)
+        prefixes = [f"`{p}`" for p in prefixes]
+        await ctx.send("Prefixes set to: " + humanize_list(prefixes))
+
+    @purgeset.command(name="bot")
+    async def purgeset_ignore_bot(self, ctx, *, toggle: bool):
+        """
+        Set whether to ignore bot commands for last messages.
+        """
+        await self.config.guild(ctx.guild).ignore_bot_commands.set(toggle)
+        await ctx.tick()
+
+    @purgeset.command(name="numlast")
+    async def purgeset_last_message_number(self, ctx, count: int):
+        """
+        Set the number of messages to track.
+
+        This number of messages must be within threshold when purging in order
+        for a reason to **not** be purged.
+        """
+        if count < 0 or count > 500:
+            await ctx.send("Invalid message count.")
+            return
+
+        await self.config.guild(ctx.guild).last_msg_num.set(count)
+        await ctx.tick()
+
+    @purgeset.command(name="sync")
+    async def purgeset_sync(self, ctx):
+        """
+        Syncs last messages for all users in the guild.
+        **WARNING, VERY SLOW OPERATION!**
+        """
+        await ctx.send("This will take a long time! Are you sure you want to continue?")
+        pred = MessagePredicate.yes_or_no(ctx)
+        try:
+            await self.bot.wait_for("message", check=pred, timeout=30)
+        except asyncio.TimeoutError:
+            await ctx.send("Took too long.")
+            return
+
+        if pred.result:
+            await ctx.send("Better grab some coffee then.")
+            await self.last_message_sync(ctx)
 
     @commands.command(name="giverole")
     @checks.mod_or_permissions(manage_roles=True)
@@ -394,29 +476,54 @@ class MoreAdmin(commands.Cog):
             await asyncio.sleep(seconds)
             await role.edit(mentionable=False)
 
+    @commands.command(name="lastmsg")
+    @checks.admin_or_permissions(administrator=True)
+    async def last_msg(self, ctx, *, user: discord.Member):
+        """
+        Gets stored last messages for a user
+        """
+        last_msgs = await self.config.member(user).last_msgs()
+        if not last_msgs:
+            await ctx.send(
+                "No last messages for this user. Make sure you have synced last messages for all users in the guild."
+            )
+            return
+        keys = sorted([float(k) for k in last_msgs.keys()])
+        msg = ""
+        for i, k in enumerate(keys):
+            channel = last_msgs[str(k)]["channel_id"]
+            message = last_msgs[str(k)]["message_id"]
+
+            channel = ctx.guild.get_channel(channel)
+            if not channel:
+                msg += f"{i+1}. Time: {datetime.fromtimestamp(k)}, channel not found\n"
+                continue
+            message = await channel.fetch_message(message)
+            if not message:
+                msg += f"{i+1}. Time: {datetime.fromtimestamp(k)}, message not found\n"
+                continue
+
+            msg += f"{i+1}. Time: {datetime.fromtimestamp(k)}, {message.jump_url}\n"
+
+        pages = pagify(msg)
+        for page in pages:
+            await ctx.send(page)
+
     @commands.command(name="purge")
     @checks.admin_or_permissions(administrator=True)
     @checks.bot_has_permissions(kick_members=True)
     async def purge(
-        self,
-        ctx,
-        role: discord.Role,
-        check_messages: bool = True,
-        include_bot_commands: bool = False,
-        *,
-        threshold: str = None,
+        self, ctx, role: discord.Role, check_messages: bool = True, *, threshold: str = None,
     ):
         """
         Purge inactive users with role.
 
-        **__WARNING: VERY SLOW AND COSTLY OPERATION!__**
         **If the role has spaces, you need to use quotes**
 
         If check_messages is yes/true/1 then purging is dictated by the user's last message.
         If check_messages is no/false/0 then purging is dictated by the user's join date.
 
-        If checking last message and bot is yes/true/1 then the bot won't count bot include_bot_commands as a valid last message for purge.
-        **Make sure to set prefixes with [p]adminset**
+        **Make sure to set purge settings with [p]purgeset**
 
         Threshold should be an interval.
 
@@ -436,34 +543,29 @@ class MoreAdmin(commands.Cog):
 
         guild = ctx.guild
         to_purge = []
-        errored = []
         start_time = time.time()
-        if check_messages:
-            last_msgs = await self.find_last_message(guild, role, include_bot_commands)
 
         for member in guild.members:
+            if member.id == self.bot.user.id:  # don't want to purge the bot.
+                continue
             if role in member.roles:
                 if check_messages:
-                    last_msg = last_msgs.get(member.id, -1)
-                    if last_msg == -1:  # shouldn't happen, but just a sanity check
-                        errored.append(member)
-                    elif (ctx.message.created_at - last_msg.created_at) > threshold:
+                    last_msgs = await self.config.member(member).last_msgs()
+                    keys = sorted([float(k) for k in last_msgs.keys()])
+                    if not keys:
+                        to_purge.append(member)
+                    elif (ctx.message.created_at - datetime.fromtimestamp(keys[0])) > threshold:
                         to_purge.append(member)
                 else:
                     if (ctx.message.created_at - member.joined_at) > threshold:
                         to_purge.append(member)
 
-        if errored:
-            errored = [m.mention for m in errored]
-            await ctx.send(
-                f"Some user's last message could not be found. Please check them manually:\n\n{humanize_list(errored)}"
-            )
-
         if not to_purge:
             await ctx.send("No one to purge.")
             return
 
-        await ctx.send(f"This will purge {len(to_purge)} users, are you sure you want to continue?")
+        num = len(to_purge)
+        await ctx.send(f"This will purge {num} users, are you sure you want to continue?")
 
         pred = MessagePredicate.yes_or_no(ctx)
         try:
@@ -484,17 +586,23 @@ class MoreAdmin(commands.Cog):
                 return
 
             await ctx.send("Okay, here we go.")
+            progress_message = await ctx.send(f"Processed 0/{num} users...")
             invite = await guild.invites()
-            invite = invite[0].url
+            if not invite:
+                invite = (await ctx.channel.create_invite()).url
+            else:
+                invite = invite[0].url
             purge_msg = PURGE_DM_MESSAGE.format(guild, invite)
-            for user in to_purge:
+            for i, user in enumerate(to_purge):
                 try:
                     await user.send(purge_msg)
                 except:
                     pass
 
                 if check_messages:
-                    _purge = last_msgs[user.id].created_at
+                    last_msgs = await self.config.member(member).last_msgs()
+                    keys = sorted([float(k) for k in last_msgs.keys()])
+                    _purge = datetime.fromtimestamp(keys[0])
                     msg = "Last Message Time"
                 else:
                     _purge = user.joined_at
@@ -506,9 +614,11 @@ class MoreAdmin(commands.Cog):
                 reason = f"Purged by moreadmins cog. {msg}: {_purge}, Threshold: {threshold}"
 
                 await user.kick(reason=reason)
-                await modlog.create_case(
-                    self.bot, guild, ctx.message.created_at, "Purge", user, moderator=ctx.author, reason=reason
-                )
+                # await modlog.create_case(
+                #    self.bot, guild, ctx.message.created_at, "Purge", user, moderator=ctx.author, reason=reason
+                # )
+                if i % 10 == 0:
+                    await progress_message.edit(content=f"Processed {i+1}/{num} users...")
 
             await ctx.send(f"Purge completed. Took {parse_seconds(time.time() - start_time)}.")
 
@@ -662,6 +772,8 @@ class MoreAdmin(commands.Cog):
         plural = "s" if num > 1 else ""
         await ctx.send(f"That is {num} member{plural} with these role(s)")
 
+    ### Listeners ###
+
     @commands.Cog.listener()
     async def on_member_join(self, member):
         sus_threshold = await self.config.guild(member.guild).sus_user_threshold()
@@ -691,62 +803,15 @@ class MoreAdmin(commands.Cog):
 
             await channel.send(embed=data)
 
-    ### DATA LOADING FROM V2, WILL REMOVE LATER ###
-    @commands.command(name="loadcasino")
-    @checks.is_owner()
-    async def loadcasino(self, ctx, *, path: str):
-        import json
-        from redbot.core import bank
+    @commands.Cog.listener()
+    async def on_message(self, message):
+        # Set user's last message
+        if not message.guild:
+            return
+        to_add = True
+        ignore = await self.config.guild(message.guild).ignore_bot_commands()
+        if ignore:
+            to_add = await self.check_prefix(message)
 
-        with open(path, "r") as f:
-            settings = json.load(f)
-
-            for guild_id, member_data in settings.items():
-                guild = self.bot.get_guild(int(guild_id))
-                for mid, mdata in member_data["Players"].items():
-                    user = guild.get_member(int(mid))
-                    try:
-                        await bank.deposit_credits(user, mdata["Chips"])
-                    except Exception as e:
-                        print(e)
-
-    @commands.command(name="loadecon")
-    @checks.is_owner()
-    async def load_econ(self, ctx, *, path: str):
-        import json
-        from redbot.core import bank
-
-        with open(path, "r") as f:
-            settings = json.load(f)
-
-            for guild_id, member_data in settings.items():
-                guild = self.bot.get_guild(int(guild_id))
-                for mid, mdata in member_data.items():
-                    user = guild.get_member(int(mid))
-                    try:
-                        await bank.deposit_credits(user, mdata["balance"])
-                    except Exception as e:
-                        print(e)
-
-    @commands.command(name="loaduserstats")
-    @checks.is_owner()
-    async def load_stats(self, ctx, *, path: str):
-        import json
-
-        act_log = self.bot.get_cog("ActivityLogger")
-        with open(path, "r") as f:
-            settings = json.load(f)
-
-        for guild in self.bot.guilds:
-            for member in guild.members:
-                data = settings[str(member.id)]
-                async with act_log.config.member(member).stats() as stats:
-                    stats["total_msg"] += data["total_msg"]
-                    stats["bot_cmd"] += data["bot_cmd"]
-                    stats["avg_len"] += data["avg_len"]
-                    stats["vc_time_sec"] += data["vc_time_sec"]
-
-                async with act_log.config.user(member).past_names() as past_names:
-                    for name in data["past_names"]:
-                        if name not in past_names:
-                            past_names.append(name)
+        if to_add:
+            await self.add_last_msg(message)

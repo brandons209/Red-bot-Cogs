@@ -9,7 +9,7 @@
   ],
   "description": "More admin commands like purging inactive users, member count display for channel name, add roles based on author's current roles, log new user accounts joining, and more!",
   "hidden": false,
-  "install_msg": "Thank you for using this cog!",
+  "install_msg": "Thank you for using this cog! Make sure to set bot prefixes so the bot can track which messages are bot commands. Also set whether the bot should ignore bot commands or not when tracking messages.",
   "requirements": [],
   "short": "More admins commands for your server.",
   "tags": [
