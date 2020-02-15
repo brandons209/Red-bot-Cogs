@@ -316,7 +316,7 @@ class EconomyTrickle(commands.Cog):
 
         msg = f"Mode: {mode}\n"
         for i, channel in enumerate(gsets[mode]):
-            msg += f"{i+1}. {ctx.guild.get_channel(channel)}"
+            msg += f"{i+1}. {ctx.guild.get_channel(channel)}\n"
 
         pages = pagify(msg)
         for page in pages:
