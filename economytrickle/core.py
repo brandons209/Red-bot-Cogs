@@ -10,6 +10,7 @@ import discord
 from redbot.core import commands, checks
 from redbot.core.config import Config
 from redbot.core import bank
+from redbot.core.utils.chat_formatting import pagify, box
 
 from .activity import RecordHandler
 from .converters import configable_guild_defaults, settings_converter
@@ -269,7 +270,7 @@ class EconomyTrickle(commands.Cog):
         gsets = await self.config.guild(ctx.guild).all()
         mode = gsets["mode"]
         if not mode:
-            return await ctx.send(f"You need to set a mode using `{ctx.clean_prefix}redirectset mode` first")
+            return await ctx.send(f"You need to set a mode using `{ctx.clean_prefix}trickleset mode` first")
 
         for channel in channels:
             if channel.id not in gsets[mode]:
@@ -298,3 +299,25 @@ class EconomyTrickle(commands.Cog):
 
         await self.config.guild(ctx.guild).set_raw(mode, value=gsets[mode])
         await ctx.tick()
+
+    @ect.command(name="list")
+    async def rset_list_chan(self, ctx):
+        """
+        List current channels.
+        """
+        gsets = await self.config.guild(ctx.guild).all()
+        mode = gsets["mode"]
+        if not mode:
+            return await ctx.send(f"You need to set a mode using `{ctx.clean_prefix}trickleset mode` first")
+
+        if not gsets[mode]:
+            await ctx.send("No channels defined.")
+            return
+
+        msg = f"Mode: {mode}\n"
+        for i, channel in enumerate(gsets[mode]):
+            msg += f"{i+1}. {ctx.guild.get_channel(channel)}"
+
+        pages = pagify(msg)
+        for page in pages:
+            await ctx.send(box(page))
