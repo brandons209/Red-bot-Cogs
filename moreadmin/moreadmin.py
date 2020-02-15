@@ -27,7 +27,7 @@ TIME_RE_STRING = r"\s?".join(
 
 TIME_RE = re.compile(TIME_RE_STRING, re.I)
 
-MIN_MSG_LEN = 10
+MIN_MSG_LEN = 6
 
 # 0 is guild object, 1 is invite link
 PURGE_DM_MESSAGE = "**__Notice of automatic inactivity removal__**\n\nYou have been kicked from {0.name} for lack of activity in the server; this is merely routine, and you are welcome to join back here: {1}"
