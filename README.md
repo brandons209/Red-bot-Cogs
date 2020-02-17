@@ -1,5 +1,7 @@
 # Brandons209's Cogs
 ## Cogs for discord's [Red-Bot](https://github.com/Cog-Creators/Red-DiscordBot)
+![black-checker](https://github.com/brandons209/Red-bot-Cogs/workflows/black-checker/badge.svg)
+
 
 Thank you for taking a look at my cogs, most of these are rewrites of other cogs, with a few of my own.
 
