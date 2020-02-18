@@ -18,11 +18,16 @@ Full V2 port with most of the cog rewritten from [calebj](https://github.com/cal
 - Upgraded userinfo command that includes user stats and number of bans, mutes, and kicks.
 
 
+#### Birthday
+Allow users to set their birthday and have it announced in a channel. Also gives the user a birthday role and sends them a customizeable DM message.
+
+
 #### Cost Manager
 Allows dynamically setting costs for any commands registered to Red. Supports setting costs on a hierarchy that follows user > role > guild. Also can set guild wide roles that can use commands for free, and overriding these for certain commands. It also sends receipts to users and edits that message as they run commands so they can track their spending.    
 **Features:**
 - DM receipts will only notify the user once if it fails to send the message.
 - Follows hierarchy, checks user cost first, then role cost, then guild wide cost and guild wide free roles.
+- **Planned:** Global cost setting for bots using a global economy system.
 
 
 #### Disable
@@ -30,17 +35,29 @@ Disable all bot commands except for admins in a guild. Customizable error messag
 
 
 #### Economy Trickle
-Currently rewriting parts from [Sinbad](https://github.com/mikeshardmind/SinbadCogs). Nothing changed yet.
+Currently rewriting parts from [Sinbad](https://github.com/mikeshardmind/SinbadCogs).
+
+Added a decay rate where xp and level decays over time. Also added a failure rate where a trickle has a chance to fail. Cleaned up some of the code as well.
 
 
 #### Events
-Made for a friend, pretty messy. Send custom events and log time since that event. Unsupported and won't be updated for much else.
+Made for a friend, pretty messy as it was my first v3 cog. Send custom events and log time since that event. Unsupported and won't be updated for much else.
+
+
+#### Isolate
+Carbon copy of punish cog, except this one will remove all roles from a user and by default sets permissions so they cannot see or talk in any channel except the channel set for isolation.
+
+
+#### Leveler
+Based off of [Malarne's](https://github.com/Malarne/discord_cogs) cog. Has some bug fixes and reduces the starting EXP by 50. Also cleaned up the code a bit, and have features planned.
 
 
 #### MoreAdmin
 More admin commands that provide various functionality.    
 **Features**:
 - Purge(kick) inactive users with a specific role. Can purge by last message or account age. DM's user with a notice of removal and an invite link to rejoin the guild. ~~Logs purges to modlog.~~(removed logging for now)
+- Send out mass DM to all users who can get purged based on the specified settings.
+- Audit your purge settings, which grabs some users who can be purged and displays your settings to make sure its working properly.
 - Set channel to display online/total users for guild.
 - Log "suspicious" users who join. Suspicious users are new accounts, threshold to determine an account as new can be set.
 - Give and remove roles based on user's currents roles. This allows setting a role to be giveable by users who have a specific set role.
