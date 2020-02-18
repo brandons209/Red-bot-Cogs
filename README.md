@@ -19,8 +19,8 @@ Full V2 port with most of the cog rewritten from [calebj](https://github.com/cal
 
 
 #### Birthday
-Allow users to set their birthday and have it announced in a channel. Also gives the user a birthday role and sends them a customizeable DM message.
-
+Allow users to set their birthday and have it announced in a channel. Also gives the user a birthday role and sends them a customizeable DM message.    
+**Known Bug:** Bot will resend birthdays if restarted or cog unloaded/reloaded.
 
 #### Cost Manager
 Allows dynamically setting costs for any commands registered to Red. Supports setting costs on a hierarchy that follows user > role > guild. Also can set guild wide roles that can use commands for free, and overriding these for certain commands. It also sends receipts to users and edits that message as they run commands so they can track their spending.    

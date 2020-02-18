@@ -276,7 +276,6 @@ class Birthdays(Cog):
                 if role and member and role in member.roles:
                     await member.remove_roles(role)
 
-
     async def clean_yesterday_bdays(self):
         all_guild_configs = await self.config.all_guilds()
         for guild_id, guild_config in all_guild_configs.items():
