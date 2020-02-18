@@ -1,0 +1,10 @@
+{
+    "NAME" : "EveryoneEmoji",
+    "AUTHOR" : "Brandons209",
+    "SHORT" : "Uploads emoji, can be used for non-nitro people to send animated emojis.",
+    "DESCRIPTION" : "Uploads emoji, can be used for non-nitro people to send animated emojis.",
+    "INSTALL_MSG" : "Thanks for installing EveryoneEmoji.",
+    "REQUIREMENTS" : [],
+    "TAGS" : ["emoji", "EveryoneEmoji", "everyone"],
+    "DISABLED" : false
+}
