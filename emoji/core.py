@@ -20,7 +20,6 @@ class EveryoneEmoji(commands.Cog):
         self.bot.loop.create_task(self.session.close())
 
     @commands.command(name="e")
-    @checks.bot_has_permissions(manage_messages=True)
     async def emoji_send(self, ctx, emoji: str):
         """Post emoji. Emoji can be animated or not.
 
@@ -34,8 +33,14 @@ class EveryoneEmoji(commands.Cog):
         To send emojis from other servers without nitro, you need the **emoji ID**.
         then use [p]e <emoji_id>
 
+        Make sure the bot has manage message permissions for cleaner chat
         """
-        await ctx.message.delete()
+        # just pass if failing to delete message, it should still run even if don't have manage
+        # message permissions.
+        try:
+            await ctx.message.delete()
+        except:
+            pass
         if emoji[0] == "<":
             # custom Emoji
             name = emoji.split(":")[1]
