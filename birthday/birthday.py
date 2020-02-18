@@ -66,7 +66,7 @@ class Birthdays(Cog):
         self.config.register_guild(
             channel=None, role=None, dmmessage=":tada: Aurelia wishes you a very happy birthday! :tada:", yesterdays=[]
         )
-        self.bday_loop = asyncio.create_task(self.initialise())
+        self.bday_task = asyncio.create_task(self.initialise())
         asyncio.create_task(self.check_breaking_change())
 
     # Events
@@ -81,7 +81,7 @@ class Birthdays(Cog):
                 await asyncio.sleep((tomorrow - now).total_seconds())
 
     def cog_unload(self):
-        self.bday_loop.cancel()
+        self.bday_task.cancel()
 
     # Commands
     @commands.group()
@@ -97,17 +97,13 @@ class Birthdays(Cog):
         await self.remove_user_bday(message.guild.id, message.author.id)
         await ctx.send(self.BDAY_REMOVED())
 
-    @bday.group(name="set")
-    async def bday_set(self, ctx: Context):
-        """Changes settings for your birthday!"""
-        pass
-
-    @bday_set.command(name="birthday")
+    @bday.command(name="set")
     async def bday_set_birthday(self, ctx: Context, *, date: str):
-        """Sets your birthday date
+        """Set your birthday!
 
-        The given date can either be month day, or day month
-        Year is optional. If not given, the age won't be displayed."""
+           The given date can either be month day, or day month
+           Year is optional. If not given, the age won't be displayed.
+        """
         message = ctx.message
         author = message.author
         year = None
@@ -140,6 +136,45 @@ class Birthdays(Cog):
         if today_ordinal == birthday_ordinal:
             await self.handle_bday(author.id, year)
 
+    @bday.command(name="list")
+    async def bday_list(self, ctx: Context):
+        """Lists birthdays
+
+        If a user has their year set, it will display the age they'll get after their birthday this year"""
+        message = ctx.message
+        await self.clean_bdays()
+        bdays = await self.get_guild_date_configs(message.guild.id)
+        this_year = datetime.date.today().year
+        embed = discord.Embed(title=self.BDAY_LIST_TITLE(), color=discord.Colour.lighter_grey())
+        for k, g in itertools.groupby(
+            sorted(datetime.datetime.fromordinal(int(o)) for o in bdays.keys()), lambda i: i.month,
+        ):
+
+            value = "\n".join(
+                date.strftime("%d").lstrip("0")
+                + ": "
+                + ", ".join(
+                    "{}".format(ctx.guild.get_member(int(u_id)).mention)
+                    + ("" if year is None else " ({})".format(this_year - int(year)))
+                    for u_id, year in bdays.get(str(date.toordinal()), {}).items()
+                )
+                for date in g
+                if len(bdays.get(str(date.toordinal()))) > 0
+            )
+            if not value.isspace():
+                embed.add_field(
+                    name=datetime.datetime(year=1, month=k, day=1).strftime("%B"), value=value,
+                )
+        await ctx.send(embed=embed)
+
+    @commands.group(name="bdayset")
+    @checks.admin()
+    async def bday_set(self, ctx: Context):
+        """
+        Manage birthday settings.
+        """
+        pass
+
     @bday_set.command(name="dmmessage")
     @checks.mod_or_permissions(manage_roles=True)
     async def bday_set_dmmessage(self, ctx: Context, *, bday_message: str = ""):
@@ -170,37 +205,6 @@ class Birthdays(Cog):
         guild = ctx.message.guild
         await self.config.guild(role.guild).role.set(role.id)
         await ctx.send(self.ROLE_SET(g=guild.name, r=role.name))
-
-    @bday.command(name="list")
-    async def bday_list(self, ctx: Context):
-        """Lists birthdays
-
-        If a user has their year set, it will display the age they'll get after their birthday this year"""
-        message = ctx.message
-        await self.clean_bdays()
-        bdays = await self.get_guild_date_configs(message.guild.id)
-        this_year = datetime.date.today().year
-        embed = discord.Embed(title=self.BDAY_LIST_TITLE(), color=discord.Colour.lighter_grey())
-        for k, g in itertools.groupby(
-            sorted(datetime.datetime.fromordinal(int(o)) for o in bdays.keys()), lambda i: i.month,
-        ):
-
-            value = "\n".join(
-                date.strftime("%d").lstrip("0")
-                + ": "
-                + ", ".join(
-                    "{}".format(ctx.guild.get_member(user_id))
-                    + ("" if year is None else " ({})".format(this_year - int(year)))
-                    for u_id, year in bdays.get(str(date.toordinal()), {}).items()
-                )
-                for date in g
-                if len(bdays.get(str(date.toordinal()))) > 0
-            )
-            if not value.isspace():
-                embed.add_field(
-                    name=datetime.datetime(year=1, month=k, day=1).strftime("%B"), value=value,
-                )
-        await ctx.send(embed=embed)
 
     async def clean_bday(self, guild_id: int, guild_config: dict, user_id: int):
         guild = self.bot.get_guild(guild_id)
