@@ -127,8 +127,8 @@ class Birthdays(Cog):
         if current_birthday != None and birthday.toordinal() == current_birthday.toordinal():
             await ctx.send("Your birthday is already set to {}!".format(self.get_human_birthday(birthday)))
             return
-        await self.remove_user_bday(message.guild.id, author.id)
-        await self.get_date_config(message.guild.id, birthday.toordinal()).get_attr(author.id).set(year)
+        await self.remove_user_bday(ctx.guild.id, author.id)
+        await self.get_date_config(ctx.guild.id, birthday.toordinal()).get_attr(author.id).set(year)
         await ctx.send(self.BDAY_SET(self.get_human_birthday(birthday)))
         # Check if today is their birthday
         today_ordinal = today.replace(year=1).toordinal()
@@ -255,6 +255,7 @@ class Birthdays(Cog):
                     if not any(g.get_member(int(user_id)) is not None for g in self.bot.guilds):
                         async with self.get_date_config(guild_id, date)() as config_bdays:
                             del config_bdays[user_id]
+
                 config_bdays = await self.get_date_config(guild_id, date)()
                 if len(config_bdays) == 0:
                     await self.get_date_config(guild_id, date).clear()
@@ -265,13 +266,33 @@ class Birthdays(Cog):
         for date, user_ids in birthdays.items():
             if user_id in user_ids:
                 await self.get_date_config(guild_id, date).get_attr(user_id).clear()
+                guild = self.bot.get_guild(guild_id)
+                if not guild:
+                    continue
+                role_id = await self.config.guild(guild).role()
+                role = guild.get_role(role_id)
+                member = guild.get_member(int(user_id))
+                # remove role if they have it
+                if role and member and role in member.roles:
+                    await member.remove_roles(role)
+
 
     async def clean_yesterday_bdays(self):
         all_guild_configs = await self.config.all_guilds()
         for guild_id, guild_config in all_guild_configs.items():
             for user_id in guild_config.get("yesterdays", []):
                 asyncio.create_task(self.clean_bday(guild_id, guild_config, user_id))
-            await self.config.guild(discord.Guild(data={"id": guild_id}, state=None)).yesterdays.clear()
+                guild = self.bot.get_guild(int(guild_id))
+                if not guild:
+                    continue
+                role_id = await self.config.guild(guild).role()
+                role = guild.get_role(role_id)
+                member = guild.get_member(int(user_id))
+                # remove role if they have it
+                if role and member and role in member.roles:
+                    await member.remove_roles(role)
+
+            await self.config.guild(discord.Guild(data={"id": int(guild_id)}, state=None)).yesterdays.clear()
 
     async def do_today_bdays(self):
         guild_configs = await self.get_all_date_configs()

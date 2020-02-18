@@ -115,6 +115,10 @@ Assorted roleplay commands. Uses ASCII art.
 - Improved Flip don't need to @ a user nor use quotes if their name has spaces.
 
 
+#### Smart React
+Auto react to messages based on keywords. Based off of [FlapJack's](https://github.com/flapjax/FlapJack-Cogs/) cog. Minor bug fixes and planned features, like using regex to parse messages.
+
+
 #### Welcome
 Modified from [tmerc](https://github.com/tmercswims/tmerc-cogs), adding a nicely formatted role list as an option for messages. Feature submitted to tmerc.
 - Also adds integration with my activitylog cog, allowing posting of user stats in welcome messages. (Such as leaving and wanting to know how active a person was when they leave.)
