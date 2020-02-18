@@ -142,7 +142,7 @@ class MoreAdmin(commands.Cog):
         ignore = await self.config.guild(ctx.guild).ignore_bot_commands()
         num_text_c = len(text_channels)
         progress_message = await ctx.send(f"Processed 0/{num_text_c} channels...")
-
+        start_time = time.time()
         for i, channel in enumerate(text_channels):
             async for message in channel.history(limit=None):
                 to_add = True
@@ -153,6 +153,10 @@ class MoreAdmin(commands.Cog):
                     await self.add_last_msg(message)
 
             await progress_message.edit(content=f"Processed {i+1}/{num_text_c} channels...")
+
+        await progress_message.edit(
+            content=f"Done. Processed {num_text_c} channels in {parse_seconds(time.time() - start_time)}."
+        )
 
     async def user_count_updater(self):
         await self.bot.wait_until_ready()
@@ -183,6 +187,8 @@ class MoreAdmin(commands.Cog):
                     keys = sorted([float(k) for k in last_msgs.keys()])
                     if not keys:
                         to_purge.append(member)
+                    # if their oldest message is longer than the threshold, then must be purged.
+                    # so a user where 3/5 messages meet the threshold still gets purged.
                     elif (ctx.message.created_at - datetime.fromtimestamp(keys[0])) > threshold:
                         to_purge.append(member)
                 else:
@@ -394,7 +400,7 @@ class MoreAdmin(commands.Cog):
         Set the number of messages to track.
 
         This number of messages must be within threshold when purging in order
-        for a reason to **not** be purged.
+        for a member to **not** be purged.
         """
         if count < 0 or count > 500:
             await ctx.send("Invalid message count.")
@@ -484,7 +490,7 @@ class MoreAdmin(commands.Cog):
 
         A time of 0 will just toggle the pingable status.
 
-        Role should be a role name or role ID.
+        Role should be a role name (case sensitive) or role ID.
         """
         guild = ctx.guild
 
@@ -633,7 +639,9 @@ class MoreAdmin(commands.Cog):
                 if i % 10 == 0:
                     await progress_message.edit(content=f"Processed {i+1}/{num} users...")
 
-            await ctx.send(f"Purge completed. Took {parse_seconds(time.time() - start_time)}.")
+            await progress_message.edit(
+                content=f"Purged {num} users successfully. Took {parse_seconds(time.time() - start_time)}."
+            )
 
         else:
             await ctx.send("Cancelled.")
@@ -685,6 +693,7 @@ class MoreAdmin(commands.Cog):
             await ctx.send("Invalid threshold!")
             return
 
+        start_time = time.time()
         to_purge = await self.get_purges(ctx, role, threshold, check_messages=check_messages)
 
         if not to_purge:
@@ -722,6 +731,8 @@ class MoreAdmin(commands.Cog):
                 pass
             if i % 10 == 0:
                 await progress_message.edit(content=f"Processed {i+1}/{num} users...")
+
+        await progress_message.edit(content=f"Done. DMed {num} users in {parse_seconds(time.time() - start_time)}.")
 
     @commands.command(hidden=True)
     @commands.guild_only()
