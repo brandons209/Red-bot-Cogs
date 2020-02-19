@@ -41,7 +41,7 @@ class EveryoneEmoji(commands.Cog):
             await ctx.message.delete()
         except:
             pass
-        if emoji[0] == "<":
+        if (emoji[0:2] == "<:" or emoji[0:2] == "<a") and emoji[-1] == ">":
             # custom Emoji
             name = emoji.split(":")[1]
             emoji_name = emoji.split(":")[2][:-1]
@@ -52,6 +52,7 @@ class EveryoneEmoji(commands.Cog):
             else:
                 url = "https://cdn.discordapp.com/emojis/" + emoji_name + ".png"
                 name += ".png"
+
         elif emoji[0] == ":" and emoji[-1] == ":":
             name = emoji.strip(":")
             emoji = discord.utils.get(ctx.guild.emojis, name=name)
@@ -64,6 +65,7 @@ class EveryoneEmoji(commands.Cog):
                     name += ".png"
             else:
                 url = None
+
         elif emoji.isnumeric():
             name = ("none.gif", "none.png")
             # could be animated or regular, check both
