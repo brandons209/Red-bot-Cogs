@@ -630,7 +630,7 @@ class MoreAdmin(commands.Cog):
                     if keys:
                         _purge = datetime.fromtimestamp(keys[0])
                     else:
-                        _purge = "No messages."
+                        _purge = ctx.message.created_at
                     msg = "Last Message Time"
                 else:
                     _purge = user.joined_at
