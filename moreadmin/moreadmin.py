@@ -608,11 +608,14 @@ class MoreAdmin(commands.Cog):
             await ctx.send("Okay, here we go.")
             progress_message = await ctx.send(f"Processed 0/{num} users...")
             invite = await guild.invites()
+
             if not invite:
                 invite = (await ctx.channel.create_invite()).url
             else:
                 invite = invite[0].url
             purge_msg = PURGE_DM_MESSAGE.format(guild, invite)
+            _threshold = parse_seconds(threshold.total_seconds())
+
             for i, user in enumerate(to_purge):
                 try:
                     await user.send(purge_msg)
@@ -630,8 +633,7 @@ class MoreAdmin(commands.Cog):
 
                 _purge = ctx.message.created_at - _purge
                 _purge = parse_seconds(_purge.total_seconds())
-                threshold = parse_seconds(threshold.total_seconds())
-                reason = f"Purged by moreadmins cog. {msg}: {_purge}, Threshold: {threshold}"
+                reason = f"Purged by moreadmins cog. {msg}: {_purge}, Threshold: {_threshold}"
 
                 await user.kick(reason=reason)
                 # await modlog.create_case(
