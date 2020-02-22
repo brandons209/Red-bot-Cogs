@@ -620,7 +620,7 @@ class MoreAdmin(commands.Cog):
                     pass
 
                 if check_messages:
-                    last_msgs = await self.config.member(member).last_msgs()
+                    last_msgs = await self.config.member(user).last_msgs()
                     keys = sorted([float(k) for k in last_msgs.keys()])
                     _purge = datetime.fromtimestamp(keys[0])
                     msg = "Last Message Time"
