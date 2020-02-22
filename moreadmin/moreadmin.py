@@ -127,9 +127,11 @@ class MoreAdmin(commands.Cog):
             else:
                 keys = sorted([float(k) for k in last_msgs.keys()])
                 # if oldest message saved is newer than the message to add, dont add it
-                if keys[0] > message.created_at.timestamp():
-                    return
-                del last_msgs[str(keys[0])]  # remove oldest entry
+                if keys: # need to make sure if user has last message
+                    if keys[0] > message.created_at.timestamp():
+                        return
+                    del last_msgs[str(keys[0])]  # remove oldest entry
+
                 # append new entry
                 last_msgs[message.created_at.timestamp()] = {"channel_id": message.channel.id, "message_id": message.id}
 
@@ -625,7 +627,10 @@ class MoreAdmin(commands.Cog):
                 if check_messages:
                     last_msgs = await self.config.member(user).last_msgs()
                     keys = sorted([float(k) for k in last_msgs.keys()])
-                    _purge = datetime.fromtimestamp(keys[0])
+                    if keys:
+                        _purge = datetime.fromtimestamp(keys[0])
+                    else:
+                        _purge = "No messages."
                     msg = "Last Message Time"
                 else:
                     _purge = user.joined_at
