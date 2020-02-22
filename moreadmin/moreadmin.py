@@ -576,6 +576,7 @@ class MoreAdmin(commands.Cog):
             await ctx.send("Invalid threshold!")
             return
 
+        guild = ctx.guild
         start_time = time.time()
         to_purge = await self.get_purges(ctx, role, threshold, check_messages=check_messages)
 
