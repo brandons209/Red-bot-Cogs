@@ -719,6 +719,7 @@ class MoreAdmin(commands.Cog):
 
         number = await self.config.guild(ctx.guild).last_msg_num()
         ignore = await self.config.guild(ctx.guild).ignore_bot_commands()
+        failed = 0
         if ignore:
             msg = PURGE_DM_WARN_MESSAGE.format(ctx.guild, number, "**Bot commands do not count!**")
         else:
@@ -728,11 +729,15 @@ class MoreAdmin(commands.Cog):
             try:
                 await member.send(msg)
             except:
+                failed += 1
                 pass
             if i % 10 == 0:
                 await progress_message.edit(content=f"Processed {i+1}/{num} users...")
 
-        await progress_message.edit(content=f"Done. DMed {num} users in {parse_seconds(time.time() - start_time)}.")
+        extra = f"\n\nFailed to send DMs to {failed} users" if failed > 0 else ""
+        await progress_message.edit(
+            content=f"Done. DMed {num - failed} users in {parse_seconds(time.time() - start_time)}." + extra
+        )
 
     @commands.command(hidden=True)
     @commands.guild_only()
