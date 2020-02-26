@@ -180,7 +180,10 @@ class ActivityLogger(commands.Cog):
         if not user or not is_mod:
             user = author
 
-        roles = [x for x in user.roles if x.name != "@everyone"]
+        if is_mod:
+            roles = [x for x in user.roles if x.name != "@everyone"]
+        else:
+            roles = [x.name for x in sorted(user.roles, reverse=True) if x.name != "@everyone"]
 
         joined_at = user.joined_at
         since_created = (ctx.message.created_at - user.created_at).days
@@ -211,8 +214,10 @@ class ActivityLogger(commands.Cog):
         else:
             activity = None
 
-        if roles:
+        if roles and is_mod:
             roles = " ".join([x.mention for x in sorted(roles, reverse=True)])
+        elif roles:
+            roles = ", ".join(roles)
         else:
             roles = "None"
 
@@ -222,7 +227,9 @@ class ActivityLogger(commands.Cog):
             stats = "Stats are unavailable for this account."
             names = None
 
-        data = discord.Embed(description=activity, colour=user.colour)
+        title = guild.name if not is_mod else None
+
+        data = discord.Embed(title=title, description=activity, colour=user.colour)
         data.add_field(name="Joined Discord on", value=created_on)
         data.add_field(name="Joined this server on", value=joined_on)
         data.add_field(name="Roles", value=roles, inline=False)

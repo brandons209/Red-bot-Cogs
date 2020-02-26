@@ -127,7 +127,7 @@ class MoreAdmin(commands.Cog):
             else:
                 keys = sorted([float(k) for k in last_msgs.keys()])
                 # if oldest message saved is newer than the message to add, dont add it
-                if keys: # need to make sure if user has last message
+                if keys:  # need to make sure if user has last message
                     if keys[0] > message.created_at.timestamp():
                         return
                     del last_msgs[str(keys[0])]  # remove oldest entry
