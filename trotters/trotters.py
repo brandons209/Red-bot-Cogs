@@ -119,7 +119,7 @@ class Trotters(commands.Cog):
                     "Role List Update",
                     member,
                     moderator=ctx.author,
-                    reason=(f"{attachment.url}"),
+                    reason=(f"{reason}. {attachment.url}"),
                 )
             else:
                 pred = MessagePredicate.yes_or_no(ctx)
@@ -136,7 +136,7 @@ class Trotters(commands.Cog):
                         "Role List Update",
                         member,
                         moderator=ctx.author,
-                        reason=(f"Missing attachment."),
+                        reason=(f"{reason}. Missing attachment."),
                     )
                 else:
                     return await ctx.maybe_send_embed("Cancelling command.")
