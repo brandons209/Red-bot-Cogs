@@ -1,7 +1,7 @@
-from .trotters import Trotters
+from .roletracker import RoleTracker
 
 
 async def setup(bot):
-    trotters = Trotters(bot)
-    await trotters.initialize()
-    bot.add_cog(trotters)
+    roletracker = RoleTracker(bot)
+    await roletracker.initialize()
+    bot.add_cog(roletracker)

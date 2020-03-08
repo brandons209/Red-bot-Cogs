@@ -52,11 +52,11 @@ class RoleTracker(commands.Cog):
     # Commands
     @commands.group()
     @commands.guild_only()
+    @checks.mod_or_permissions(manage_roles=True)
     async def roletracker(self, ctx: GuildContext):
         """Role Trackers settings"""
         pass
 
-    @checks.admin_or_permissions(manage_roles=True)
     @roletracker.command(name="set")
     async def set_role(self, ctx: GuildContext, role: discord.Role, enabled: bool):
         """
@@ -78,7 +78,6 @@ class RoleTracker(commands.Cog):
             await self.config.role(role).addable.set(True)
             await ctx.tick()
 
-    @checks.admin_or_permissions(manage_roles=True)
     @roletracker.command(name="roles")
     async def view_roles(self, ctx: GuildContext):
         """
