@@ -9,6 +9,7 @@ from redbot.core import checks, commands, Config, modlog
 from redbot.core.bot import Red
 from redbot.core.config import Group
 from redbot.core.commands import Context, Cog
+from redbot.core.utils.chat_formatting import pagify
 from redbot.core.utils.predicates import MessagePredicate
 
 try:
@@ -16,22 +17,20 @@ try:
 except ImportError:
     from redbot.core.commands import Context as GuildContext
 
+__author__ = "TheBluekr#2702"
+__cogname__ = "aurelia.cogs.roletracker"
 
-class Trotters(commands.Cog):
-    __author__ = "TheBluekr#2702"
 
+class RoleTracker(commands.Cog):
     def __init__(self, bot):
         super().__init__()
         self.bot = bot
-        self.logger = logging.getLogger("aurelia.cogs.trotters")
+        self.logger = logging.getLogger(__cogname__)
         self.config = Config.get_conf(self, identifier=428038701, force_registration=True)
 
         default_role = {"addable": False, "USERS": {}}
 
         self.config.register_role(**default_role)
-
-    def cog_unload(self):
-        pass
 
     async def initialize(self):
         await self.register_casetypes()
@@ -53,20 +52,16 @@ class Trotters(commands.Cog):
     # Commands
     @commands.group()
     @commands.guild_only()
-    async def trotters(self, ctx: Context):
-        """Trotter's Pass settings"""
+    async def roletracker(self, ctx: GuildContext):
+        """Role Trackers settings"""
         pass
 
     @checks.admin_or_permissions(manage_roles=True)
-    @trotters.command(name="set")
-    async def set_role(self, ctx, role: discord.Role, enabled: bool):
+    @roletracker.command(name="set")
+    async def set_role(self, ctx: GuildContext, role: discord.Role, enabled: bool):
         """
         Sets role to be addable/removable
         """
-
-        if not role:
-            return await ctx.maybe_send_embed("No role supplied")
-
         if not enabled:
             if await self.config.role(role).USERS():
                 pred = MessagePredicate.yes_or_no(ctx)
@@ -84,8 +79,8 @@ class Trotters(commands.Cog):
             await ctx.tick()
 
     @checks.admin_or_permissions(manage_roles=True)
-    @trotters.command(name="roles")
-    async def view_roles(self, ctx):
+    @roletracker.command(name="roles")
+    async def view_roles(self, ctx: GuildContext):
         """
         Lists all roles which can be added/removed
         """
@@ -93,34 +88,29 @@ class Trotters(commands.Cog):
         for role in ctx.guild.roles:
             if await self.config.role(role).addable() and not role.is_default():
                 enabled.append(role.name)
-        await ctx.maybe_send_embed(f"List of addable roles: \n%s" % (", ".join(enabled)))
+        pages = pagify("\n".join(enabled))
+        await ctx.send("List of addable roles:")
+        for page in pages:
+            await ctx.maybe_send_embed(page)
 
     @commands.bot_has_permissions(manage_roles=True)
-    @trotters.command(name="add")
-    async def add_role(self, ctx: GuildContext, user_id: int, role: discord.Role, *, reason: str = "Added by command."):
+    @roletracker.command(name="add")
+    async def add_role(
+        self, ctx: GuildContext, member: discord.Member, role: discord.Role, *, reason: str = f"Added by {__cogname__}"
+    ):
         """
         Adds specified role to given user
         """
-
         if not await self.config.role(role).addable():
             return await ctx.maybe_send_embed("Role isn't set as addable.")
         try:
-            member = ctx.guild.get_member(user_id)
             if role in member.roles:
                 return await ctx.maybe_send_embed("Member already has that role.")
 
             data = await self.config.role(role).USERS()
             if len(ctx.message.attachments):
                 attachment = ctx.message.attachments[0]
-                case = await modlog.create_case(
-                    self.bot,
-                    member.guild,
-                    ctx.message.created_at,
-                    "Role List Update",
-                    member,
-                    moderator=ctx.author,
-                    reason=(f"{reason}. {attachment.url}"),
-                )
+                reason_message = f"{reason}. {attachment.url}"
             else:
                 pred = MessagePredicate.yes_or_no(ctx)
                 await ctx.send(f"Couldn't find attachment, do you want to continue without adding attachment?")
@@ -129,17 +119,18 @@ class Trotters(commands.Cog):
                 except asyncio.TimeoutError:
                     return await ctx.send("Timed out.")
                 if pred.result:
-                    case = await modlog.create_case(
-                        self.bot,
-                        member.guild,
-                        ctx.message.created_at,
-                        "Role List Update",
-                        member,
-                        moderator=ctx.author,
-                        reason=(f"{reason}. Missing attachment."),
-                    )
+                    reason_message = f"{reason}. Missing attachment."
                 else:
                     return await ctx.maybe_send_embed("Cancelling command.")
+            case = await modlog.create_case(
+                self.bot,
+                member.guild,
+                ctx.message.created_at,
+                "Role List Update",
+                member,
+                moderator=ctx.author,
+                reason=reason_message,
+            )
             caseno = case.case_number
             await member.add_roles(role)
             data[member] = caseno
@@ -149,24 +140,28 @@ class Trotters(commands.Cog):
             return await ctx.maybe_send_embed("Can't do that. Discord role heirarchy applies here.")
 
     @commands.bot_has_permissions(manage_roles=True)
-    @trotters.command(name="remove")
+    @roletracker.command(name="remove")
     async def remove_role(
-        self, ctx: GuildContext, user_id: int, role: discord.Role, *, reason: str = "Removed by command."
+        self,
+        ctx: GuildContext,
+        member: discord.Member,
+        role: discord.Role,
+        *,
+        reason: str = f"Removed by {__cogname__}.",
     ):
         """
         Removes specified role from given user
         """
 
         if not await self.config.role(role).addable():
-            return await ctx.maybe_send_embed("Role isn't set as addable.")
+            return await ctx.maybe_send_embed("Role isn't set as removable.")
         guild = ctx.guild
-        member = guild.get_member(user_id)
         try:
             if role not in member.roles:
                 return await ctx.maybe_send_embed("Member doesn't have that role.")
 
             data = await self.config.role(role).USERS()
-            caseno = data.pop(user_id, None)
+            caseno = data.pop(member.id, None)
 
             if caseno:
                 try:
@@ -213,7 +208,7 @@ class Trotters(commands.Cog):
             added = aroles - broles
             removed = broles - aroles
 
-            now_date = datetime.utcfromtimestamp(time.time())
+            now_date = datetime.utcnow()
 
             for role in added:
                 if await self.config.role(role).addable():
