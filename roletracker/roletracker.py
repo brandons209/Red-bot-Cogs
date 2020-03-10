@@ -176,7 +176,7 @@ class RoleTracker(commands.Cog):
                     case = None
 
                 if case:
-                    edits = {"reason": case.reason + f'\n**Role Removed**: {reason}'}
+                    edits = {"reason": case.reason + f"\n**Role Removed**: {reason}"}
 
                     if ctx.message.author.id != case.moderator.id:
                         edits["amended_by"] = ctx.message.author
@@ -250,7 +250,7 @@ class RoleTracker(commands.Cog):
                             case = None
 
                         if case:
-                            edits = {"reason": case.reason + f'\n**Role Removed**: Role manually removed'}
+                            edits = {"reason": case.reason + f"\n**Role Removed**: Role manually removed"}
 
                             if user.id != case.moderator.id:
                                 edits["amended_by"] = user
