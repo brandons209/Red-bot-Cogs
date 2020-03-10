@@ -1,13 +1,9 @@
 import logging
-import hashlib
 import asyncio
 import discord
 from datetime import datetime
-import time
 
 from redbot.core import checks, commands, Config, modlog
-from redbot.core.bot import Red
-from redbot.core.config import Group
 from redbot.core.utils.chat_formatting import pagify
 from redbot.core.utils.predicates import MessagePredicate
 
@@ -53,10 +49,11 @@ class RoleTracker(commands.Cog):
     @commands.guild_only()
     @checks.mod_or_permissions(manage_roles=True)
     async def roletracker(self, ctx: GuildContext):
-        """Role Trackers settings"""
+        """Role Tracker commands"""
         pass
 
     @roletracker.command(name="set")
+    @checks.admin_or_permissions(administrator=True)
     async def set_role(self, ctx: GuildContext, role: discord.Role, enabled: bool):
         """
         Sets role to be addable/removable
@@ -71,6 +68,7 @@ class RoleTracker(commands.Cog):
                     return await ctx.send("Timed out.")
                 if pred.result:
                     await self.config.role(role).USERS.set({})
+
             await self.config.role(role).addable.set(False)
             await ctx.tick()
         else:
@@ -86,7 +84,9 @@ class RoleTracker(commands.Cog):
         for role in ctx.guild.roles:
             if await self.config.role(role).addable() and not role.is_default():
                 enabled.append(role.name)
+
         pages = pagify("\n".join(enabled))
+
         await ctx.send("List of addable roles:")
         for page in pages:
             await ctx.maybe_send_embed(page)
@@ -94,7 +94,7 @@ class RoleTracker(commands.Cog):
     @commands.bot_has_permissions(manage_roles=True)
     @roletracker.command(name="add")
     async def add_role(
-        self, ctx: GuildContext, member: discord.Member, role: discord.Role, *, reason: str = f"Added by {__cogname__}"
+        self, ctx: GuildContext, role: discord.Role, member: discord.Member, *, reason: str = f"Added by {__cogname__}"
     ):
         """
         Adds specified role to given user
@@ -108,31 +108,36 @@ class RoleTracker(commands.Cog):
             data = await self.config.role(role).USERS()
             if len(ctx.message.attachments):
                 attachment = ctx.message.attachments[0]
-                reason_message = f"{reason}\nRole: {role.mention}\n{attachment.url}"
+                reason_message = f"{reason}\n**Role**: {role.mention}\n{attachment.url}"
             else:
                 await ctx.send(f"Couldn't find attachment, do you want to continue without adding attachment?")
                 pred = MessagePredicate.yes_or_no(ctx)
+
                 try:
                     await self.bot.wait_for("message", check=pred, timeout=30)
                 except asyncio.TimeoutError:
                     return await ctx.send("Timed out.")
+
                 if pred.result:
-                    reason_message = f"{reason}\nRole: {role.mention}\nMissing attachment"
+                    reason_message = f"{reason}\n**Role**: {role.mention}\nMissing attachment"
                 else:
                     return await ctx.maybe_send_embed("Cancelling command.")
+
             case = await modlog.create_case(
                 self.bot,
                 member.guild,
                 ctx.message.created_at,
-                "Role List Update",
+                "roleupdate",
                 member,
                 moderator=ctx.author,
                 reason=reason_message,
             )
+
             caseno = case.case_number
-            await member.add_roles(role)
-            data[member] = caseno
+            data[member.id] = caseno
             await self.config.role(role).USERS.set(data)
+
+            await member.add_roles(role)
             await ctx.tick()
         except discord.Forbidden:
             return await ctx.maybe_send_embed("Can't do that. Discord role heirarchy applies here.")
@@ -142,8 +147,8 @@ class RoleTracker(commands.Cog):
     async def remove_role(
         self,
         ctx: GuildContext,
-        member: discord.Member,
         role: discord.Role,
+        member: discord.Member,
         *,
         reason: str = f"Removed by {__cogname__}.",
     ):
@@ -153,13 +158,15 @@ class RoleTracker(commands.Cog):
 
         if not await self.config.role(role).addable():
             return await ctx.maybe_send_embed("Role isn't set as removable.")
+
         guild = ctx.guild
+
         try:
             if role not in member.roles:
                 return await ctx.maybe_send_embed("Member doesn't have that role.")
 
             data = await self.config.role(role).USERS()
-            caseno = data.pop(member.id, None)
+            caseno = data.pop(str(member.id), None)
 
             if caseno:
                 try:
@@ -169,7 +176,7 @@ class RoleTracker(commands.Cog):
                     case = None
 
                 if case:
-                    edits = {"reason": f'{case["reason"]}\nUpdate: {reason}'}
+                    edits = {"reason": case.reason + f'\n**Role Removed**: {reason}'}
 
                     if ctx.message.author.id != case.moderator.id:
                         edits["amended_by"] = ctx.message.author
@@ -178,8 +185,8 @@ class RoleTracker(commands.Cog):
 
                     await case.edit(edits)
 
-            await member.remove_roles(role)
             await self.config.role(role).USERS.set(data)
+            await member.remove_roles(role)
             await ctx.tick()
         except discord.Forbidden:
             return await ctx.maybe_send_embed("Can't do that. Discord role heirarchy applies here.")
@@ -198,6 +205,7 @@ class RoleTracker(commands.Cog):
                     if entry.target.id == before.id:
                         user = entry.user
                         break
+
             except discord.Forbidden:
                 self.logger.warning("Failed to retrieve the moderator from audit logs, please check the permissions")
 
@@ -210,17 +218,17 @@ class RoleTracker(commands.Cog):
 
             for role in added:
                 role_dict = await self.config.role(role).all()
-                if role_dict["addable"] and before.id not in role_dict["USERS"].keys():
+                if role_dict["addable"] and not role_dict["USERS"].get(str(before.id), None):
                     data = role_dict["USERS"]
 
                     case = await modlog.create_case(
                         self.bot,
                         before.guild,
                         now_date,
-                        "Role List Update",
+                        "roleupdate",
                         before,
                         moderator=user,
-                        reason="Role manually added",
+                        reason=f"Role manually added\n**Role:** {role.mention}",
                     )
                     caseno = case.case_number
 
@@ -232,7 +240,7 @@ class RoleTracker(commands.Cog):
                 if role_dict["addable"]:
                     data = role_dict["USERS"]
 
-                    caseno = data.pop(before.id, None)
+                    caseno = data.pop(str(before.id), None)
 
                     if caseno:
                         try:
@@ -242,12 +250,12 @@ class RoleTracker(commands.Cog):
                             case = None
 
                         if case:
-                            edits = {"reason": f'{case["reason"]}\nUpdate: Role manually removed'}
+                            edits = {"reason": case.reason + f'\n**Role Removed**: Role manually removed'}
 
                             if user.id != case.moderator.id:
                                 edits["amended_by"] = user
 
-                            edits["modified_at"] = now_date
+                            edits["modified_at"] = now_date.timestamp()
 
                             await case.edit(edits)
 

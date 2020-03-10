@@ -115,6 +115,14 @@ Assorted roleplay commands. Uses ASCII art.
 - Improved Flip don't need to @ a user nor use quotes if their name has spaces.
 
 
+## Role Tracker
+Allows moderators to add certain roles that are set by administrators. Added roles have modlog cases created/update on adding/removing the roles.
+**Features:**
+- Asks for attachment (like a screenshot) when adding roles for added information.
+- Tracks roles if they are manually added and creates/updates modlog cases appropriately.
+- Only add/remove roles set by admins.
+
+
 #### Smart React
 Auto react to messages based on keywords. Based off of [FlapJack's](https://github.com/flapjax/FlapJack-Cogs/) cog. Minor bug fixes and planned features, like using regex to parse messages.
 
