@@ -18,6 +18,7 @@ __cogname__ = "aurelia.cogs.roletracker"
 # 0 is reason, 1 is role object, 2 is extra msg
 REASON_MSG = "{0}\n**Role:**{1.mention} (name: {1.name}, id: {1.id})\n{2}"
 
+
 class RoleTracker(commands.Cog):
     def __init__(self, bot):
         super().__init__()
@@ -220,7 +221,9 @@ class RoleTracker(commands.Cog):
 
             for role in added:
                 role_dict = await self.config.role(role).all()
-                if role_dict["addable"] and not (role_dict["USERS"].get(str(before.id), None) or user == before.guild.me):
+                if role_dict["addable"] and not (
+                    role_dict["USERS"].get(str(before.id), None) or user == before.guild.me
+                ):
                     data = role_dict["USERS"]
 
                     case = await modlog.create_case(
