@@ -115,12 +115,13 @@ Assorted roleplay commands. Uses ASCII art.
 - Improved Flip don't need to @ a user nor use quotes if their name has spaces.
 
 
-## Role Tracker
+#### Role Tracker
 Allows moderators to add certain roles that are set by administrators. Added roles have modlog cases created/update on adding/removing the roles.
 **Features:**
 - Asks for attachment (like a screenshot) when adding roles for added information.
 - Tracks roles if they are manually added and creates/updates modlog cases appropriately.
 - Only add/remove roles set by admins.
+- Doesn't create manual cases if the bot adds the rule, this is so it doesn't conflict with the punish cog or other cogs that modify roles.
 
 
 #### Smart React

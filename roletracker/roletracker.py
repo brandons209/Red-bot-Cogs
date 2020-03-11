@@ -15,6 +15,8 @@ except ImportError:
 __author__ = "TheBluekr#2702"
 __cogname__ = "aurelia.cogs.roletracker"
 
+# 0 is reason, 1 is role object, 2 is extra msg
+REASON_MSG = "{0}\n**Role:**{1.mention} (name: {1.name}, id: {1.id})\n{2}"
 
 class RoleTracker(commands.Cog):
     def __init__(self, bot):
@@ -108,7 +110,7 @@ class RoleTracker(commands.Cog):
             data = await self.config.role(role).USERS()
             if len(ctx.message.attachments):
                 attachment = ctx.message.attachments[0]
-                reason_message = f"{reason}\n**Role**: {role.mention}\n{attachment.url}"
+                reason_message = REASON_MSG.format(reason, role, attachment.url)
             else:
                 await ctx.send(f"Couldn't find attachment, do you want to continue without adding attachment?")
                 pred = MessagePredicate.yes_or_no(ctx)
@@ -119,7 +121,7 @@ class RoleTracker(commands.Cog):
                     return await ctx.send("Timed out.")
 
                 if pred.result:
-                    reason_message = f"{reason}\n**Role**: {role.mention}\nMissing attachment"
+                    reason_message = REASON_MSG.format(reason, role, "No attachment.")
                 else:
                     return await ctx.maybe_send_embed("Cancelling command.")
 
@@ -218,7 +220,7 @@ class RoleTracker(commands.Cog):
 
             for role in added:
                 role_dict = await self.config.role(role).all()
-                if role_dict["addable"] and not role_dict["USERS"].get(str(before.id), None):
+                if role_dict["addable"] and not (role_dict["USERS"].get(str(before.id), None) or user == before.guild.me):
                     data = role_dict["USERS"]
 
                     case = await modlog.create_case(
@@ -228,7 +230,7 @@ class RoleTracker(commands.Cog):
                         "roleupdate",
                         before,
                         moderator=user,
-                        reason=f"Role manually added\n**Role:** {role.mention}",
+                        reason=REASON_MSG.format("Role manually added", role, ""),
                     )
                     caseno = case.case_number
 
@@ -237,7 +239,7 @@ class RoleTracker(commands.Cog):
 
             for role in removed:
                 role_dict = await self.config.role(role).all()
-                if role_dict["addable"]:
+                if role_dict["addable"] and not user == before.guild.me:
                     data = role_dict["USERS"]
 
                     caseno = data.pop(str(before.id), None)
