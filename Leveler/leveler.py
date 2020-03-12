@@ -639,3 +639,9 @@ class Leveler(commands.Cog):
         args are True/False."""
         await self.profiles.data.guild(ctx.guild).lvlup_announce.set(status)
         await ctx.send(_("Levelup announce is now {}.").format(_("enabled") if status else _("disabled")))
+
+    # Listeners
+    @commands.Cog.listener()
+    async def on_member_remove(self, member):
+        # reset level stats on leave.
+        await self.profiles.data.member(member).clear()
