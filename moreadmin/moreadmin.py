@@ -73,9 +73,8 @@ class MoreAdmin(commands.Cog):
         self.config.register_guild(**default_guild)
 
         # initalize prefixes and add user count updater task
-        self.loop = asyncio.get_event_loop()
-        self.loop.create_task(self.initialize())
-        self.user_task = self.loop.create_task(self.user_count_updater())
+        asycnio.create_task(self.initialize())
+        self.user_task = asycnio.create_task(self.user_count_updater())
 
     async def initialize(self):
         await self.register_casetypes()
