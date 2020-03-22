@@ -1392,7 +1392,7 @@ class ActivityLogger(commands.Cog):
         else:
             entry = "Member ban: @{0} (id {0.id})".format(member)
 
-        await self.log(member.guild, entry)
+        await self.log(guild, entry)
 
     @commands.Cog.listener()
     async def on_member_unban(self, guild, member):
