@@ -947,7 +947,7 @@ class Isolate(commands.Cog):
         if diff < 0:
             self.execute_queue_event(*args)
         elif run_at - time.time() < QUEUE_TIME_CUTOFF:
-            self.pending[args] = self.bot.loop.call_later(diff, self.execute_queue_event, *args)
+            self.pending[args] = asyncio.get_event_loop().call_later(diff, self.execute_queue_event, *args)
         else:
             await self.queue.put((run_at, *args))
 
@@ -965,7 +965,7 @@ class Isolate(commands.Cog):
             if self.execute_queue_event(*args):
                 return
         elif diff < QUEUE_TIME_CUTOFF:
-            self.pending[args] = self.bot.loop.call_later(diff, self.execute_queue_event, *args)
+            self.pending[args] = asyncio.get_event_loop().call_later(diff, self.execute_queue_event, *args)
             return True
 
         await self.queue.put(item)
