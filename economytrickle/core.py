@@ -39,7 +39,7 @@ class EconomyTrickle(commands.Cog):
         self.config.register_member(xp=0, level=0)
         self.recordhandler = RecordHandler()
 
-        self.main_loop_task = bot.loop.create_task(self.main_loop())
+        self.main_loop_task = asyncio.create_task(self.main_loop())
         self.extra_tasks = []
 
     def cog_unload(self):
@@ -67,7 +67,7 @@ class EconomyTrickle(commands.Cog):
                     if minutes[g] % data[g.id]["interval"] == 0:
                         minutes[g] = 0
                         now = datetime.utcnow()
-                        tsk = self.bot.loop.create_task(self.do_rewards_for(g, now, data[g.id]))
+                        tsk = asyncio.create_task(self.do_rewards_for(g, now, data[g.id]))
                         self.extra_tasks.append(tsk)
 
     async def do_rewards_for(self, guild: discord.Guild, now: datetime, data: dict):

@@ -63,12 +63,12 @@ class Isolate(commands.Cog):
         self.config.register_guild(**default_guild)
 
         # queue variables
-        self.queue = asyncio.PriorityQueue(loop=bot.loop)
-        self.queue_lock = asyncio.Lock(loop=bot.loop)
+        self.queue = asyncio.PriorityQueue()
+        self.queue_lock = asyncio.Lock()
         self.pending = {}
         self.enqueued = set()
 
-        self.task = bot.loop.create_task(self.on_load())
+        self.task = asyncio.create_task(self.on_load())
 
     def cog_unload(self):
         self.task.cancel()
@@ -1204,10 +1204,10 @@ class Isolate(commands.Cog):
         member = guild.get_member(member_id)
 
         if member:
-            self.bot.loop.create_task(self._unisolate(member))
+            asyncio.create_task(self._unisolate(member))
             return True
         else:
-            self.bot.loop.create_task(self.bot.request_offline_members(guild))
+            asyncio.create_task(self.bot.request_offline_members(guild))
             return False
 
     async def _unisolate(
