@@ -57,6 +57,9 @@ class ReactPoll(commands.Cog):
         else:
             for poll in polls.values():
                 load_poll = LoadedPoll(self, poll)
+                if not load_poll.channel:
+                    await self.delete_poll(load_poll)
+                    continue
                 load_poll.message = await load_poll.channel.fetch_message(load_poll.message)
                 if load_poll.valid:
                     self.poll_sessions[str(load_poll.channel.id)] = load_poll
