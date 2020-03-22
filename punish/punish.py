@@ -1277,7 +1277,7 @@ class Punish(commands.Cog):
             asyncio.create_task(self._unpunish(member))
             return True
         else:
-            asyncio.create_taskself.bot.request_offline_members(guild))
+            asyncio.create_task(self.bot.request_offline_members(guild))
             return False
 
     async def _unpunish(self, member, reason=None, apply_roles=True, update=False, moderator=None, quiet=False) -> bool:
