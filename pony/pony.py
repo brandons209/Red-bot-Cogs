@@ -99,7 +99,7 @@ class Pony(commands.Cog):
             filter_list = "\n".join(sorted(filters))
             target_guild = "{}'s".format(guild.name)
         else:
-            filter_list = "\n".join(sorted(filters["default"]))
+            filter_list = "***No Filters Set***"
             target_guild = "Default"
         await ctx.send("{} pony filter list contains:```\n{}```".format(target_guild, filter_list))
 
@@ -226,7 +226,7 @@ class Pony(commands.Cog):
         rating = ""
         ratingColor = "FFFFFF"
         ratingWord = "unknown"
-        search = "https://derpibooru.org/search.json?q="
+        search = "https://derpibooru.org/api/v1/json/search/images?q="
         tagSearch = ""
 
         # Assign tags to URL
@@ -242,16 +242,17 @@ class Pony(commands.Cog):
             tagSearch += ", ".join(filters)
 
         search += parse.quote_plus(tagSearch)
+        if search[-1] == "=":
+            search += "safe"
 
         # Randomize results and apply Derpibooru's "Everything" filter
         if randomize:
-            if not tags and filters:
-                if filters == []:
-                    search = "https://derpibooru.org/images/random.json?filter_id=56027"
-                else:
-                    search += "&random_image=y&filter_id=56027"
+            if not tags and not filters:
+                search = "https://derpibooru.org/api/v1/json/search/images?q=safe&sf=random&filter_id=56027&per_page=1"
             else:
-                search += "&random_image=y&filter_id=56027"
+                search += "&sf=random&filter_id=56027&per_page=1"
+        else:
+            search += "&filter_id=56027&per_page=1"
 
         # Inform users about image retrieving
         message = await ctx.send("Fetching pony image...")
@@ -259,25 +260,16 @@ class Pony(commands.Cog):
         # Fetch the image or display an error
         try:
             async with aiohttp.ClientSession(loop=ctx.bot.loop) as session:
-                async with session.get(search, headers={"User-Agent": "Booru-Cogs (https://git.io/booru)"}) as r:
+                async with session.get(search, headers={"User-Agent": "Booru-Bot"}) as r:
                     website = await r.json()
-            if randomize:
-                if "id" in website:
-                    imageId = str(website["id"])
-                    async with aiohttp.ClientSession(loop=ctx.bot.loop) as session:
-                        async with session.get("https://derpibooru.org/images/" + imageId + ".json") as r:
-                            website = await r.json()
-                    imageURL = "https:{}".format(website["image"])
-                else:
-                    return await message.edit(content="Your search terms gave no results.")
+            if website["total"] > 0:
+                website = website["images"][0]
+                imageId = website["id"]
+                imageURL = website["representations"]["full"]
             else:
-                if website["search"] != []:
-                    website = website["search"][0]
-                    imageURL = "https:{}".format(website["image"])
-                else:
-                    return await message.edit(content="Your search terms gave no results.")
+                return await message.edit(content="Your search terms gave no results.")
         except:
-            return await message.edit(content="Error. {}".format(traceback.format_exc()))
+            return await message.edit(content="Error! Contact bot owner.")
 
         # If verbose mode is enabled, create an embed and fill it with information
         if verbose:
@@ -288,7 +280,7 @@ class Pony(commands.Cog):
             embedLink = "https://derpibooru.org/{}".format(imageId)
 
             # Populates the tag list
-            tagList = website["tags"].split(", ")
+            tagList = website["tags"]
 
             # Checks for the rating and sets an appropriate color
             for i in range(0, len(tagList)):
@@ -310,11 +302,13 @@ class Pony(commands.Cog):
                     break
 
             # Grabs the artist(s)
-            for i in range(0, len(tagList)):
-                if "artist:" in tagList[i]:
-                    while "artist:" in tagList[i]:
-                        artistList.append(tagList.pop(i)[7:])
-                    break
+            toRemove = []
+            for tag in tagList:
+                if "artist:" in tag:
+                    artistList.append(tag[7:])
+                    toRemove.append(tag)
+
+            tagList = list(set(tagList) - set(toRemove))
 
             # Determine if there are multiple artists
             if len(artistList) == 1:
