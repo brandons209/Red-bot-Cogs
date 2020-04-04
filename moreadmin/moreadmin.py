@@ -32,8 +32,11 @@ MIN_MSG_LEN = 6
 # 0 is guild object, 1 is invite link
 PURGE_DM_MESSAGE = "**__Notice of automatic inactivity removal__**\n\nYou have been kicked from {0.name} for lack of activity in the server; this is merely routine, and you are welcome to join back here: {1}"
 
-# 0 is guild object, number of messages is 1, 2 is anything extra to add.
-PURGE_DM_WARN_MESSAGE = "**__WARNING! You may be kicked from {0.name} soon!__**\n\nDue to your inactivity, it may happen that you get kicked. If you don't want that, then we recommend you chat with people in text channels! The minimum number of messages you need is **{1}** to be marked as active. {2}\n\nHowever, you can't just spam letters or messages! We aren't doing this to be rude but simply to try and keep active people within our community. We hope you understand and apologize for any inconvenience."
+# 0 is guild object, number of messages is 1
+PURGE_DM_WARN_MESSAGE_MSG = "**__WARNING! You may be kicked from {0.name} soon!__**\n\nDue to your inactivity, it may happen that you get kicked. If you don't want that, then we recommend you chat with people in text channels! The minimum number of messages you need is **{1}** to be marked as active.\n\nHowever, you can't just spam letters or messages! We aren't doing this to be rude but simply to try and keep active people within our community. We hope you understand and apologize for any inconveniences."
+
+# 0 is guild object
+PURGE_DM_WARN_MESSAGE = "**__WARNING! You may be kicked from {0.name} soon!__**\n\nDue to your inactivity, it may happen that you get kicked. If you don't want that, then we recommend you chat with people in text channels! Once you get the trusted role you will be marked as active.\n\nHowever, you can't just spam letters or messages! We aren't doing this to be rude but simply to try and keep active people within our community. We hope you understand and apologize for any inconveniences.\nIf you have any questions or concerns please message one of the staff members!"
 
 
 def parse_timedelta(argument: str) -> Optional[timedelta]:
@@ -61,6 +64,8 @@ class MoreAdmin(commands.Cog):
             "ignore_bot_commands": False,
             "last_msg_num": 5,
             "prefixes": [],
+            "purge_dm_msg": PURGE_DM_WARN_MESSAGE_MSG,
+            "purge_dm": PURGE_DM_WARN_MESSAGE,
         }
 
         default_role = {"addable": []}  # role ids who can add this role
@@ -395,6 +400,42 @@ class MoreAdmin(commands.Cog):
         await self.config.guild(ctx.guild).ignore_bot_commands.set(toggle)
         await ctx.tick()
 
+    @purgeset.command(name="dm-last-msg")
+    async def purgeset_dm_last_msg(self, ctx, *, msg: str = None):
+        """
+        Set DM message that is sent to users when check_last_messages is True.
+
+        You can use {0.name} to put the guild name in the message, and
+        {1} to put the number of messages needed to be marked active, which is taken
+        from your purge settings.
+
+        Run with no message to view current message.
+        """
+        if msg is None:
+            curr = await self.config.guild(ctx.guild).purge_dm_msg()
+            await ctx.send("`{0} represents the guild, {1} is the number of messages needed to be active.`")
+            return await ctx.send(escape(curr, formatting=True))
+
+        await self.config.guild(ctx.guild).purge_dm_msg.set(msg)
+        await ctx.tick()
+
+    @purgeset.command(name="dm-msg")
+    async def purgeset_dm_msg(self, ctx, *, msg: str = None):
+        """
+        Set DM message that is sent to users when check_last_messages is False.
+
+        You can use {0.name} to put the guild name in the message.
+
+        Run with no message to view current message.
+        """
+        if msg is None:
+            curr = await self.config.guild(ctx.guild).purge_dm()
+            await ctx.send("`{0} represents the guild.`")
+            return await ctx.send(escape(curr, formatting=True))
+
+        await self.config.guild(ctx.guild).purge_dm.set(msg)
+        await ctx.tick()
+
     @purgeset.command(name="numlast")
     async def purgeset_last_message_number(self, ctx, count: int):
         """
@@ -727,10 +768,14 @@ class MoreAdmin(commands.Cog):
         number = await self.config.guild(ctx.guild).last_msg_num()
         ignore = await self.config.guild(ctx.guild).ignore_bot_commands()
         failed = 0
-        if ignore:
-            msg = PURGE_DM_WARN_MESSAGE.format(ctx.guild, number, "**Bot commands do not count!**")
+        if check_messages:
+            msg = await self.config.guild(ctx.guild).purge_dm_msg()
+            msg = msg.format(ctx.guild, number)
+            if ignore:
+                msg += "\n\n**Bot commands do not count towards activity!**"
         else:
-            msg = PURGE_DM_WARN_MESSAGE.format(ctx.guild, number, "")
+            msg = await self.config.guild(ctx.guild).purge_dm()
+            msg = msg.format(ctx.guild)
 
         for i, member in enumerate(to_purge):
             try:
