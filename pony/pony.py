@@ -268,7 +268,8 @@ class Pony(commands.Cog):
                 imageURL = website["representations"]["full"]
             else:
                 return await message.edit(content="Your search terms gave no results.")
-        except:
+        except Exception as e:
+            traceback.print_exc()
             return await message.edit(content="Error! Contact bot owner.")
 
         # If verbose mode is enabled, create an embed and fill it with information
