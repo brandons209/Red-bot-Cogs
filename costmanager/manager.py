@@ -1,7 +1,7 @@
 from redbot.core.utils.chat_formatting import *
 from redbot.core import Config, checks, commands, bank
 import discord
-
+import asyncio
 
 class PoorError(commands.CheckFailure):
     pass
@@ -398,6 +398,8 @@ class CostManager(commands.Cog):
             cost = await self.get_cost(ctx)
             currency_name = await bank.get_currency_name(ctx.guild)
             balance = await bank.get_balance(ctx.author)
-            await ctx.send(
+            message = await ctx.send(
                 f"Sorry {ctx.author.name}, you do not have enough {currency_name} to use that command. (Cost: {cost}, Balance: {balance})"
             )
+            await asyncio.sleep(10)
+            await message.delete()
