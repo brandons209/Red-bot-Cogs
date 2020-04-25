@@ -144,7 +144,7 @@ class CostManager(commands.Cog):
         last_num = int(content[-1].split(".")[0])
         content.append(RECEIPT_MESSAGE.format(last_num + 1, command, cost, currency_name))
 
-        if len("\n".join(content)) > MAX_MSG_LEN:
+        while len("\n".join(content)) > MAX_MSG_LEN:
             del content[0]
 
         content = "\n".join(content)
