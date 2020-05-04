@@ -81,7 +81,6 @@ class NitroEmoji(commands.Cog):
 
         embed.set_author(name=str(member), url=emoji.url)
         embed.set_thumbnail(url=emoji.url)
-        embed.set_author(name=str(member))
 
         if reason:
             embed.add_field(name="Reason", value=reason)
