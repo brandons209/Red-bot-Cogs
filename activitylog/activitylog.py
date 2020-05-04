@@ -517,7 +517,6 @@ class ActivityLogger(commands.Cog):
 
         await self.log_sender(ctx, log_files, end, start=start, user=user)
 
-
     @logs.group(name="audit")
     async def logs_audit(self, ctx):
         """Gets audit logs"""

@@ -3,6 +3,7 @@ from redbot.core import Config, checks, commands, bank
 import discord
 import asyncio
 
+
 class PoorError(commands.CheckFailure):
     pass
 
