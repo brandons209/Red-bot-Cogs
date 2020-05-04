@@ -7,8 +7,8 @@ import discord
 
 BaseCog = getattr(commands, "Cog", object)
 
-class Confession(BaseCog):
 
+class Confession(BaseCog):
     def __init__(self):
         self.config = Config.get_conf(self, identifier=665235)
         default_guild = {"confession_room": ""}
@@ -44,7 +44,15 @@ class Confession(BaseCog):
         It'll ask you which guild to confess in if you have more than one with a confession
         """
 
-        async def select_guild(ctx: commands.Context, pages: list, controls: dict, message: discord.Message, page: int, timeout: float, emoji: str):
+        async def select_guild(
+            ctx: commands.Context,
+            pages: list,
+            controls: dict,
+            message: discord.Message,
+            page: int,
+            timeout: float,
+            emoji: str,
+        ):
             # Clean up
             with contextlib.suppress(discord.NotFound):
                 await message.delete()
@@ -54,7 +62,7 @@ class Confession(BaseCog):
 
         if bool(ctx.guild):
             await ctx.send("You should do this in DMs!")
-            try :
+            try:
                 await ctx.message.delete()
             except:
                 pass
@@ -112,7 +120,8 @@ class Confession(BaseCog):
 
             await ctx.bot.send_filtered(destination=confession_room, embed=embed)
         except discord.errors.Forbidden:
-            return await ctx.author.send("I don't have permission to send messages to this room or something went wrong.")
-
+            return await ctx.author.send(
+                "I don't have permission to send messages to this room or something went wrong."
+            )
 
         await ctx.author.send("Your confession has been sent, you are forgiven now.")
