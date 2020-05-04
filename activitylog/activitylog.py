@@ -440,6 +440,84 @@ class ActivityLogger(commands.Cog):
 
         await self.log_sender(ctx, log_files, end, start=start)
 
+    @logs.group(name="user")
+    async def logs_users(self, ctx):
+        """Gets messages from a user"""
+        pass
+
+    @logs_users.command(name="from")
+    async def logs_users_channel_interval(self, ctx, user: discord.Member, *, till: str):
+        """
+        User's messages accross the guild going back to a specific interval or date/time.
+
+         Dates/times look like:
+            February 14 at 6pm EDT
+            2019-04-13 06:43:00 PST
+            01/20/18 at 21:00:43
+
+        times default to UTC if no timezone provided
+
+         Intervals look like:
+            5 minutes
+            1 minute 30 seconds
+            1 hour
+            2 days
+            30 days
+            5h30m
+            (etc)
+        """
+        interval = parse_timedelta(till)
+        date = None
+        if not interval:
+            try:
+                date = parse_time(till).replace(tzinfo=None)
+            except:
+                await ctx.send("Invalid date or interval! Try again.")
+                return
+
+        guild = ctx.guild
+        log_files = sorted(glob.glob(os.path.join(PATH, str(guild.id), "*.log")), reverse=True)
+        log_files = [log for log in log_files if "guild" not in log]
+
+        if interval:
+            end_time = datetime.utcnow() - interval
+        else:
+            end_time = date
+
+        await self.log_sender(ctx, log_files, end_time, user=user)
+
+    @logs_users.command(name="in")
+    async def logs_users_channel_in(self, ctx, user: discord.Member, *, date: str):
+        """
+        User's messages accross the guild in between the specified dates
+        Seperate dates with a **__semicolon__**.
+
+         times look like:
+            February 14 at 6pm EDT
+            2019-04-13 06:43:00 PST
+            01/20/18 at 21:00:43
+
+        times default to UTC if no timezone provided.
+        """
+        try:
+            dates = date.split(";")
+            dates = [dates[0].strip(), dates[1].strip()]  # only use 2 dates
+            start, end = [parse_time(date).replace(tzinfo=None) for date in dates]
+            # order doesnt matter, so check which date is older than the other
+            # end time should be the newest date since logs are processed in reverse
+            if start < end:  # start is before end date
+                start, end = end, start  # swap order
+        except:
+            await ctx.send("Invalid dates! Try again.")
+            return
+
+        guild = ctx.guild
+        log_files = sorted(glob.glob(os.path.join(PATH, str(guild.id), "*.log")), reverse=True)
+        log_files = [log for log in log_files if "guild" not in log]
+
+        await self.log_sender(ctx, log_files, end, start=start, user=user)
+
+
     @logs.group(name="audit")
     async def logs_audit(self, ctx):
         """Gets audit logs"""
