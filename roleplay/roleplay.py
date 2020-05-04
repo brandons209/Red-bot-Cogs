@@ -384,7 +384,10 @@ class RolePlay(commands.Cog):
         if user.id == ctx.bot.user.id:
             await ctx.send(":newspaper2: :newspaper2: :newspaper2: " + italics(ctx.message.author.display_name))
         else:
-            await ctx.send(":newspaper2: " + italics(user.display_name))
+            if ctx.guild.id == 508496957350608906:
+                await ctx.send(italics(user.display_name) + " <:aureliabagu:678829441178271770>")
+            else:
+                await ctx.send(":newspaper2: " + italics(user.display_name))
 
     @commands.command()
     async def flip(self, ctx, *, user: discord.Member = None):
