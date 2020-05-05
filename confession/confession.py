@@ -38,6 +38,7 @@ class Confession(BaseCog):
         await ctx.send("The room has been unset.")
 
     @commands.command()
+    @commands.cooldown(rate=1, per=420, type=commands.BucketType.user)
     async def confess(self, ctx, *, confession: str):
         """Confess your dirty sins
 
