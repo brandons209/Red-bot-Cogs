@@ -248,7 +248,7 @@ class NewReactPoll:
             unit = "day"
         else:
             conj = "on"
-            dur = str(self.end_time.strftime("%m/%d/%Y at %I:%M%p") + " UTC")
+            dur = str(end_time.strftime("%m/%d/%Y at %I:%M%p") + " UTC")
             unit = ""
 
         msg += "\nSelect the number to vote!" "\nPoll closes {} {} {}.".format(conj, dur, unit)
@@ -259,6 +259,13 @@ class NewReactPoll:
 
     async def endPoll(self):
         self.valid = False
+
+        if not self.message:
+            # poll message deleted
+            del self.poll_sessions[str(self.channel.id)]
+            await self.main.delete_poll(self)
+            await self.channel.send("Poll message not found! Deleting poll data.")
+            return
 
         # Need a fresh message object
         self.message = await self.channel.fetch_message(self.message.id)
