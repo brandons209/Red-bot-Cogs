@@ -1,47 +1,90 @@
 from redbot.core import commands, checks, Config
-from redbot.core.utils.predicates import ReactionPredicate, MessagePredicate
+from redbot.core.utils.predicates import MessagePredicate
 from redbot.core.utils.menus import DEFAULT_CONTROLS, menu
 import contextlib
 import discord
+import asyncio
 
 
-BaseCog = getattr(commands, "Cog", object)
-
-
-class Confession(BaseCog):
+class Confession(commands.Cog):
     def __init__(self):
-        self.config = Config.get_conf(self, identifier=665235)
-        default_guild = {"confession_room": ""}
+        self.config = Config.get_conf(self, identifier=665235, force_registration=True)
+        default_guild = {"confession_room": None, "tracker_room": None}
         self.config.register_guild(**default_guild)
 
-    @commands.command()
+    @commands.group()
     @checks.admin_or_permissions(manage_guild=True)
-    async def confessionset(self, ctx, *, channel: discord.TextChannel):
-        """Set a confession room"""
+    @commands.guild_only()
+    async def confessionset(self, ctx):
+        """ Manage confession rooms """
+        pass
 
-        rooms = await self.config.guild(ctx.guild).confession_rooms()
+    @confessionset.command(name="confess")
+    async def confessionset_confess(self, ctx, *, channel: discord.TextChannel = None):
+        """Set a confession room
+           Leave empty to unset the room.
 
-        if channel is None:
-            return await ctx.send("No channel mentioned.")
+           **Make sure bot is able to embed messages in confession room.**
+        """
 
-        await self.config.guild(ctx.guild).confession_rooms.set(channel.id)
-        await ctx.send("The room has been set.")
+        room = await self.config.guild(ctx.guild).confession_room()
+        room = ctx.guild.get_channel(room)
+
+        if not channel:
+            if room:
+                await ctx.send(f"Unset confession channel {room.mention} ?")
+                pred = MessagePredicate.yes_or_no(ctx)
+                await ctx.bot.wait_for("message", check=pred)
+                if pred.result:
+                    await self.config.guild(ctx.guild).confession_room.clear()
+                    await ctx.tick()
+                else:
+                    await ctx.send("Cancelled.")
+                return
+            else:
+                await ctx.send("No confession room defined.")
+                return
+
+        await self.config.guild(ctx.guild).confession_room.set(channel.id)
+        await ctx.tick()
+
+    @confessionset.command(name="track")
+    async def confessionset_track(self, ctx, *, channel: discord.TextChannel = None):
+        """Set a tracker room
+           Leave empty to unset the room.
+
+           Tracker room has confessions sent along with who sent them,
+           for easy moderation purposes. This is optional to set.
+
+           **Make sure bot is able to embed messages in tracker room.**
+        """
+
+        room = await self.config.guild(ctx.guild).tracker_room()
+        room = ctx.guild.get_channel(room)
+
+        if not channel:
+            if room:
+                await ctx.send(f"Unset tracker channel {room.mention} ?")
+                pred = MessagePredicate.yes_or_no(ctx)
+                await ctx.bot.wait_for("message", check=pred)
+                if pred.result:
+                    await self.config.guild(ctx.guild).tracker_room.clear()
+                    await ctx.tick()
+                else:
+                    await ctx.send("Cancelled.")
+                return
+            else:
+                await ctx.send("No tracker room defined.")
+                return
+
+        await self.config.guild(ctx.guild).tracker_room.set(channel.id)
+        await ctx.tick()
 
     @commands.command()
-    @checks.admin_or_permissions(manage_guild=True)
-    async def confessionunset(self, ctx):
-        """Unset a confession room"""
-
-        rooms = await self.config.guild(ctx.guild).confession_rooms()
-
-        await self.config.guild(ctx.guild).confession_rooms.set("")
-        await ctx.send("The room has been unset.")
-
-    @commands.command()
-    @commands.cooldown(rate=1, per=420, type=commands.BucketType.user)
+    @commands.cooldown(rate=1, per=360, type=commands.BucketType.user)
     async def confess(self, ctx, *, confession: str):
         """Confess your dirty sins
-
+        Make sure to use in DMs
         It'll ask you which guild to confess in if you have more than one with a confession
         """
 
@@ -62,9 +105,11 @@ class Confession(BaseCog):
             return None
 
         if bool(ctx.guild):
-            await ctx.send("You should do this in DMs!")
+            msg = await ctx.send("You should do this in DMs!")
             try:
                 await ctx.message.delete()
+                await asyncio.sleep(10)
+                await msg.delete()
             except:
                 pass
             return
@@ -73,7 +118,7 @@ class Confession(BaseCog):
         user_guilds = []
         for guild in all_guilds:
             if guild.get_member(ctx.message.author.id):
-                room = await self.config.guild(guild).confession_rooms()
+                room = await self.config.guild(guild).confession_room()
                 if room is not None:
                     user_guilds.append(guild)
 
@@ -105,14 +150,12 @@ class Confession(BaseCog):
 
     async def send_confession(self, ctx, confession_guild: discord.Guild, confession: str):
 
-        rooms = await self.config.guild(confession_guild).confession_rooms()
-
-        for channel in confession_guild.text_channels:
-            if rooms == channel.id:
-                confession_room = channel
+        confession_room = await self.config.guild(confession_guild).confession_room()
+        confession_room = confession_guild.get_channel(confession_room)
 
         if not confession_room:
-            return await ctx.author.send("The confession room does not appear to exist.")
+            await ctx.author.send("The confession room does not appear to exist.")
+            return
 
         try:
             embed = discord.Embed(title="I have forgiven another sin", colour=ctx.author.colour)
@@ -121,8 +164,23 @@ class Confession(BaseCog):
 
             await ctx.bot.send_filtered(destination=confession_room, embed=embed)
         except discord.errors.Forbidden:
-            return await ctx.author.send(
-                "I don't have permission to send messages to this room or something went wrong."
+            await ctx.author.send(
+                "I don't have permission to send messages to this room, embed messages or something went wrong."
             )
+            return
+
+        tracker_room = await self.config.guild(confession_guild).tracker_room()
+        tracker_room = confession_guild.get_channel(tracker_room)
+        if tracker_room:
+            embed = discord.Embed(title="New Confession", colour=ctx.author.colour)
+            embed.add_field(name="Confession", value=confession)
+            avatar = ctx.author.avatar_url_as(static_format="png")
+            embed.set_author(name=ctx.author, url=avatar)
+            embed.set_thumbnail(url=avatar)
+            embed.set_footer(text=f"User ID: {ctx.author.id}")
+            try:
+                await ctx.bot.send_filtered(destination=tracker_room, embed=embed)
+            except:
+                pass
 
         await ctx.author.send("Your confession has been sent, you are forgiven now.")
