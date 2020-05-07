@@ -166,12 +166,15 @@ class RoleManagement(
                     del role_data["subscribed_users"][user_id]
                     continue
                 # charge user
-                cost = await self.config.role(role).cost()
+                raw_cost = await self.config.role(role).cost()
+                cost = await self.get_cost(member, role)
                 currency_name = await bank.get_currency_name(guild)
                 curr_sub = await self.config.role(role).subscription()
-                if cost == 0 or curr_sub == 0:
+                if raw_cost == 0 or curr_sub == 0:
                     # role is free now or sub is removed, remove stale sub
                     del role_data["subscribed_users"][user_id]
+                    continue
+                if cost == 0:
                     continue
 
                 msg = f"Hello! You are being charged {cost} {currency_name} for your subscription to the {role.name} role in {guild.name}."
@@ -220,6 +223,17 @@ class RoleManagement(
                         await self.config.role(role).subscribed_users.set(role_data["subscribed_users"])
                         if len(role_data["subscribed_users"]) == 0:
                             s_roles.remove(role_id)
+
+    async def get_cost(self, member: discord.Member, role: discord.Role):
+        """ Gets cost of a role for a user """
+        cost = await self.config.role(role).cost()
+        free_roles = await self.config.guild(member.guild).free_roles()
+
+        for m_role in member.roles:
+            if m_role.id in free_roles:
+                return 0
+
+        return cost
 
     @commands.guild_only()
     @commands.bot_has_permissions(manage_roles=True)
@@ -877,17 +891,20 @@ class RoleManagement(
             for m_role in ctx.author.roles:
                 if m_role.id in free_roles:
                     await ctx.send(f"You're special, no {currency_name} will be deducted from your account.")
-                    await self.update_roles_atomically(who=ctx.author, give=[role], remove=remove)
-                    await ctx.tick()
-                    return
+                    cost = 0
+                    # await self.update_roles_atomically(who=ctx.author, give=[role], remove=remove)
+                    # await ctx.tick()
+                    # return
 
             try:
-                await bank.withdraw_credits(ctx.author, cost)
+                if cost > 0:
+                    await bank.withdraw_credits(ctx.author, cost)
             except ValueError:
                 return await ctx.send(f"You don't have enough {currency_name} (Cost: {cost} {currency_name})")
             else:
                 if subscription > 0:
-                    await ctx.send(f"{role.name} will be renewed every {parse_seconds(subscription)}")
+                    if cost > 0:
+                        await ctx.send(f"{role.name} will be renewed every {parse_seconds(subscription)}")
                     async with self.config.role(role).subscribed_users() as s:
                         s[str(ctx.author.id)] = time.time() + subscription
                     async with self.config.guild(ctx.guild).s_roles() as s:
