@@ -25,14 +25,13 @@ async def has_assigned_role(ctx):
 @cog_i18n(_)
 class PersonalRoles(commands.Cog):
     """Assign and edit personal roles"""
+
     __version__ = "2.0.4"
 
     # noinspection PyMissingConstructor
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.config = Config.get_conf(
-            self, identifier=0x3D86BBD3E2B744AE8AA8B5D986EB4DD8, force_registration=True
-        )
+        self.config = Config.get_conf(self, identifier=0x3D86BBD3E2B744AE8AA8B5D986EB4DD8, force_registration=True)
         default_member = {"role": None}
         default_guild = {"blacklist": [], "auto_roles": [], "position_role": None, "auto_enabled": False}
         self.config.register_member(**default_member)
@@ -51,9 +50,9 @@ class PersonalRoles(commands.Cog):
         """Assign personal role to someone"""
         await self.config.member(user).role.set(role.id)
         await ctx.send(
-            _(
-                "Ok. I just assigned {user.name} ({user.id}) to role {role.name} ({role.id})."
-            ).format(user=user, role=role)
+            _("Ok. I just assigned {user.name} ({user.id}) to role {role.name} ({role.id}).").format(
+                user=user, role=role
+            )
         )
 
     @myrole.command()
@@ -79,9 +78,9 @@ class PersonalRoles(commands.Cog):
             return
 
         await ctx.send(
-            _(
-                "Ok. I just unassigned {user.name} ({user.id}) from their personal role and deleted the role."
-            ).format(user=user)
+            _("Ok. I just unassigned {user.name} ({user.id}) from their personal role and deleted the role.").format(
+                user=user
+            )
         )
 
     @myrole.command(name="list")
@@ -90,9 +89,7 @@ class PersonalRoles(commands.Cog):
         """Assigned roles list"""
         members_data = await self.config.all_members(ctx.guild)
         if not members_data:
-            await ctx.send(
-                chat.info(_("There is no assigned personal roles on this server"))
-            )
+            await ctx.send(chat.info(_("There is no assigned personal roles on this server")))
             return
         assigned_roles = []
         for member, data in members_data.items():
@@ -101,15 +98,11 @@ class PersonalRoles(commands.Cog):
             dic = {
                 _("User"): ctx.guild.get_member(member) or f"[X] {member}",
                 _("Role"): shorten(
-                    str(ctx.guild.get_role(data["role"]) or "[X] {}".format(data["role"])),
-                    32,
-                    placeholder="…",
+                    str(ctx.guild.get_role(data["role"]) or "[X] {}".format(data["role"])), 32, placeholder="…",
                 ),
             }
             assigned_roles.append(dic)
-        pages = list(
-            chat.pagify(tabulate(assigned_roles, headers="keys", tablefmt="orgtbl"))
-        )
+        pages = list(chat.pagify(tabulate(assigned_roles, headers="keys", tablefmt="orgtbl")))
         pages = [chat.box(page) for page in pages]
         await menu(ctx, pages, DEFAULT_CONTROLS)
 
@@ -168,7 +161,9 @@ class PersonalRoles(commands.Cog):
 
         if not_found:
             await ctx.send(
-                chat.warning("These roles weren't found, please try again: {}".format(chat.humanize_list(list(not_found))))
+                chat.warning(
+                    "These roles weren't found, please try again: {}".format(chat.humanize_list(list(not_found)))
+                )
             )
             return
 
@@ -231,16 +226,10 @@ class PersonalRoles(commands.Cog):
         rolename = rolename.casefold()
         async with self.config.guild(ctx.guild).blacklist() as blacklist:
             if rolename in blacklist:
-                await ctx.send(
-                    chat.error(_("`{}` is already in blacklist").format(rolename))
-                )
+                await ctx.send(chat.error(_("`{}` is already in blacklist").format(rolename)))
             else:
                 blacklist.append(rolename)
-                await ctx.send(
-                    chat.info(
-                        _("Added `{}` to blacklisted roles list").format(rolename)
-                    )
-                )
+                await ctx.send(chat.info(_("Added `{}` to blacklisted roles list").format(rolename)))
 
     @blacklist.command()
     @checks.admin_or_permissions(manage_roles=True)
@@ -249,16 +238,10 @@ class PersonalRoles(commands.Cog):
         rolename = rolename.casefold()
         async with self.config.guild(ctx.guild).blacklist() as blacklist:
             if rolename not in blacklist:
-                await ctx.send(
-                    chat.error(_("`{}` is not blacklisted").format(rolename))
-                )
+                await ctx.send(chat.error(_("`{}` is not blacklisted").format(rolename)))
             else:
                 blacklist.remove(rolename)
-                await ctx.send(
-                    chat.info(
-                        _("Removed `{}` from blacklisted roles list").format(rolename)
-                    )
-                )
+                await ctx.send(chat.info(_("Removed `{}` from blacklisted roles list").format(rolename)))
 
     @blacklist.command(name="list")
     @checks.admin_or_permissions(manage_roles=True)
@@ -285,9 +268,7 @@ class PersonalRoles(commands.Cog):
             return
 
         try:
-            await role.edit(
-                colour=colour, reason=get_audit_reason(ctx.author, _("Personal Role"))
-            )
+            await role.edit(colour=colour, reason=get_audit_reason(ctx.author, _("Personal Role")))
         except discord.Forbidden:
             ctx.command.reset_cooldown(ctx)
             await ctx.send(
@@ -330,9 +311,7 @@ class PersonalRoles(commands.Cog):
             await ctx.send(chat.error(_("This rolename is blacklisted.")))
             return
         try:
-            await role.edit(
-                name=name, reason=get_audit_reason(ctx.author, _("Personal Role"))
-            )
+            await role.edit(name=name, reason=get_audit_reason(ctx.author, _("Personal Role")))
         except discord.Forbidden:
             ctx.command.reset_cooldown(ctx)
             await ctx.send(
@@ -348,9 +327,7 @@ class PersonalRoles(commands.Cog):
             await ctx.send(chat.error(_("Unable to edit role: {}").format(e)))
         else:
             await ctx.send(
-                _("Changed name of {user}'s personal role to {name}").format(
-                    user=ctx.message.author.name, name=name
-                )
+                _("Changed name of {user}'s personal role to {name}").format(user=ctx.message.author.name, name=name)
             )
 
     @commands.cooldown(1, 30, commands.BucketType.user)
@@ -369,7 +346,9 @@ class PersonalRoles(commands.Cog):
             pos = pos.position if pos else 0
 
             try:
-                role = await ctx.guild.create_role(name=str(ctx.author), colour=ctx.author.colour, reason=_("Personal role"))
+                role = await ctx.guild.create_role(
+                    name=str(ctx.author), colour=ctx.author.colour, reason=_("Personal role")
+                )
                 await asyncio.sleep(0.3)
                 await role.edit(position=pos)
                 await asyncio.sleep(0.3)
@@ -379,7 +358,9 @@ class PersonalRoles(commands.Cog):
                 await ctx.send(chat.warning("Could not create your personal role, please contact an admin."))
                 return
 
-            await ctx.send(f"Role created! You can edit it using `{ctx.prefix}myrole name` and `{ctx.prefix}myrole colour` commands. Pos: {pos}")
+            await ctx.send(
+                f"Role created! You can edit it using `{ctx.prefix}myrole name` and `{ctx.prefix}myrole colour` commands. Pos: {pos}"
+            )
         else:
             await ctx.send(chat.warning("You already have a personal role!"))
 

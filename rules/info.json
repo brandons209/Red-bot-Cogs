@@ -1,0 +1,13 @@
+{
+  "author": [
+    "Brandons209"
+  ],
+  "install_msg": "Thanks for install.",
+  "short": "Quickly list server and channel rules.",
+  "description": "Quickly list server and channel rules.",
+  "min_bot_version": "3.2.1",
+  "tags": [
+    "rules",
+    "rule"
+  ]
+}
