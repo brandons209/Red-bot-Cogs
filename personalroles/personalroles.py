@@ -32,8 +32,8 @@ class PersonalRoles(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.config = Config.get_conf(self, identifier=0x3D86BBD3E2B744AE8AA8B5D986EB4DD8, force_registration=True)
-        default_member = {"role": None}
-        default_guild = {"blacklist": [], "auto_roles": [], "position_role": None, "auto_enabled": False}
+        default_member = {"role": None, "auto_role": False}
+        default_guild = {"blacklist": [], "auto_roles": [], "position_role": None}
         self.config.register_member(**default_member)
         self.config.register_guild(**default_guild)
 
@@ -199,18 +199,6 @@ class PersonalRoles(commands.Cog):
         await self.config.guild(ctx.guild).position_role.set(role_pos.id)
         await ctx.tick()
 
-    @myrole_auto.command(name="enabled")
-    async def myrole_auto_enabled(self, ctx, *, on_off: bool = None):
-        """Enable/disable auto role"""
-        curr = await self.config.guild(ctx.guild).auto_enabled()
-        if on_off is None:
-            curr_msg = "on" if curr else "off"
-            await ctx.send(f"Auto role creation is currently {curr_msg}.")
-            return
-
-        await self.config.guild(ctx.guild).auto_enabled.set(on_off)
-        await ctx.tick()
-
     @myrole.group()
     @commands.guild_only()
     @checks.admin_or_permissions(manage_roles=True)
@@ -343,7 +331,7 @@ class PersonalRoles(commands.Cog):
         if not role:
             pos = await self.config.guild(ctx.guild).position_role()
             pos = ctx.guild.get_role(pos)
-            pos = pos.position if pos else 0
+            pos = pos.position if pos else 1
 
             try:
                 role = await ctx.guild.create_role(
@@ -354,12 +342,13 @@ class PersonalRoles(commands.Cog):
                 await asyncio.sleep(0.3)
                 await ctx.author.add_roles(role, reason=_("Personal Roles"))
                 await self.config.member(ctx.author).role.set(role.id)
+                await self.config.member(ctx.author).auto_role.set(True)
             except:
                 await ctx.send(chat.warning("Could not create your personal role, please contact an admin."))
                 return
 
             await ctx.send(
-                f"Role created! You can edit it using `{ctx.prefix}myrole name` and `{ctx.prefix}myrole colour` commands. Pos: {pos}"
+                f"Role created! You can edit it using `{ctx.prefix}myrole name` and `{ctx.prefix}myrole colour` commands."
             )
         else:
             await ctx.send(chat.warning("You already have a personal role!"))
@@ -376,15 +365,64 @@ class PersonalRoles(commands.Cog):
         return role
 
     ### Listeners
+    @commands.Cog.listener("on_member_join")
+    async def role_persistance(self, member):
+        """Automatically give already assigned roles on join"""
+        role = await self.config.member(member).role()
+        if role:
+            role = member.guild.get_role(role)
+            if role and member:
+                try:
+                    await member.add_roles(role, reason=_("Personal Role"))
+                except discord.Forbidden:
+                    pass
+
     @commands.Cog.listener("on_member_remove")
     async def remove_role(self, member):
         """ Delete personal role if member leaves."""
         role = await self.config.member(member).role()
-        await self.config.member(member).role.clear()
-
+        auto = await self.config.member(member).auto_role()
         role = member.guild.get_role(role)
-        if role:
+        if auto:
+            await self.config.member(member).role.clear()
+            await self.config.member(member).auto_role.clear()
             try:
                 await role.delete()
             except:
                 pass
+
+    @commands.Cog.listener("on_member_update")
+    async def modify_roles(self, before, after):
+        """ Delete personal role if member looses their auto role or looses their personal role """
+        role = await self.config.member(after).role()
+        role = before.guild.get_role(role)
+        if not role:
+            return
+
+        auto = await self.config.member(after).auto_role()
+        if not auto:
+            return
+
+        auto_roles = await self.config.guild(before.guild).auto_roles()
+
+        if before.roles != after.roles:
+            if role not in after.roles:
+                await self.config.member(after).role.clear()
+                await self.config.member(after).auto_role.clear()
+                try:
+                    await role.delete()
+                except:
+                    pass
+            else:
+                after_ids = [r.id for r in after.roles]
+                for m_role in after_ids:
+                    if m_role in auto_roles:
+                        return
+                # lost their auto role, remove personal role, delete, and clear their data.
+                await after.remove_roles(role, reason=_("Personal Roles"))
+                await self.config.member(after).role.clear()
+                await self.config.member(after).auto_role.clear()
+                try:
+                    await role.delete()
+                except:
+                    pass
