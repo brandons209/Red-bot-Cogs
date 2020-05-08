@@ -856,7 +856,7 @@ class MoreAdmin(commands.Cog):
         if attach:
             for a in attach:
                 filepaths.append(cog_data_path(cog_instance=self) / f"{ctx.author.id}_{a.filename}")
-                a.save(filepaths[-1])
+                await a.save(filepaths[-1])
         else:
             await ctx.send("You must provide a Discord attachment.")
             return
