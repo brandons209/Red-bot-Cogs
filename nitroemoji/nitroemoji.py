@@ -11,12 +11,15 @@ import os
 class NitroEmoji(commands.Cog):
     """
     Reward nitro boosters with a custom emoji.
+
+    Can also set roles that give emojis as well that stacks with boosting
     """
 
     def __init__(self, bot):
         self.bot = bot
         self.config = Config.get_conf(self, identifier=123859659843, force_registration=True)
-        default_guild = {"channel": None, "disabled": False}
+        # roles maps: role id (str) -> number of allowed emojis (int)
+        default_guild = {"channel": None, "disabled": False, "roles": {}}
         default_member = {"emojis": []}
         self.config.register_guild(**default_guild)
         self.config.register_member(**default_member)
@@ -34,10 +37,23 @@ class NitroEmoji(commands.Cog):
                 for r in to_remove:
                     data.remove(r)
 
-    @staticmethod
-    def get_boosts(member: discord.Member):
+    async def get_boosts(self, member: discord.Member):
         # this will return number of boosts once api supports it
-        return member.premium_since is not None
+        # for now, set custom roles that give how ever emojis set
+        # boosting stacks with custom roles and
+        # custom roles stack with each other
+        custom_roles = await self.config.guild(member.guild).roles()
+        members_roles = [str(r.id) for r in member.roles]
+        num_emojis = 0
+        for c_role in custom_roles.keys():
+            if c_role in members_roles:
+                num_emojis += custom_roles[c_role]
+
+        # TODO: add in checking for multiple emojis once supported
+        if member.premium_since is not None:
+            num_emojis += 1
+
+        return num_emojis
 
     def find_emoji(self, guild, name):
         emoji = self.bot.get_emoji(name)
@@ -104,7 +120,10 @@ class NitroEmoji(commands.Cog):
             await channel.send(embed=embed)
 
         if emoji:
-            await emoji.delete()
+            try:
+                await emoji.delete()
+            except:
+                pass
             async with self.config.member(member).emojis() as e:
                 e.remove(emoji.id)
 
@@ -142,18 +161,58 @@ class NitroEmoji(commands.Cog):
         await self.config.guild(ctx.guild).disabled.set(on_off)
         await ctx.tick()
 
+    @nitroset.command(name="role")
+    async def nitroset_roles(self, ctx, num_emojis: int, *, role: discord.Role):
+        """
+        Set the amount of emojis role is allowed to add.
+
+        Set to 0 to remove role.
+        """
+        async with self.config.guild(ctx.guild).roles() as roles:
+            if num_emojis == 0:
+                try:
+                    del roles[str(role.id)]
+                except:
+                    pass
+            else:
+                roles[str(role.id)] = num_emojis
+
+        await ctx.tick()
+
+    @nitroset.command(name="list")
+    async def nitroset_list(self, ctx):
+        """
+        List roles and the number of emojis they give.
+        """
+        msg = ""
+
+        async with self.config.guild(ctx.guild).roles() as roles:
+            if roles:
+                msg += "Current roles:\n"
+                for role_id in list(roles.keys()):
+                    role = ctx.guild.get_role(int(role_id))
+                    if not role:  # remove deleted roles silently
+                        del roles[role_id]
+                        continue
+                    msg += f"{role.name}: {roles[role_id]}"
+
+                for page in pagify(msg):
+                    await ctx.send(box(page))
+            else:
+                await ctx.send("No roles defined.")
+
     @commands.group(name="nitroemoji")
     @checks.bot_has_permissions(manage_emojis=True)
     async def nitroemoji(self, ctx):
         """
-        Manage your emojis if you boosted the server.
+        Manage your emojis if you boosted the server, or have a special role
         """
         pass
 
     @nitroemoji.command(name="add")
     async def nitroemoji_add(self, ctx, name: str, *, url: str = None):
         """
-        Add an emoji to the server, if you boosted.
+        Add an emoji to the server, if you boosted or have a special role
 
         Can only add an emoji for every boost you have in the server.
         """
@@ -163,9 +222,8 @@ class NitroEmoji(commands.Cog):
             return
 
         curr = await self.config.member(ctx.author).emojis()
-        boosts = self.get_boosts(ctx.author)
-        # TODO: add in checking for multiple emojis once supported
-        if boosts and not curr:
+        boosts = await self.get_boosts(ctx.author)
+        if boosts and len(curr) < boosts:
             try:
                 if url:
                     emoji = await self.add_emoji(ctx.author, name, url)
@@ -182,14 +240,16 @@ class NitroEmoji(commands.Cog):
                 )
                 return
         elif not boosts:
-            await ctx.send("Sorry, you need to be a nitro booster to add an emoji!")
+            await ctx.send("Sorry, you need to be a nitro booster or have a special role to add an emoji!")
         elif curr:
-            await ctx.send("You already have a custom emoji, please delete it first before adding another one.")
+            await ctx.send(
+                "You already have the maximum number of custom emojis, please delete one first before adding another one."
+            )
 
     @nitroemoji.command(name="rem")
     async def nitroemoji_rem(self, ctx, name: str):
         """
-        Remove an emoji to the server, if you boosted.
+        Remove an emoji to the server, if you boosted or have a special role
         """
         curr = await self.config.member(ctx.author).emojis()
         emoji = self.find_emoji(ctx.guild, name)
@@ -208,7 +268,8 @@ class NitroEmoji(commands.Cog):
         List your custom emojis in the server
         """
         curr = await self.config.member(ctx.author).emojis()
-        msg = ""
+        boosts = await self.get_boosts(ctx.author)
+        msg = f"Number of custom emojis used: {len(curr)}/{boosts}\n"
         if curr:
             msg += "Current emojis:\n"
             for emoji in curr:
@@ -217,7 +278,7 @@ class NitroEmoji(commands.Cog):
                     continue
                 msg += f"{emoji.url}\n"
         else:
-            msg += "You have no custom emojis."
+            msg += "`You have no custom emojis.`"
 
         for page in pagify(msg):
             await ctx.send(page)
@@ -225,13 +286,29 @@ class NitroEmoji(commands.Cog):
     @commands.Cog.listener()
     async def on_member_update(self, before, after):
         # check if they stopped boosting
-        if before.premium_since != after.premium_since and after.premium_since is None:
+        if (before.premium_since != after.premium_since and after.premium_since is None) or before.roles != after.roles:
+            boosts = await self.get_boosts(after)
             emojis = await self.config.member(after).emojis()
-            for emoji in emojis:
-                emoji = self.find_emoji(after.guild, emoji)
-                if not emoji:
-                    continue
-                await self.del_emoji(after.guild, after, emoji=emoji, reason="Stopped boosting.")
+            if len(emojis) > boosts:
+                to_delete = []
+                for i in range(len(emojis) - (len(emojis) - boosts), len(emojis)):
+                    to_delete.append(emojis[i])
+
+                for emoji in to_delete:
+                    emoji = self.find_emoji(after.guild, emoji)
+                    if not emoji:
+                        continue
+
+                    reason = ""
+                    if before.premium_since != after.premium_since and after.premium_since is None:
+                        reason += "Stopped boosting."
+                    if before.roles != after.roles:
+                        broles = set(before.roles)
+                        aroles = set(after.roles)
+                        removed = broles - aroles
+                        reason += f"\nLost roles: {humanize_list(list(removed))}"
+
+                    await self.del_emoji(after.guild, after, emoji=emoji, reason=reason)
 
     @commands.Cog.listener()
     async def on_guild_emojis_update(self, guild, before, after):
@@ -240,10 +317,27 @@ class NitroEmoji(commands.Cog):
         diff = b_e - a_e
         if diff:
             for e in diff:
-                for member in guild.premium_subscribers:
+                user = None
+                try:
+                    async for entry in guild.audit_logs(limit=2):
+                        if entry.action is discord.AuditLogAction.emoji_delete:
+                            # if the bot didnt delete emoji
+                            if entry.target.id != guild.me.id:
+                                user = entry.user
+                except:
+                    continue
+                # sanity check
+                if not user or user.id == guild.me.id:
+                    continue
+
+                for member in guild.members:
                     curr = await self.config.member(member).emojis()
-                    if e.id in curr:
-                        curr.remove(e.id)
-                        await self.config.member(member).emojis.set(curr)
-                        await self.del_emoji(guild, member, emoji=e, reason="Manually deleted by admin.")
+                    try:
+                        async with self.config.member(member).emojis() as curr:
+                            curr.remove(e.id)
+                        await self.del_emoji(
+                            guild, member, emoji=e, reason=f"Manually deleted by admin {user.name} (id: {user.id})"
+                        )
                         break
+                    except ValueError:
+                        pass
