@@ -85,8 +85,9 @@ class UserProfile:
     async def _check_role_member(self, member):
         roles = await self.data.guild(member.guild).roles()
         lvl = await self.data.member(member).level()
+        to_add = []
         for k, v in roles.items():
-            if lvl == int(k):
+            if lvl >= int(k):
                 rl = discord.utils.get(member.guild.roles, id=v)
                 # TODO: remove after purge
                 ids = {r.id for r in member.roles}
@@ -96,13 +97,17 @@ class UserProfile:
                     or 532720959824592917 in ids
                     or 508497255838253077 in ids
                 ):
-                    return True
+                    continue
                 else:
-                    await member.add_roles(rl)
-                    return True
+                    to_add.append(rl)
             else:
                 pass
-        return False
+
+        if to_add:
+            await member.add_roles(rl)
+            return True
+        else:
+            return False
 
     async def _add_guild_role(self, guild, level, roleid):
         role = discord.utils.get(guild.roles, id=roleid)
