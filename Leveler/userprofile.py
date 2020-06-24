@@ -83,25 +83,18 @@ class UserProfile:
             await self._downgrade_level(member)
 
     async def _check_role_member(self, member):
+        # only checks and adds the highest level's role obtainable
         roles = await self.data.guild(member.guild).roles()
         lvl = await self.data.member(member).level()
-        to_add = []
-        for k, v in roles.items():
-            if lvl >= int(k):
-                rl = discord.utils.get(member.guild.roles, id=v)
-                # TODO: remove after purge
-                ids = {r.id for r in member.roles}
-                if (
-                    rl in member.roles
-                    or 508505296797171713 in ids
-                    or 532720959824592917 in ids
-                    or 508497255838253077 in ids
-                ):
-                    continue
-                else:
-                    to_add.append(rl)
-            else:
-                pass
+        to_add = None
+        levels = sorted([int(k) for k in roles.keys()], reverse=True)
+        for k in levels:
+            if lvl >= k:
+                rl = discord.utils.get(member.guild.roles, id=roles[str(k)])
+
+                if rl not in member.roles:
+                    to_add = rl
+                break
 
         if to_add:
             await member.add_roles(rl)
