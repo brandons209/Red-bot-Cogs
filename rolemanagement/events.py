@@ -62,6 +62,13 @@ class EventMixin(MixinMeta):
         if to_remove:
             await after.remove_roles(*to_remove, reason="conflict with exclusive roles")
 
+        # add with roles for roles gained
+        for r in gained:
+            add_with = await self.config.role_from_id(r).add_with()
+            if add_with:
+                to_add = [discord.utils.get(after.guild.roles, id=add) for add in add_with]
+                await after.add_roles(*to_add, reason=f"add with role {r}")
+
         for r in sym_diff:
             if not await self.config.role_from_id(r).sticky():
                 lost.discard(r)

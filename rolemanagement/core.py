@@ -71,6 +71,7 @@ class RoleManagement(
             exclusive_to={},
             requires_any=[],
             requires_all=[],
+            add_with=[],
             sticky=False,
             self_removable=False,
             self_role=False,
@@ -379,6 +380,30 @@ class RoleManagement(
         """
         pass
 
+    @rgroup.command(name="addwith")
+    async def rg_addwith(self, ctx: GuildContext, add_role: discord.Role, *roles: discord.Role):
+        """
+        Sets a list of roles to add to a user when they receive
+        the role specifed by `add_role`
+
+        Leave roles empty to clear add_with roles.
+
+        Roles with spaces in the name should be put in quotes
+        """
+        current = await self.config.role(add_role).add_with()
+        current = [discord.utils.get(ctx.guild.roles, id=r)
+        for r in current]
+
+        await self.config.role(add_role).add_with.set([r.id for r in roles])
+
+        if not roles and current:
+            await ctx.send(f"Add with roles cleared from: `{humanize_list(current)}`")
+        elif not roles and not current:
+            await ctx.send("No roles originally defined.")
+        else:
+            await ctx.send(f"Add with roles set to `{humanize_list([r.name for r in roles])}` from `{humanize_list(current) if current else None}`")
+
+
     @rgroup.command(name="viewreactions")
     async def rg_view_reactions(self, ctx: GuildContext):
         """
@@ -499,6 +524,9 @@ class RoleManagement(
         if rsets["requires_all"]:
             rstring = ", ".join(r.name for r in ctx.guild.roles if r.id in rsets["requires_all"])
             output += f"\nThis role requires all of the following roles: {rstring}"
+        if rsets["add_with"]:
+            rstring = ", ".join(r.name for r in ctx.guild.roles if r.id in rsets["add_with"])
+            output += f"\nThis role when added will also be added with the following roles: {rstring}"
         if rsets["exclusive_to"]:
             rstring = ""
             for group, roles in rsets["exclusive_to"].items():
