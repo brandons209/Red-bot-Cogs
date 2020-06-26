@@ -391,8 +391,7 @@ class RoleManagement(
         Roles with spaces in the name should be put in quotes
         """
         current = await self.config.role(add_role).add_with()
-        current = [discord.utils.get(ctx.guild.roles, id=r)
-        for r in current]
+        current = [discord.utils.get(ctx.guild.roles, id=r) for r in current]
 
         await self.config.role(add_role).add_with.set([r.id for r in roles])
 
@@ -401,8 +400,9 @@ class RoleManagement(
         elif not roles and not current:
             await ctx.send("No roles originally defined.")
         else:
-            await ctx.send(f"Add with roles set to `{humanize_list([r.name for r in roles])}` from `{humanize_list(current) if current else None}`")
-
+            await ctx.send(
+                f"Add with roles set to `{humanize_list([r.name for r in roles])}` from `{humanize_list(current) if current else None}`"
+            )
 
     @rgroup.command(name="viewreactions")
     async def rg_view_reactions(self, ctx: GuildContext):
