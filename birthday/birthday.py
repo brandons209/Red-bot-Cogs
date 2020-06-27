@@ -9,6 +9,7 @@ import asyncio
 import datetime
 import discord
 
+
 class Birthday(commands.Cog):
     """Track birthdays, add birthday role, and annouce birthdays for users."""
 
@@ -20,13 +21,10 @@ class Birthday(commands.Cog):
         default_guild = {
             "channel": None,
             "role": None,
-            "dm_message": ":tada: Aurelia wishes you a very happy birthday! :tada:"
+            "dm_message": ":tada: Aurelia wishes you a very happy birthday! :tada:",
         }
 
-        default_member = {
-            "birthday": None,
-            "birthday_handeled": False
-        }
+        default_member = {"birthday": None, "birthday_handeled": False}
 
         self.config.register_guild(**default_guild)
         self.config.register_member(**default_member)
