@@ -1,351 +1,259 @@
-import logging
-import hashlib
-import asyncio
-import contextlib
+from redbot.core import commands, Config, checks
+from redbot.core.commands import Context, Cog
+from redbot.core.utils.chat_formatting import *
+from redbot.core.utils.predicates import MessagePredicate
+from redbot.core.utils.menus import menu, DEFAULT_CONTROLS
+
 from dateutil import parser
+import asyncio
 import datetime
 import discord
-import itertools
-from typing import (
-    Any,
-    Dict,
-)
 
-
-from redbot.core import commands, Config, checks
-from redbot.core.bot import Red
-from redbot.core.config import _ValueCtxManager, Group, Value
-from redbot.core.i18n import Translator, cog_i18n
-from redbot.core.commands import Context, Cog
-
-T_ = Translator("Birthdays", __file__)
-
-
-def _(s):
-    def func(*args, **kwargs):
-        real_args = list(args)
-        real_args.pop(0)
-        return T_(s).format(*real_args, **kwargs)
-
-    return func
-
-
-@cog_i18n(T_)
-class Birthdays(Cog):
-    """Announces people's birthdays and gives them a birthday role for the whole day"""
-
-    __author__ = "PancakeSparkle#8243"
-
-    # Just some constants
-    DATE_GROUP = "DATE"
-    GUILD_DATE_GROUP = "GUILD_DATE"
-
-    # More constants
-    BDAY_LIST_TITLE = _("Birthday List")
-
-    # Even more constants
-    BDAY_WITH_YEAR = _("{} is now **{} years old**. <:aureliahappy:548738609763713035>")
-    BDAY_WITHOUT_YEAR = _("Everypony say Happy Birthday to {}! <:aureliahappy:548738609763713035>")
-    ROLE_SET = _("<:aureliaagree:616091883013144586> The birthday role on **{g}** has been set to: **{r}**.")
-    BDAY_INVALID = _(":x: The birthday date you entered is invalid.")
-    BDAY_SET = _("<:aureliaagree:616091883013144586> Your birthday has been set to: **{}**.")
-    CHANNEL_SET = _(
-        "<:aureliaagree:616091883013144586> "
-        "The channel for announcing birthdays on **{g}** has been set to: **{c}**."
-    )
-    BDAY_REMOVED = _(":put_litter_in_its_place: Your birthday has been removed.")
+class Birthday(commands.Cog):
+    """Track birthdays, add birthday role, and annouce birthdays for users."""
 
     def __init__(self, bot):
-        super().__init__()
         self.bot = bot
-        self.logger = logging.getLogger("aurelia.cogs.birthdays")
-        unique_id = int(hashlib.sha512((self.__author__ + "@" + self.__class__.__name__).encode()).hexdigest(), 16,)
-        self.config = Config.get_conf(self, identifier=unique_id)
-        self.config.init_custom(self.DATE_GROUP, 1)
-        self.config.init_custom(self.GUILD_DATE_GROUP, 2)
-        self.config.register_guild(
-            channel=None, role=None, dmmessage=":tada: Aurelia wishes you a very happy birthday! :tada:", yesterdays=[]
-        )
-        self.bday_task = asyncio.create_task(self.initialise())
-        asyncio.create_task(self.check_breaking_change())
 
-    # Events
-    async def initialise(self):
-        await self.bot.wait_until_ready()
-        with contextlib.suppress(RuntimeError):
-            while self == self.bot.get_cog(self.__class__.__name__):
-                now = datetime.datetime.utcnow()
-                tomorrow = (now + datetime.timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
-                await self.clean_yesterday_bdays()
-                await self.do_today_bdays()
-                await asyncio.sleep((tomorrow - now).total_seconds())
+        self.config = Config.get_conf(self, identifier=1561656787974966131, force_registration=True)
+
+        default_guild = {
+            "channel": None,
+            "role": None,
+            "dm_message": ":tada: Aurelia wishes you a very happy birthday! :tada:"
+        }
+
+        default_member = {
+            "birthday": None,
+            "birthday_handeled": False
+        }
+
+        self.config.register_guild(**default_guild)
+        self.config.register_member(**default_member)
+
+        self.bday_task = asyncio.create_task(self.initialise())
+
+    @staticmethod
+    def parse_date(date: str):
+        return parser.parse(date)
+
+    @staticmethod
+    def get_date_and_age(date: datetime):
+        today = datetime.datetime.utcnow()
+        if date.year != today.year:
+            age = today.year - date.year
+            date = date.strftime("%b %d, %Y")
+        else:
+            date = date.strftime("%b %d")
+            age = None
+
+        return date, age
 
     def cog_unload(self):
         self.bday_task.cancel()
 
-    # Commands
-    @commands.group()
-    @commands.guild_only()
-    async def bday(self, ctx: Context):
-        """Birthday settings"""
-        pass
+    async def initialise(self):
+        await self.bot.wait_until_ready()
+        while True:
+            now = datetime.datetime.utcnow()
+            tomorrow = (now + datetime.timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+            # check bdays once a day, at utc midnight
+            await self.check_bdays()
+            await asyncio.sleep((tomorrow - now).total_seconds())
+            ### TESTING:
+            # await asyncio.sleep(30)
 
-    @bday.command(name="remove", aliases=["del", "clear", "rm"])
-    async def bday_remove(self, ctx: Context):
-        """Unsets your birthday date"""
-        message = ctx.message
-        await self.remove_user_bday(message.guild.id, message.author.id)
-        await ctx.send(self.BDAY_REMOVED())
+    async def check_bdays(self):
+        for guild in self.bot.guilds:
+            for member in guild.members:
+                await self.check_member_bday(member)
 
-    @bday.command(name="set")
-    async def bday_set_birthday(self, ctx: Context, *, date: str):
-        """Set your birthday!
-
-           The given date can either be month day, or day month
-           Year is optional. If not given, the age won't be displayed.
-        """
-        message = ctx.message
-        author = message.author
-        year = None
-        birthday = self.parse_date(date)
+    async def check_member_bday(self, member: discord.Member):
         today = datetime.datetime.utcnow().date()
-        current_birthday = await self.get_birthday(ctx.guild.id, author.id)
-        # An Invalid date was entered.
-        if birthday is None:
-            print(self.BDAY_INVALID())
-            await ctx.send(self.BDAY_INVALID())
+        bday = await self.config.member(member).birthday()
+        try:
+            bday = self.parse_date(bday).date()
+        except:
+            # no bday for user
             return
-        if today.year != birthday.year:
-            if birthday.year > today.year:
-                await ctx.send("You weren't born in the future, silly!")
-                return
-            if birthday.year < (today.year - 100):
-                await ctx.send("No way you're that old, silly!")
-                return
-            year = birthday.year
-        birthday = datetime.date(1, birthday.month, birthday.day)
-        if current_birthday != None and birthday.toordinal() == current_birthday.toordinal():
-            await ctx.send("Your birthday is already set to {}!".format(self.get_human_birthday(birthday)))
-            return
-        await self.remove_user_bday(ctx.guild.id, author.id)
-        await self.get_date_config(ctx.guild.id, birthday.toordinal()).get_attr(author.id).set(year)
-        await ctx.send(self.BDAY_SET(self.get_human_birthday(birthday)))
-        # Check if today is their birthday
-        today_ordinal = today.replace(year=1).toordinal()
-        birthday_ordinal = birthday.replace(year=1).toordinal()
-        if today_ordinal == birthday_ordinal:
-            await self.handle_bday(author.id, year)
+        year = bday.year
+        bday = bday.replace(year=today.year)
 
-    @bday.command(name="list")
-    async def bday_list(self, ctx: Context):
-        """Lists birthdays
+        handled = await self.config.member(member).birthday_handeled()
+        if bday == today:
+            if not handled:
+                # dm user
+                dm = await self.config.guild(member.guild).dm_message()
+                try:
+                    await member.send(dm)
+                except:
+                    pass
+                # send bday in channel
+                channel = await self.config.guild(member.guild).channel()
+                channel = self.bot.get_channel(channel)
+                if channel:
+                    embed = discord.Embed(color=discord.Colour.gold())
+                    if year != today.year:
+                        age = today.year - year
+                        embed.description = f"{member.mention} is now **{age} years old!**"
+                    else:
+                        embed.description = f"Happy Birthday to {member.mention}!"
+                    try:
+                        await channel.send(embed=embed)
+                    except:
+                        pass
 
-        If a user has their year set, it will display the age they'll get after their birthday this year"""
-        message = ctx.message
-        await self.clean_bdays()
-        bdays = await self.get_guild_date_configs(message.guild.id)
-        this_year = datetime.date.today().year
-        embed = discord.Embed(title=self.BDAY_LIST_TITLE(), color=discord.Colour.lighter_grey())
-        for k, g in itertools.groupby(
-            sorted(datetime.datetime.fromordinal(int(o)) for o in bdays.keys()), lambda i: i.month,
-        ):
+                # add role, if available
+                role = await self.config.guild(member.guild).role()
+                role = member.guild.get_role(role)
+                if role:
+                    try:
+                        await member.add_roles(role, reason="Birthday cog")
+                    except:
+                        pass
 
-            value = "\n".join(
-                date.strftime("%d").lstrip("0")
-                + ": "
-                + ", ".join(
-                    "{}".format(ctx.guild.get_member(int(u_id)).mention)
-                    + ("" if year is None else " ({})".format(this_year - int(year)))
-                    for u_id, year in bdays.get(str(date.toordinal()), {}).items()
-                )
-                for date in g
-                if len(bdays.get(str(date.toordinal()))) > 0
-            )
-            if not value.isspace():
-                embed.add_field(
-                    name=datetime.datetime(year=1, month=k, day=1).strftime("%B"), value=value,
-                )
-        await ctx.send(embed=embed)
+                await self.config.member(member).birthday_handeled.set(True)
+        else:
+            if handled:
+                # remove bday role
+                role = await self.config.guild(member.guild).role()
+                role = member.guild.get_role(role)
+                if role:
+                    try:
+                        await member.remove_roles(role, reason="Birthday cog")
+                    except:
+                        pass
+                # unhandled their birthday, cya next year!
+                await self.config.member(member).birthday_handeled.set(False)
+
+    @commands.command()
+    async def test(self, ctx, *, member: discord.Member):
+        await self.check_bdays()
 
     @commands.group(name="bdayset")
-    @checks.admin()
-    async def bday_set(self, ctx: Context):
-        """
-        Manage birthday settings.
-        """
+    @commands.guild_only()
+    @checks.admin_or_permissions(administrator=True)
+    async def bdayset(self, ctx):
+        """ Manage birthday cog settings """
         pass
 
-    @bday_set.command(name="dmmessage")
-    @checks.mod_or_permissions(manage_roles=True)
-    async def bday_set_dmmessage(self, ctx: Context, *, bday_message: str = ""):
-        """Sets the birthday message for DMs."""
-        message = ctx.message
-        author = message.author
-        if bday_message == "":
-            await self.config.guild(ctx.guild).dmmessage.set(":tada: Aurelia wishes you a very happy birthday! :tada:")
-            await ctx.send(
-                "Birthday DM message set to (default): :tada: Aurelia wishes you a very happy birthday! :tada:"
-            )
-        else:
-            await self.config.guild(ctx.guild).dmmessage.set(bday_message)
-            await ctx.send("Birthday DM message set to: " + str(bday_message))
-
-    @bday_set.command(name="channel")
-    @checks.mod_or_permissions(manage_roles=True)
-    async def bday_set_channel(self, ctx: Context, channel: discord.TextChannel):
-        """Sets the birthday announcement channel"""
-        guild = ctx.guild
-        await self.config.guild(channel.guild).channel.set(channel.id)
-        await ctx.send(self.CHANNEL_SET(g=guild.name, c=channel.name))
-
-    @bday_set.command(name="role")
-    @checks.mod_or_permissions(manage_roles=True)
-    async def bday_set_role(self, ctx: Context, *, role: discord.Role):
-        """Sets the birthday role"""
-        guild = ctx.message.guild
-        await self.config.guild(role.guild).role.set(role.id)
-        await ctx.send(self.ROLE_SET(g=guild.name, r=role.name))
-
-    async def clean_bday(self, guild_id: int, guild_config: dict, user_id: int):
-        guild = self.bot.get_guild(guild_id)
-        if guild is not None:
-            role = discord.utils.get(guild.roles, id=guild_config.get("role"))
-
-            await self.maybe_update_guild(guild)
-            member = guild.get_member(user_id)
-            if member is not None and role is not None and role in member.roles:
-
-                await member.remove_roles(role)
-
-    async def handle_bday(self, user_id: int, year: str):
-        embed = discord.Embed(color=discord.Colour.gold())
-        all_guild_configs = await self.config.all_guilds()
-        for guild_id, guild_config in all_guild_configs.items():
-            guild = self.bot.get_guild(guild_id)
-            if guild is not None:
-                member = guild.get_member(user_id)
-                if member is not None:
-                    role_id = guild_config.get("role")
-                    if year is not None:
-                        age = datetime.date.today().year - int(year)
-                        embed.description = self.BDAY_WITH_YEAR(member.mention, age)
-                    else:
-                        embed.description = self.BDAY_WITHOUT_YEAR(member.mention)
-                    if role_id is not None:
-                        role = discord.utils.get(guild.roles, id=role_id)
-                        if role is not None:
-                            try:
-                                await member.add_roles(role)
-                            except (discord.Forbidden, discord.HTTPException):
-                                pass
-                            else:
-                                async with self.config.guild(guild).yesterdays() as yesterdays:
-                                    yesterdays.append(member.id)
-                    channel = guild.get_channel(guild_config.get("channel"))
-                    if channel is not None:
-                        await channel.send(embed=embed)
-                        message = guild_config.get("dmmessage")
-                        await member.send(message)
-
-    async def clean_bdays(self):
-        birthdays = await self.get_all_date_configs()
-        for guild_id, guild_bdays in birthdays.items():
-            for date, bdays in guild_bdays.items():
-                for user_id, year in bdays.items():
-                    if not any(g.get_member(int(user_id)) is not None for g in self.bot.guilds):
-                        async with self.get_date_config(guild_id, date)() as config_bdays:
-                            del config_bdays[user_id]
-
-                config_bdays = await self.get_date_config(guild_id, date)()
-                if len(config_bdays) == 0:
-                    await self.get_date_config(guild_id, date).clear()
-
-    async def remove_user_bday(self, guild_id: int, user_id: int):
-        user_id = str(user_id)
-        birthdays = await self.get_guild_date_configs(guild_id)
-        for date, user_ids in birthdays.items():
-            if user_id in user_ids:
-                await self.get_date_config(guild_id, date).get_attr(user_id).clear()
-                guild = self.bot.get_guild(guild_id)
-                if not guild:
-                    continue
-                role_id = await self.config.guild(guild).role()
-                role = guild.get_role(role_id)
-                member = guild.get_member(int(user_id))
-                # remove role if they have it
-                if role and member and role in member.roles:
-                    await member.remove_roles(role)
-
-    async def clean_yesterday_bdays(self):
-        all_guild_configs = await self.config.all_guilds()
-        for guild_id, guild_config in all_guild_configs.items():
-            for user_id in guild_config.get("yesterdays", []):
-                asyncio.create_task(self.clean_bday(guild_id, guild_config, user_id))
-                guild = self.bot.get_guild(int(guild_id))
-                if not guild:
-                    continue
-                role_id = await self.config.guild(guild).role()
-                role = guild.get_role(role_id)
-                member = guild.get_member(int(user_id))
-                # remove role if they have it
-                if role and member and role in member.roles:
-                    await member.remove_roles(role)
-
-            await self.config.guild(discord.Guild(data={"id": int(guild_id)}, state=None)).yesterdays.clear()
-
-    async def do_today_bdays(self):
-        guild_configs = await self.get_all_date_configs()
-        for guild_id, guild_config in guild_configs.items():
-            this_date = datetime.datetime.utcnow().date().replace(year=1)
-            todays_bday_config = guild_config.get(str(this_date.toordinal()), {})
-            for user_id, year in todays_bday_config.items():
-                asyncio.create_task(self.handle_bday(int(user_id), year))
-
-    async def maybe_update_guild(self, guild: discord.Guild):
-        if not guild.unavailable and guild.large:
-            if not guild.chunked or any(m.joined_at is None for m in guild.members):
-                await self.bot.request_offline_members(guild)
-
-    def parse_date(self, date: str):
-        result = None
-        try:
-            result = parser.parse(date)
-        except ValueError:
-            pass
-        return result
-
-    def get_human_birthday(self, birthday: datetime):
-        return str(birthday.strftime("%B")) + " " + str(birthday.strftime("%d").lstrip("0"))
-
-    async def get_birthday(self, guild_id: int, user_id: int):
-        birthdays = await self.get_guild_date_configs(guild_id)
-        for bday_ordinal, bdays in birthdays.items():
-            for user_id_config, year in bdays.items():
-                if int(user_id_config) == user_id:
-                    return datetime.datetime.fromordinal(int(bday_ordinal))
-        return None
-
-    async def check_breaking_change(self):
-        await self.bot.wait_until_ready()
-        previous = await self.config.custom(self.DATE_GROUP).all()
-        if len(previous) > 0:
-            await self.config.custom(self.DATE_GROUP).clear()
-            owner = self.bot.get_user(self.bot.owner_id)
-            if len(self.bot.guilds) == 1:
-                await self.get_guild_date_config(self.bot.guilds[0].id).set_raw(value=previous)
-                self.logger.info("Birthdays are now per-guild. Previous birthdays have been copied.")
+    @bdayset.command(name="dmmessage")
+    async def bdayset_dm_message(self, ctx, *, message: str = None):
+        """ Set message DMed to users when its their birthday!
+            Leave empty to get/clear current message
+        """
+        if not message:
+            current = await self.config.guild(ctx.guild).dm_message()
+            await ctx.send(f"Current message is `{current}`\nDo you want to reset it to default?")
+            pred = MessagePredicate.yes_or_no(ctx)
+            try:
+                await self.bot.wait_for("message", check=pred, timeout=30)
+            except asyncio.TimeoutError:
+                await ctx.send("Took too long.")
+                return
+            if pred.result:
+                await self.config.guild(ctx.guild).dm_message.clear()
+                await ctx.send("DM message reset to default.")
             else:
-                await self.config.custom(self.GUILD_DATE_GROUP, "backup").set_raw(value=previous)
-                self.logger.info("Previous birthdays have been backed up in the config file.")
+                await ctx.send("Nothing changed.")
+            return
 
-    def get_date_config(self, guild_id: int, date: int):
-        return self.config.custom(self.GUILD_DATE_GROUP, str(guild_id), str(date))
+        await self.config.guild(ctx.guild).dm_message.set(message)
+        await ctx.tick()
 
-    def get_guild_date_config(self, guild_id: int):
-        return self.config.custom(self.GUILD_DATE_GROUP, str(guild_id))
+    @bdayset.command(name="channel")
+    async def bdayset_channel(self, ctx, *, channel: discord.TextChannel = None):
+        """ Set channel to send birthday annoucements """
+        if not channel:
+            await self.config.guild(ctx.guild).channel.clear()
+        else:
+            await self.config.guild(ctx.guild).channel.set(channel.id)
 
-    async def get_guild_date_configs(self, guild_id: int) -> _ValueCtxManager[Dict[str, Any]]:
-        return await self.get_guild_date_config(guild_id).all()
+        await ctx.tick()
 
-    def get_all_date_configs(self):
-        return self.config.custom(self.GUILD_DATE_GROUP).all()
+    @bdayset.command(name="role")
+    @checks.bot_has_permissions(manage_roles=True)
+    async def bdayset_role(self, ctx, *, role: discord.Role = None):
+        """ Set role to give users on their birthday """
+        if not role:
+            await self.config.guild(ctx.guild).role.clear()
+        else:
+            await self.config.guild(ctx.guild).role.set(role.id)
+
+        await ctx.tick()
+
+    @commands.group(name="bday")
+    @commands.guild_only()
+    async def bday(self, ctx):
+        """ Manage your birthday """
+        pass
+
+    @bday.command(name="set")
+    async def bday_set(self, ctx, *, date: str = None):
+        """ Set your birthday. Year not required.
+        Date can be any valid date format, like:
+        05/20/99
+        05-20-99
+        May 5, 1999
+        20/05/99
+        05-20
+        etc..
+        """
+        if not date:
+            await ctx.send("Would you like to remove your birthday?")
+            pred = MessagePredicate.yes_or_no(ctx)
+            try:
+                await self.bot.wait_for("message", check=pred, timeout=30)
+            except asyncio.TimeoutError:
+                await ctx.send("Took too long.")
+                return
+            if pred.result:
+                await self.config.member(ctx.author).birthday.clear()
+                await ctx.tick()
+            else:
+                await ctx.send("Nothing Changed.")
+
+            return
+
+        today = datetime.datetime.utcnow()
+        try:
+            date = self.parse_date(date).date()
+            if date.year > today.year:
+                await ctx.send(error("Year is in the future!"))
+                return
+            elif date.year < (today.year - 110):
+                await ctx.send(error("You can't be that old..."))
+                return
+        except:
+            await ctx.send(error("Invalid Date!"))
+            return
+
+        if date.year == today.year:
+            date = date.strftime("%m/%d")
+        else:
+            date = date.strftime("%m/%d/%Y")
+
+        await self.config.member(ctx.author).birthday.set(date)
+        await ctx.tick()
+
+    @bday.command(name="list")
+    async def bday_list(self, ctx):
+        """ List birthdays in the server """
+        embeds = []
+        for member in ctx.guild.members:
+            bday = await self.config.member(member).birthday()
+            if bday:
+                embed = discord.Embed(title=f"{member.display_name}", colour=ctx.guild.me.colour)
+                bday, age = self.get_date_and_age(self.parse_date(bday))
+                embed.add_field(name="Birthday", value=bday)
+                if age:
+                    embed.add_field(name="Turning", value=age)
+                embeds.append(embed)
+
+        for i, embed in enumerate(embeds):
+            embed.set_footer(text=f"Page {i+1} of {len(embeds)}")
+
+        if not embeds:
+            await ctx.send("No one has their birthday set in your server!")
+        else:
+            await menu(ctx, embeds, DEFAULT_CONTROLS)
