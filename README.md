@@ -19,8 +19,12 @@ Full V2 port with most of the cog rewritten from [calebj](https://github.com/cal
 
 
 #### Birthday
-Allow users to set their birthday and have it announced in a channel. Also gives the user a birthday role and sends them a customizeable DM message.    
-**Known Bug:** Bot will resend birthdays if restarted or cog unloaded/reloaded.
+Allow users to set their birthday and have it announced in a channel. Also gives the user a birthday role and sends them a customizeable DM message. Checks for birthdays at UTC midnight everyday. **Bugs fixed!**
+
+
+#### Confession
+Modifed from @Jinatku. Adds a tracker room that will send confessions to with names attached for moderation purposes, in case someone may be abusing the room.
+
 
 #### Cost Manager
 Allows dynamically setting costs for any commands registered to Red. Supports setting costs on a hierarchy that follows user > role > guild. Also can set guild wide roles that can use commands for free, and overriding these for certain commands. It also sends receipts to users and edits that message as they run commands so they can track their spending.    
@@ -68,8 +72,15 @@ More admin commands that provide various functionality.
 
 
 #### Nitro Emoji
-Allows nitro boosters to add one emoji to your server. Log's additions and removal of custom emojis to a channel. Can turn this off to stop more people from adding, but those who added can remove their emoji.
+Allows nitro boosters to add one emoji to your server. Log's additions and removal of custom emojis to a channel. Can turn this off to stop more people from adding, but those who added can remove their emoji. **New:** allows setting roles that can add a customizeable amount of emojis to the server. If roles are removed/amount of emojis changed, the bot will automatically remove/update user's emojis.
 
+#### Personal Roles
+Modified from Fixator10, added functionality of automatically creating/deleting personal roles for users who are allowed to have one. Roles automatically created are placed in the hierarchy under an existing role set by the user. It also allows setting roles that allow users to automatically have their personal role created and used. Manual usage is still available as well.
+
+**Features**
+- Users can customize their role name and color through the bot.
+- Blacklist words that aren't allowed in role names.
+- Automatically create/manage personal roles.
 
 #### Pony
 Search derpibooru for pony images. Ported from [Alzarath](https://github.com/Alzarath/Booru-Cogs).    
@@ -99,6 +110,7 @@ Modified from [Sinbad](https://github.com/mikeshardmind/SinbadCogs).
 - Allows settings messages through DM to users who obtain a specific role (such as role info).
 - Renames srole to selfrole and removes Red's default selfrole.
 - Makes listing roles a bit prettier.
+- Allow setting roles that are automatically added to user when they obtain a certain role.
 - Allow setting roles to automatically add on guild join.
 - Enhance exclusive roles, allow setting custom role groups where the bot enforces only one role to be on a user at a time, even if it isn't a selfrole. The bot will automatically remove the old role if a new role from the same group is added. Also lists name of role group in list command to make it clearer.
 
@@ -122,6 +134,17 @@ Allows moderators to add certain roles that are set by administrators. Added rol
 - Tracks roles if they are manually added and creates/updates modlog cases appropriately.
 - Only add/remove roles set by admins.
 - Doesn't create manual cases if the bot adds the rule, this is so it doesn't conflict with the punish cog or other cogs that modify roles.
+
+#### Rules
+Allows easy access to guild and channel rules for a guild. Admins can set what rules they're for the entire guild, and per channel. Users can easily view these rules using a menu. Rules can be directly accessed by number as well, which allows quickly reminding a user of a rule in chats, instead of telling them to refer to a rules channel or pinned messages for channel rules.
+
+
+#### SFX
+Sound effect cog that allows people to play sound effects in voice channels. Sound effects have a customizeable cost, volume, and name. Supports direct files and URLs.
+
+**Notice:** this cog uses the Audio cog built into Red to play sounds. However, since the Audio cog doesn't provide an API to play sounds easily from other cogs, the cog requires injecting some code into the Audio cog that allows playing sounds without some of the restrictions and message embeds that are sent with the Audio cog play commands. Hopefully, this will be changed when a sane API is added to the Audio cog.
+
+Also, since it does use the Audio cog, if users in different VC's queue sfx sounds while the bot is playing a sound, it'll play all sounds in whatever VC is it currently in. This is a limitation of the Audio cog which I am working on fixing.
 
 
 #### Smart React
