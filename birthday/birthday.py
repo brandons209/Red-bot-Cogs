@@ -197,6 +197,11 @@ class Birthday(commands.Cog):
         05-20
         etc..
         """
+        current = await self.config.member(ctx.author).birthday()
+        if not date and not current:
+            await self.bot.send_help_for(ctx, "bday set")
+            return
+
         if not date:
             await ctx.send("Would you like to remove your birthday?")
             pred = MessagePredicate.yes_or_no(ctx)
