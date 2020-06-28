@@ -256,9 +256,10 @@ class Leveler(commands.Cog):
                     data["elo"] = discord.utils.get(user.guild.roles, id=roles[str(lvl)]).name
                 else:
                     tmp = 0
-                    for k, v in roles.items():
-                        if int(k) < lvl:
-                            tmp = int(v)
+                    levels = sorted([int(k) for k in roles.keys()])
+                    for k in levels:
+                        if k < lvl:
+                            tmp = int(roles[str(k)])
                             pass
                     if tmp == 0:
                         data["elo"] = default if default else self.defaultrole
