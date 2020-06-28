@@ -281,8 +281,14 @@ class SFX(commands.Cog):
         """
         Play a say sound!
         """
+        # TODO: cost manager receipt integration
         if not ctx.author.voice or ctx.author.voice.channel is None:
             await ctx.send(error("Connect to a voice channel to use this command."))
+            return
+
+        # TODO: create my own queue to fix this issue
+        if ctx.guild.me.voice and ctx.guild.me.voice.channel != ctx.author.voice.channel:
+            await ctx.send(error("Please wait for the bot to disconnect from it's VC before using the command."))
             return
 
         name = name.lower()
