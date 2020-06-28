@@ -5,7 +5,7 @@
   "install_msg": "Thanks for install.",
   "short": "Play sound effects!",
   "description": "Play sound effects, either via links or files. Integrates with economy and cost manager cog.",
-  "min_bot_version": "3.5.0",
+  "min_bot_version": "3.3.0",
   "requirements": ["tabulate"],
   "tags": [
     "sfx",
