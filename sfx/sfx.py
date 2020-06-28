@@ -79,6 +79,36 @@ class SFX(commands.Cog):
         """
         pass
 
+    @sfxset.command(name="vol")
+    @commands.guild_only()
+    async def sfxset_vol(self, ctx, vol: int, *, name: str):
+        """
+        Change volume of sfx sound
+        """
+        async with self.config.guild(ctx.guild).saysounds() as saysounds:
+            try:
+                saysounds[name]["volume"] = vol
+            except:
+                await ctx.send(error("Sound not found, try again!"))
+                return
+
+        await ctx.tick()
+
+    @sfxset.command(name="cost")
+    @commands.guild_only()
+    async def sfxset_cost(self, ctx, cost: int, *, name: str):
+        """
+        Change cost of sfx sound
+        """
+        async with self.config.guild(ctx.guild).saysounds() as saysounds:
+            try:
+                saysounds[name]["cost"] = cost
+            except:
+                await ctx.send(error("Sound not found, try again!"))
+                return
+
+        await ctx.tick()
+
     @sfxset.command(name="add")
     @commands.guild_only()
     async def sfxset_add(self, ctx, cost: int, vol: int, *, name: str):
