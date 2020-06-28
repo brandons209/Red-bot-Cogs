@@ -109,6 +109,26 @@ class SFX(commands.Cog):
 
         await ctx.tick()
 
+    @sfxset.command(name="name")
+    @commands.guild_only()
+    async def sfxset_name(self, ctx, old_name: str, *, new_name: str):
+        """
+        Change name of sfx sound
+
+        **OLD_NAME MUST be in quotes if it has spaces!**
+        """
+        async with self.config.guild(ctx.guild).saysounds() as saysounds:
+            try:
+                temp = saysounds[old_name]
+                saysounds[new_name] = temp
+                saysounds[new_name]["name"] = new_name
+                del saysounds[old_name]
+            except:
+                await ctx.send(error("Sound not found, try again!"))
+                return
+
+        await ctx.tick()
+
     @sfxset.command(name="add")
     @commands.guild_only()
     async def sfxset_add(self, ctx, cost: int, vol: int, *, name: str):
@@ -118,6 +138,7 @@ class SFX(commands.Cog):
         Attach the audio file to the message.
         """
         can_use = await self.config.attachments()
+        name = name.lower()
 
         if not can_use:
             await ctx.send(error("Sorry, I only allow adding say sounds using URLs."))
@@ -126,6 +147,14 @@ class SFX(commands.Cog):
         if len(ctx.message.attachments) < 1:
             await ctx.send(error("Please provide an attachment."))
             return
+
+        sounds = await self.config.guild(ctx.guild).saysounds()
+        try:
+            x = sounds[name]
+            await ctx.send(error("Sound already exists by that name, please delete it first!"))
+            return
+        except:
+            pass
 
         file = ctx.message.attachments[0]
         ext = file.filename.split(".")[-1]
@@ -146,10 +175,11 @@ class SFX(commands.Cog):
             await ctx.send(error("Error saving file, please try again."))
             return
 
-        async with self.config.guild(ctx.guild).saysounds() as saysounds:
-            author = f"{ctx.author} id: {ctx.author.id}"
-            new_sound = saysound(name, author, cost=cost, volume=vol, filepath=save_path)
-            saysounds[name] = new_sound
+        author = f"{ctx.author} id: {ctx.author.id}"
+        new_sound = saysound(name, author, cost=cost, volume=vol, filepath=save_path)
+        sounds[name] = new_sound
+
+        await self.config.guild(ctx.guild).saysounds.set(sounds)
 
         await ctx.tick()
 
@@ -163,7 +193,14 @@ class SFX(commands.Cog):
         soundcloud link etc.
         You can test if it will work using the `play` command on the bot.
         """
+        name = name.lower()
         async with self.config.guild(ctx.guild).saysounds() as saysounds:
+            try:
+                x = saysounds[name]
+                await ctx.send(error("Sound already exists by that name, please delete it first!"))
+                return
+            except:
+                pass
             author = f"{ctx.author} id: {ctx.author.id}"
             new_sound = saysound(name, author, cost=cost, volume=vol, url=url)
             saysounds[name] = new_sound
@@ -176,6 +213,7 @@ class SFX(commands.Cog):
         """
         Delete an sfx sound for the guild.
         """
+        name = name.lower()
         async with self.config.guild(ctx.guild).saysounds() as saysounds:
             try:
                 del saysounds[name]
@@ -247,6 +285,7 @@ class SFX(commands.Cog):
             await ctx.send(error("Connect to a voice channel to use this command."))
             return
 
+        name = name.lower()
         saysounds = await self.config.guild(ctx.guild).saysounds()
         audio_cog = self.bot.get_cog("Audio")
         play = self.bot.get_command("play")
