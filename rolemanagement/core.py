@@ -598,7 +598,7 @@ class RoleManagement(
         role_cost = await self.config.role(role).cost()
 
         if role_cost == 0:
-            await ctx.send(waring("Please set a cost for the role first."))
+            await ctx.send(warning("Please set a cost for the role first."))
             return
 
         time = parse_timedelta(interval)
