@@ -194,7 +194,7 @@ class NitroEmoji(commands.Cog):
                     if not role:  # remove deleted roles silently
                         del roles[role_id]
                         continue
-                    msg += f"{role.name}: {roles[role_id]}"
+                    msg += f"{role.name}: {roles[role_id]}\n"
 
                 for page in pagify(msg):
                     await ctx.send(box(page))
