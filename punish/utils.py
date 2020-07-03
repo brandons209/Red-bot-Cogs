@@ -191,10 +191,6 @@ def permissions_for_roles(channel, *roles):
 
     base.handle_overwrite(allow=allows, deny=denies)
 
-    # default channels can always be read
-    if channel.is_default:
-        base.read_messages = True
-
     # if you can't send a message in a channel then you can't have certain
     # permissions as well
     if not base.send_messages:
