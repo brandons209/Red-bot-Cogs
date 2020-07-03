@@ -173,7 +173,7 @@
                     ctx, title=_("This track is not allowed in this server.")
                 )
             elif guild_data["maxlength"] > 0:
-                if self.is_track_too_allowed(single_track, guild_data["maxlength"]):
+                if self.is_track_length_allowed(single_track, guild_data["maxlength"]):
                     player.add(ctx.author, single_track)
                     player.maybe_shuffle()
                     self.bot.dispatch(
