@@ -3,7 +3,7 @@
         ### From play command, process query and check if can play in this context ###
         query = Query.process_input(query, self.local_folder_current_path)
         import datetime
-        
+
         if not self._player_check(ctx):
             if self.lavalink_connection_aborted:
                 msg = _("Connection to Lavalink has failed")
@@ -173,7 +173,7 @@
                     ctx, title=_("This track is not allowed in this server.")
                 )
             elif guild_data["maxlength"] > 0:
-                if self.is_track_too_long(single_track, guild_data["maxlength"]):
+                if self.is_track_too_allowed(single_track, guild_data["maxlength"]):
                     player.add(ctx.author, single_track)
                     player.maybe_shuffle()
                     self.bot.dispatch(
