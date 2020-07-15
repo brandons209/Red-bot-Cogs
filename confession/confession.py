@@ -81,7 +81,7 @@ class Confession(commands.Cog):
         await ctx.tick()
 
     @commands.command()
-    @commands.cooldown(rate=1, per=360, type=commands.BucketType.user)
+    @commands.cooldown(rate=1, per=90, type=commands.BucketType.user)
     async def confess(self, ctx, *, confession: str):
         """Confess your dirty sins
         Make sure to use in DMs
