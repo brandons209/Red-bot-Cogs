@@ -487,7 +487,7 @@ class ActivityLogger(commands.Cog):
 
         # make graph and send it
         fontsize = 30
-        fig = plt.figure(figsize=(50,30))
+        fig = plt.figure(figsize=(50, 30))
         ax = plt.axes()
 
         # set date formater for x axis
@@ -503,7 +503,7 @@ class ActivityLogger(commands.Cog):
         for col_name, col_data in df.iteritems():
             if col_name == "times":
                 continue
-            plt.plot("times", col_name, data=df, linewidth=3, marker='o', markersize=8)
+            plt.plot("times", col_name, data=df, linewidth=3, marker="o", markersize=8)
 
         # make graph look nice
         plt.title(f"{user} message history from {end_time} to now", fontsize=fontsize)
@@ -512,7 +512,7 @@ class ActivityLogger(commands.Cog):
         plt.xticks(fontsize=fontsize)
         plt.yticks(fontsize=fontsize)
         plt.grid(True)
-        plt.legend(loc="best", prop={'size': 30})
+        plt.legend(loc="best", prop={"size": 30})
         fig.tight_layout()
 
         fig.savefig(save_path, dpi=fig.dpi)
@@ -552,7 +552,7 @@ class ActivityLogger(commands.Cog):
             with open(log, "r") as f:
                 for line in reversed(list(f)):
                     # time interval check:
-                    try: # shouldnt happen, but just in case
+                    try:  # shouldnt happen, but just in case
                         current_time = parse_time_naive(line[:19])
                     except:
                         continue
