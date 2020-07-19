@@ -552,12 +552,13 @@ class ActivityLogger(commands.Cog):
             with open(log, "r") as f:
                 for line in reversed(list(f)):
                     # time interval check:
-                    current_time = parse_time_naive(line[:19])
-                    print("log current time: ", current_time, " log end time: ", end_time)
+                    try: # shouldnt happen, but just in case
+                        current_time = parse_time_naive(line[:19])
+                    except:
+                        continue
                     if start and start < current_time:
                         continue
                     if end_time > current_time:
-                        print("breaking from log ", log)
                         break
 
                     if split_channels:
@@ -568,7 +569,7 @@ class ActivityLogger(commands.Cog):
             # logs for a user from an entire guild works, as different channels
             # need to be checked. this doesn't save that much time when used
             # on a specific channel
-        print(messages)
+
         # reverse messages to get correct order
         if split_channels:
             for ch_id in messages.keys():
