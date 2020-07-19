@@ -507,18 +507,24 @@ class ActivityLogger(commands.Cog):
 
         # make graph look nice
         plt.title(f"{user} message history from {end_time} to now", fontsize=fontsize)
-        plt.xlabel("dates", fontsize=fontsize)
+        plt.xlabel("dates (UTC)", fontsize=fontsize)
         plt.ylabel("messages", fontsize=fontsize)
         plt.xticks(fontsize=fontsize)
         plt.yticks(fontsize=fontsize)
         plt.grid(True)
-        plt.legend(loc="best", prop={"size": 30})
+
+        plt.legend(bbox_to_anchor=(1.00, 1.0), loc='upper left', prop={"size": 30})
         fig.tight_layout()
 
         fig.savefig(save_path, dpi=fig.dpi)
         plt.close()
 
         with open(table_save_path, "w") as f:
+            # need to set pandas options so that full data is printed to string
+            pd.set_option('display.max_rows', None)
+            pd.set_option('display.max_columns', None)
+            pd.set_option('display.width', None)
+            pd.set_option('display.max_colwidth', -1)
             f.write(str(df))
 
         with open(save_path, "rb") as f, open(table_save_path, "r") as t:
