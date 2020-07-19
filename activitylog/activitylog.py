@@ -6,11 +6,18 @@ from redbot.core.utils.mod import is_mod_or_superior
 import discord
 
 from .time_utils import *
-from datetime import datetime, timedelta
+from datetime import datetime
+from dateutil.relativedelta import relativedelta
 import time
 import os
 import asyncio
 import glob
+
+# plotting
+from bisect import bisect_left
+import matplotlib.pyplot as plt
+from matplotlib.dates import AutoDateLocator, AutoDateFormatter
+import pandas as pd
 
 __version__ = "3.1.0"
 
@@ -314,30 +321,260 @@ class ActivityLogger(commands.Cog):
 
         return msg, None
 
+    @commands.command(name="fixavglen")
+    @checks.is_owner()
+    async def fixavglen(self, ctx):
+        for guild in self.bot.guilds:
+            for member in guild.members:
+                async with self.config.member(member).stats() as stats:
+                    stats["avg_len"] = stats["total_msg"] - stats["bot_cmd"]
+        await ctx.tick()
+
+    @commands.command(name="graphstats")
+    @checks.mod()
+    @commands.guild_only()
+    async def user_stats_graph(self, ctx, user: discord.Member, split: str, *, till: str):
+        """
+        Create a graph of a users activity over time.
+
+        `split` is how to split the data on the graph, like per hour, per day, etc.
+        Possible values are:
+            "h" for hourly
+            "d" for daily
+            "w" for weekly
+            "m" for monthly
+            "y" for yearly
+
+        `till` can be a date or interval
+
+        **Times in graph are all in UTC**
+
+        Dates/times look like:
+            February 14 at 6pm EDT
+            2019-04-13 06:43:00 PST
+            01/20/18 at 21:00:43
+
+        times default to UTC if no timezone provided
+
+         Intervals look like:
+            5 minutes
+            1 minute 30 seconds
+            1 hour
+            2 days
+            30 days
+            5h30m
+            (etc)
+        """
+        interval = parse_timedelta(till)
+        date = None
+        if not interval:
+            try:
+                date = parse_time(till).replace(tzinfo=None)
+            except:
+                await ctx.send("Invalid date or interval! Try again.")
+                return
+
+        split = split.lower()
+        if split not in ["h", "d", "w", "m", "y"]:
+            await ctx.send("Invalid split! Try again.")
+            return
+
+        guild = ctx.guild
+        log_files = sorted(glob.glob(os.path.join(PATH, str(guild.id), "*.log")), reverse=True)
+        # remove audit log entries
+        log_files = [log for log in log_files if "guild" not in log]
+
+        if interval:
+            end_time = datetime.utcnow() - interval
+        else:
+            end_time = date
+
+        # get messages split by channel
+        messages = self.log_handler(log_files, end_time, split_channels=True)
+
+        ### set up data dictionary
+        num_messages = {}
+        to_delete = []
+        # make sure to include only text channels
+        for ch_id in messages.keys():
+            channel = guild.get_channel(ch_id)
+            # channel may be deleted, but still want to include message data
+            if isinstance(channel, discord.VoiceChannel):
+                to_delete.append(ch_id)
+                continue
+            num_messages[ch_id] = 0
+        # delete voice channels
+        for ch_id in to_delete:
+            del messages[ch_id]
+
+        data = {"times": [], "num_messages": []}
+        # add all the possible times based on the split
+        # first for each one zero out now time to the minute, day, etc
+        # then go through and add all possible times to get data for
+        now = datetime.utcnow()
+        if split == "h":
+            now -= relativedelta(minute=0, second=0, microsecond=0)
+            end_time -= relativedelta(minute=0, second=0, microsecond=0)
+            while now >= end_time:
+                data["times"].append(now)
+                data["num_messages"].append(num_messages.copy())
+                now = now - relativedelta(hours=1)
+        elif split == "d":
+            now -= relativedelta(hour=0, minute=0, second=0, microsecond=0)
+            end_time -= relativedelta(hour=0, minute=0, second=0, microsecond=0)
+            while now >= end_time:
+                data["times"].append(now)
+                data["num_messages"].append(num_messages.copy())
+                now = now - relativedelta(days=1)
+        elif split == "w":
+            now -= relativedelta(days=now.weekday(), hour=0, minute=0, second=0, microsecond=0)
+            end_time -= relativedelta(days=end_time.weekday(), hour=0, minute=0, second=0, microsecond=0)
+            while now >= end_time:
+                data["times"].append(now)
+                data["num_messages"].append(num_messages.copy())
+                now = now - relativedelta(weeks=1)
+        elif split == "m":
+            now -= relativedelta(day=1, hour=0, minute=0, second=0, microsecond=0)
+            end_time -= relativedelta(day=1, hour=0, minute=0, second=0, microsecond=0)
+            while now >= end_time:
+                data["times"].append(now)
+                data["num_messages"].append(num_messages.copy())
+                now = now - relativedelta(months=1)
+        elif split == "y":
+            now -= relativedelta(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
+            end_time -= relativedelta(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
+            while now >= end_time:
+                data["times"].append(now)
+                data["num_messages"].append(num_messages.copy())
+                now = now - relativedelta(years=1)
+
+        if not data["times"]:
+            await ctx.send(error("Your split is too large for the time provided, try a smaller split or longer time."))
+            return
+
+        data["times"].reverse()
+
+        # calculate number of messages for the user for every split
+        for ch_id, msgs in messages.items():
+            for message in msgs:
+                if str(user.id) not in message:
+                    continue
+                # grab time of the message
+                current_time = parse_time_naive(message[:19])
+                # find what time to put it in using binary search
+                index = bisect_left(data["times"], current_time) - 1
+                # add message to channel
+                data["num_messages"][index][ch_id] += 1
+
+        df = pd.DataFrame(data)
+        # make dict of num_messages into columns for every channel
+        df = pd.concat([df.drop("num_messages", axis=1), df["num_messages"].apply(pd.Series)], axis=1)
+        # calculate total messages for each time.
+        df["Total"] = df.drop("times", axis=1).sum(axis=1)
+
+        # change channel ids to real names, or leave as delete channel
+        names = {}
+        for i, ch_id in enumerate(data["num_messages"][0].keys()):
+            channel = guild.get_channel(ch_id)
+            names[ch_id] = channel.name if channel else f"Deleted Channel {i+1}"
+        df = df.rename(columns=names)
+
+        # drop channels with no data (all zeros) and check if theres still data
+        df = df.loc[:, (df != 0).any(axis=0)]
+        if len(df.columns) <= 1:
+            await ctx.send(warning("There is no messages from that user in the time period you specified."))
+            return
+
+        # make graph and send it
+        fontsize = 30
+        fig = plt.figure(figsize=(50,30))
+        ax = plt.axes()
+
+        # set date formater for x axis
+        xtick_locator = AutoDateLocator()
+        ax.xaxis.set_major_locator(xtick_locator)
+        ax.xaxis.set_major_formatter(AutoDateFormatter(xtick_locator))
+
+        # define graph and table save paths
+        save_path = str(PATH / f"plot_{ctx.message.id}.png")
+        table_save_path = str(PATH / f"plot_data_{ctx.message.id}.txt")
+
+        # plot each column
+        for col_name, col_data in df.iteritems():
+            if col_name == "times":
+                continue
+            plt.plot("times", col_name, data=df, linewidth=3, marker='o', markersize=8)
+
+        # make graph look nice
+        plt.title(f"{user} message history from {end_time} to now", fontsize=fontsize)
+        plt.xlabel("dates", fontsize=fontsize)
+        plt.ylabel("messages", fontsize=fontsize)
+        plt.xticks(fontsize=fontsize)
+        plt.yticks(fontsize=fontsize)
+        plt.grid(True)
+        plt.legend(loc="best", prop={'size': 30})
+        fig.tight_layout()
+
+        fig.savefig(save_path, dpi=fig.dpi)
+        plt.close()
+
+        with open(table_save_path, "w") as f:
+            f.write(str(df))
+
+        with open(save_path, "rb") as f, open(table_save_path, "r") as t:
+            files = (discord.File(f, filename="graph.png"), discord.File(t, filename="graph_data.txt"))
+            await ctx.send(files=files)
+
+        os.remove(save_path)
+        os.remove(table_save_path)
+
     @staticmethod
-    # gets logs up till a specified end_time
-    def log_handler(log_files: list, end_time: datetime, start: datetime = None):
-        messages = []
-        counter = 0
-        stop = False
+    def log_handler(log_files: list, end_time: datetime, start: datetime = None, split_channels: bool = False):
+        """
+        gets messages up to a specified end time, with optional start time.
+
+        returns a list of messages.
+
+        if the split_channels is true, returns a dictionary of
+        channel ids -> messages
+        """
+        if split_channels:
+            messages = {}
+        else:
+            messages = []
+
         # runs in descending order, with most recent log file first
         for log in log_files:
+            if split_channels:
+                channel_id = int(log.split("_")[-1].strip(".log"))
+                if channel_id not in messages:
+                    messages[channel_id] = []
             with open(log, "r") as f:
                 for line in reversed(list(f)):
                     # time interval check:
                     current_time = parse_time_naive(line[:19])
+                    print("log current time: ", current_time, " log end time: ", end_time)
                     if start and start < current_time:
                         continue
                     if end_time > current_time:
-                        stop = True
+                        print("breaking from log ", log)
                         break
-                    messages.append(line)
-                    counter += 1
-            if stop:
-                break
 
+                    if split_channels:
+                        messages[channel_id].append(line)
+                    else:
+                        messages.append(line)
+            # don't break if end_time > current_time in a log, so that getting
+            # logs for a user from an entire guild works, as different channels
+            # need to be checked. this doesn't save that much time when used
+            # on a specific channel
+        print(messages)
         # reverse messages to get correct order
-        messages.reverse()
+        if split_channels:
+            for ch_id in messages.keys():
+                messages[ch_id].reverse()
+        else:
+            messages.reverse()
 
         return messages
 
@@ -976,7 +1213,7 @@ class ActivityLogger(commands.Cog):
             kwargs.update(day=1)
             start = timestamp.replace(**kwargs)
         elif rotation_code == "w":
-            start = timestamp - timedelta(days=timestamp.weekday())
+            start = timestamp - relativedelta(days=timestamp.weekday())
 
         spec = start.strftime("%Y%m%d")
 
@@ -1173,15 +1410,17 @@ class ActivityLogger(commands.Cog):
 
         # don't calculate bot stats and make sure this isnt dm message
         if message.author.id != self.bot.user.id and isinstance(message.author, discord.Member):
+            is_bot_msg = False
             async with self.config.member(message.author).stats() as stats:
                 stats["total_msg"] += 1
                 if len(message.content) > 0:
                     for prefix in self.cache[message.guild.id]["prefixes"]:
                         if prefix == message.content[: len(prefix)]:
                             stats["bot_cmd"] += 1
+                            is_bot_msg = True
                             break
-                else:
-                    stats["avg_len"] += len(message.content.split(" "))
+                    if not is_bot_msg:
+                        stats["avg_len"] += len(message.content.split(" "))
 
         if message.attachments and dl_attachment:
             for i, data in enumerate(attachments):

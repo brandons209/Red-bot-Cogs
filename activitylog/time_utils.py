@@ -2,15 +2,18 @@
 from __future__ import annotations
 
 import re
-from datetime import datetime as dt, timedelta
+from datetime import datetime as dt
 from typing import Optional
 
 import pytz
 from dateutil import parser
 from dateutil.tz import gettz
+from dateutil.relativedelta import relativedelta
 
 TIME_RE_STRING = r"\s?".join(
     [
+        r"((?P<years>\d+?)\s?(years?|y))?",
+        r"((?P<months>\d+?)\s?(months?|mt))?",
         r"((?P<weeks>\d+?)\s?(weeks?|w))?",
         r"((?P<days>\d+?)\s?(days?|d))?",
         r"((?P<hours>\d+?)\s?(hours?|hrs|hr?))?",
@@ -47,10 +50,10 @@ def parse_time_naive(datetimestring: str):
     return parser.parse(datetimestring)
 
 
-def parse_timedelta(argument: str) -> Optional[timedelta]:
+def parse_timedelta(argument: str) -> Optional[relativedelta]:
     matches = TIME_RE.match(argument)
     if matches:
         params = {k: int(v) for k, v in matches.groupdict().items() if v}
         if params:
-            return timedelta(**params)
+            return relativedelta(**params)
     return None
