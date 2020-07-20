@@ -380,7 +380,7 @@ class ActivityLogger(commands.Cog):
             return
 
         guild = ctx.guild
-        log_files = sorted(glob.glob(os.path.join(PATH, str(guild.id), "*.log")), reverse=True)
+        log_files = glob.glob(os.path.join(PATH, str(guild.id), "*.log"))
         # remove audit log entries
         log_files = [log for log in log_files if "guild" not in log]
 
@@ -513,22 +513,16 @@ class ActivityLogger(commands.Cog):
         plt.yticks(fontsize=fontsize)
         plt.grid(True)
 
-        plt.legend(bbox_to_anchor=(1.00, 1.0), loc='upper left', prop={"size": 30})
+        plt.legend(bbox_to_anchor=(1.00, 1.0), loc="upper left", prop={"size": 30})
         fig.tight_layout()
 
         fig.savefig(save_path, dpi=fig.dpi)
         plt.close()
 
-        with open(table_save_path, "w") as f:
-            # need to set pandas options so that full data is printed to string
-            pd.set_option('display.max_rows', None)
-            pd.set_option('display.max_columns', None)
-            pd.set_option('display.width', None)
-            pd.set_option('display.max_colwidth', -1)
-            f.write(str(df))
+        df.to_csv(table_save_path, index=False)
 
         with open(save_path, "rb") as f, open(table_save_path, "r") as t:
-            files = (discord.File(f, filename="graph.png"), discord.File(t, filename="graph_data.txt"))
+            files = (discord.File(f, filename="graph.png"), discord.File(t, filename="graph_data.csv"))
             await ctx.send(files=files)
 
         os.remove(save_path)
@@ -549,32 +543,26 @@ class ActivityLogger(commands.Cog):
         else:
             messages = []
 
-        # runs in descending order, with most recent log file first
+        parsed_logs = []
+        log_files.sort(reverse=True)
+
         for log in log_files:
             if split_channels:
                 channel_id = int(log.split("_")[-1].strip(".log"))
                 if channel_id not in messages:
                     messages[channel_id] = []
             with open(log, "r") as f:
-                for line in reversed(list(f)):
-                    # time interval check:
-                    try:  # shouldnt happen, but just in case
-                        current_time = parse_time_naive(line[:19])
-                    except:
-                        continue
-                    if start and start < current_time:
-                        continue
-                    if end_time > current_time:
-                        break
+                lines = f.readlines()
 
-                    if split_channels:
-                        messages[channel_id].append(line)
-                    else:
-                        messages.append(line)
-            # don't break if end_time > current_time in a log, so that getting
-            # logs for a user from an entire guild works, as different channels
-            # need to be checked. this doesn't save that much time when used
-            # on a specific channel
+            # binary search to find where the cutoff for messages is
+            index = bisect_left(lines, end_time.strftime(TIMESTAMP_FORMAT))
+
+            lines = lines[index:]
+            lines.reverse()
+            if split_channels:
+                messages[channel_id].extend(lines)
+            else:
+                messages.extend(lines)
 
         # reverse messages to get correct order
         if split_channels:
@@ -645,7 +633,7 @@ class ActivityLogger(commands.Cog):
                 return
 
         guild = ctx.guild
-        log_files = sorted(glob.glob(os.path.join(PATH, str(guild.id), "*{}*.log".format(channel.id))), reverse=True)
+        log_files = glob.glob(os.path.join(PATH, str(guild.id), "*{}*.log".format(channel.id)))
 
         if interval:
             end_time = datetime.utcnow() - interval
@@ -680,7 +668,7 @@ class ActivityLogger(commands.Cog):
             return
 
         guild = ctx.guild
-        log_files = sorted(glob.glob(os.path.join(PATH, str(guild.id), "*{}*.log".format(channel.id))), reverse=True)
+        log_files = glob.glob(os.path.join(PATH, str(guild.id), "*{}*.log".format(channel.id)))
 
         await self.log_sender(ctx, log_files, end, start=start)
 
@@ -720,7 +708,7 @@ class ActivityLogger(commands.Cog):
                 return
 
         guild = ctx.guild
-        log_files = sorted(glob.glob(os.path.join(PATH, str(guild.id), "*.log")), reverse=True)
+        log_files = glob.glob(os.path.join(PATH, str(guild.id), "*.log"))
         log_files = [log for log in log_files if "guild" not in log]
 
         if interval:
@@ -756,7 +744,7 @@ class ActivityLogger(commands.Cog):
             return
 
         guild = ctx.guild
-        log_files = sorted(glob.glob(os.path.join(PATH, str(guild.id), "*.log")), reverse=True)
+        log_files = glob.glob(os.path.join(PATH, str(guild.id), "*.log"))
         log_files = [log for log in log_files if "guild" not in log]
 
         await self.log_sender(ctx, log_files, end, start=start, user=user)
@@ -799,7 +787,7 @@ class ActivityLogger(commands.Cog):
                 return
 
         guild = ctx.guild
-        log_files = sorted(glob.glob(os.path.join(PATH, str(guild.id), "*guild*.log")), reverse=True)
+        log_files = glob.glob(os.path.join(PATH, str(guild.id), "*guild*.log"))
 
         if interval:
             end_time = datetime.utcnow() - interval
@@ -837,8 +825,7 @@ class ActivityLogger(commands.Cog):
             return
 
         guild = ctx.guild
-        log_files = sorted(glob.glob(os.path.join(PATH, str(guild.id), "*guild*.log")), reverse=True)
-
+        log_files = glob.glob(os.path.join(PATH, str(guild.id), "*guild*.log"))
         await self.log_sender(ctx, log_files, end, start=start)
 
     @logs_audit.group(name="user")
@@ -879,7 +866,7 @@ class ActivityLogger(commands.Cog):
                 return
 
         guild = ctx.guild
-        log_files = sorted(glob.glob(os.path.join(PATH, str(guild.id), "*guild*.log")), reverse=True)
+        log_files = glob.glob(os.path.join(PATH, str(guild.id), "*guild*.log"))
 
         if interval:
             end_time = datetime.utcnow() - interval
@@ -917,7 +904,7 @@ class ActivityLogger(commands.Cog):
             return
 
         guild = ctx.guild
-        log_files = sorted(glob.glob(os.path.join(PATH, str(guild.id), "*guild*.log")), reverse=True)
+        log_files = glob.glob(os.path.join(PATH, str(guild.id), "*guild*.log"))
 
         await self.log_sender(ctx, log_files, end, start=start, user=user)
 
@@ -954,7 +941,7 @@ class ActivityLogger(commands.Cog):
         if not channel:
             await ctx.send("Invalid channel!")
             return
-        log_files = sorted(glob.glob(os.path.join(PATH, str(guild.id), "*{}*.log".format(channel.id))), reverse=True)
+        log_files = glob.glob(os.path.join(PATH, str(guild.id), "*{}*.log".format(channel.id)))
 
         if interval:
             end_time = datetime.utcnow() - interval
@@ -993,7 +980,7 @@ class ActivityLogger(commands.Cog):
         if not channel:
             await ctx.send("Invalid channel!")
             return
-        log_files = sorted(glob.glob(os.path.join(PATH, str(guild.id), "*{}*.log".format(channel.id))), reverse=True)
+        log_files = glob.glob(os.path.join(PATH, str(guild.id), "*{}*.log".format(channel.id)))
 
         await self.log_sender(ctx, log_files, end, start=start)
 
