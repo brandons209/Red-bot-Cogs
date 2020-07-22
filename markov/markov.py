@@ -55,11 +55,15 @@ class Markov(commands.Cog):
         """
         Set max characters of generated text.
 
-        Max size limited by discord is 3000.
+        Max size is 2800.
         """
         if not length:
             curr = await self.config.guild(ctx.guild).max_len()
             await ctx.send(f"Current max length of generated text is `{curr}` characters.")
+            return
+
+        if length > 2800:
+            await ctx.send(error("Max length is 2800."))
             return
 
         await self.config.guild(ctx.guild).max_len.set(length)
@@ -81,20 +85,22 @@ class Markov(commands.Cog):
             await ctx.send(error("This channel has no data, try talking in it for a bit first!"))
             return
 
-        last_word = starting_text.split(" ")[-1] if starting_text else None
+        starting_text = starting_text.split(" ") if starting_text else None
+        last_word = starting_text[-1] if starting_text else None
 
         if not starting_text:
             markov_text = [random.choice(list(model.keys()))]
-        elif last_word in model and not model[last_word]:
-            markov_text = [last_word, random.choice(list(model.keys()))]
+        elif last_word not in model or not model[last_word]:
+            markov_text = starting_text + [random.choice(list(model.keys()))]
         else:
-            markov_text = [last_word, random.choice(model[last_word])]
+            markov_text = starting_text + [random.choice(model[last_word])]
 
         max_len = await self.config.guild(ctx.guild).max_len()
 
         tries = 0
         max_tries = 20
-        while len(markov_text) < max_len and tries < max_tries:
+        num_chars = len(" ".join(markov_text))
+        while num_chars < max_len and tries < max_tries:
             if "?" in markov_text[-1]:
                 break
             if "\r" in markov_text[-1]:
@@ -106,12 +112,18 @@ class Markov(commands.Cog):
 
             # make sure word is in the model and there is data for the word
             if markov_text[-1] in model and model[markov_text[-1]]:
-                markov_text.append(random.choice(model[markov_text[-1]]))
+                choice = random.choice(model[markov_text[-1]])
+                num_chars += len(choice)
+                markov_text.append(choice)
             else:
-                markov_text.append(random.choice(list(model.keys())))
+                choice = random.choice(list(model.keys()))
+                num_chars += len(choice)
+                markov_text.append(choice)
                 tries += 1
 
         markov_text = " ".join(markov_text)
+        if num_chars > max_len:
+            markov_text = markov_text[:max_len]
         member = ctx.author
         embed = discord.Embed(title="Generated Text", description=markov_text, colour=member.colour)
 
