@@ -85,7 +85,7 @@ class Markov(commands.Cog):
 
         if not starting_text:
             markov_text = [random.choice(list(model.keys()))]
-        elif not model[last_word]:
+        elif last_word in model and not model[last_word]:
             markov_text = [last_word, random.choice(list(model.keys()))]
         else:
             markov_text = [last_word, random.choice(model[last_word])]
