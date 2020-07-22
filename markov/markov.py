@@ -45,7 +45,7 @@ class Markov(commands.Cog):
             await ctx.send("Current Prefixes: " + humanize_list(curr))
             return
 
-        prefixes = [p for p in prefixes.split(" ")]
+        prefixes = [p for p in prefixes.split(" ") if p != ""]
         await self.config.guild(ctx.guild).prefixes.set(prefixes)
         prefixes = [f"`{p}`" for p in prefixes]
         await ctx.send("Prefixes set to: " + humanize_list(prefixes))
