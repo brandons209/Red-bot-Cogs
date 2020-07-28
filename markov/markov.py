@@ -152,7 +152,7 @@ class Markov(commands.Cog):
             content = content.split(" ")
             try:
                 model[str(message.channel.id)]
-            except:
+            except KeyError:
                 model[str(message.channel.id)] = {}
 
             for i in range(len(content) - 1):

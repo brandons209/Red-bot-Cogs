@@ -191,7 +191,8 @@ class Isolate(commands.Cog):
         data = await self.config.guild(guild).ISOLATED()
 
         for mid, mdata in data.copy().items():
-            if not mid.isdigit() or guild.get_member(mid):
+            intid = int(mid)
+            if guild.get_member(intid):
                 continue
 
             elif clean_pending or ((mdata["until"] or 0) < now):
@@ -204,6 +205,7 @@ class Isolate(commands.Cog):
     @isolate.command(name="clean-bans")
     @commands.guild_only()
     @checks.mod()
+    @checks.bot_has_permissions(ban_members=True)
     async def isolate_clean_bans(self, ctx):
         """
         Removes banned members from the isolated list.
@@ -213,18 +215,15 @@ class Isolate(commands.Cog):
         guild = ctx.guild
         data = await self.config.guild(guild).ISOLATED()
 
-        try:
-            bans = await guild.bans()
-            ban_ids = {u.id for u in bans}
-        except discord.errors.Forbidden:
-            await ctx.send(warning("I need ban permissions to see the list of banned users."))
-            return
+        bans = await guild.bans()
+        ban_ids = {ban.user.id for ban in bans}
 
         for mid, mdata in data.copy().items():
-            if not mid.isdigit() or guild.get_member(mid):
+            intid = int(mid)
+            if guild.get_member(intid):
                 continue
 
-            elif mid in ban_ids:
+            elif intid in ban_ids:
                 del data[mid]
                 count += 1
 
