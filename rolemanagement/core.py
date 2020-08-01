@@ -895,14 +895,14 @@ class RoleManagement(
         except MissingRequirementsException as e:
             msg = ""
             if e.miss_all:
-                roles = [r for r in ctx.guild.roles if r in e.miss_all]
+                roles = [r.name for r in ctx.guild.roles if r.id in e.miss_all]
                 msg += f"You need all of these roles in order to get this role: {humanize_list(roles)}\n"
             if e.miss_any:
-                roles = [r for r in ctx.guild.roles if r in e.miss_any]
+                roles = [r.name for r in ctx.guild.roles if r.id in e.miss_any]
                 msg += f"You need one of these roles in order to get this role: {humanize_list(roles)}\n"
             await ctx.send(msg)
         except ConflictingRoleException as e:
-            roles = [r for r in ctx.guild.roles if r in e.conflicts]
+            roles = [r.name for r in ctx.guild.roles if r.id in e.conflicts]
             plural = "are" if len(roles) > 1 else "is"
             await ctx.send(
                 f"You have {humanize_list(roles)}, which you are not allowed to remove and {plural} exclusive to: {role.name}"
@@ -965,15 +965,15 @@ class RoleManagement(
         except MissingRequirementsException as e:
             msg = ""
             if e.miss_all:
-                roles = [r for r in ctx.guild.roles if r in e.miss_all]
+                roles = [r.name for r in ctx.guild.roles if r.id in e.miss_all]
                 msg += f"You need all of these roles in order to get this role: {humanize_list(roles)}\n"
             if e.miss_any:
-                roles = [r for r in ctx.guild.roles if r in e.miss_any]
+                roles = [r.name for r in ctx.guild.roles if r.id in e.miss_any]
                 msg += f"You need one of these roles in order to get this role: {humanize_list(roles)}\n"
             await ctx.send(msg)
         except ConflictingRoleException as e:
             print(e.conflicts)
-            roles = [r for r in ctx.guild.roles if r in e.conflicts]
+            roles = [r.name for r in ctx.guild.roles if r in e.conflicts]
             plural = "are" if len(roles) > 1 else "is"
             await ctx.send(
                 f"You have {humanize_list(roles)}, which you are not allowed to remove and {plural} exclusive to: {role.name}"
