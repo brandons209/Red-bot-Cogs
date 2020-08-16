@@ -139,7 +139,7 @@ class Markov(commands.Cog):
     async def on_message(self, message):
         # updates model
         content = message.content
-        if not content or message.author == message.guild.me:
+        if not content or not message.guild or message.author == message.guild.me:
             return
 
         # check if this is a bot message
