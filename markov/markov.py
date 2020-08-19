@@ -110,7 +110,7 @@ class Markov(commands.Cog):
         except KeyError:
             await ctx.send(error("This channel has no data, try talking in it for a bit first!"))
             return
-        print(model)
+
         starting_text = starting_text.split(" ") if starting_text else None
         last_word = starting_text[-1] if starting_text else None
 
@@ -177,7 +177,7 @@ class Markov(commands.Cog):
 
         content = content.split(" ")
         model = self.cache[guild.id]["model"]
-        print(self.cache[guild.id])
+
         try:
             model[str(message.channel.id)]
         except KeyError:
