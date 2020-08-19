@@ -2,6 +2,7 @@ from redbot.core.utils.chat_formatting import *
 from redbot.core import Config, checks, commands
 import discord
 import random
+import asyncio
 
 
 class Markov(commands.Cog):
@@ -13,6 +14,25 @@ class Markov(commands.Cog):
 
         default_guild = {"model": {}, "prefixes": [], "max_len": 200}
         self.config.register_guild(**default_guild)
+        self.cache = {}
+        self.init_task = asyncio.create_task(self.init())
+
+    def cog_unload(self):
+        self.init_task.cancel()
+        # save all the models before full unload/shutdown
+        for guild in self.bot.guilds:
+            asyncio.create_task(self.config.guild(guild).model.set(self.cache[guild.id]["model"]))
+
+    async def init(self):
+        # caches all the models, uses more ram but bot
+        # slows down once file gets big otherwise
+        for guild in self.bot.guilds:
+            self.cache[guild.id] = await self.config.guild(guild).all()
+
+        while True:  # save model every 5 minutes
+            await asyncio.sleep(300)
+            for guild in self.bot.guilds:
+                await self.config.guild(guild).model.set(self.cache[guild.id]["model"])
 
     @commands.group()
     @checks.admin_or_permissions(administrator=True)
@@ -25,8 +45,11 @@ class Markov(commands.Cog):
     async def markovset_clear(self, ctx, *, channel: discord.TextChannel):
         """ Clear data for a specific channel """
         async with self.config.guild(ctx.guild).model() as model:
-            del model[str(channel.id)]
-
+            del self.cache[ctx.guild.id]["model"][str(channel.id)]
+            try:  # possible that channel is cached but not saved yet
+                del model[str(channel.id)]
+            except:
+                pass
         await ctx.tick()
 
     @markovset.command(name="prefix")
@@ -35,17 +58,19 @@ class Markov(commands.Cog):
         This is so markov won't log bot commands.
         """
         if not prefixes:
-            current = await self.config.guild(ctx.guild).prefixes()
+            current = self.cache[ctx.guild.id]["prefixes"]
             curr = [f"`{p}`" for p in current]
             if not current:
                 await ctx.send("No prefixes set, setting this bot's prefix.")
                 await self.config.guild(ctx.guild).prefixes.set([ctx.clean_prefix])
+                self.cache[ctx.guild.id]["prefixes"] = [ctx.clean_prefix]
                 return
 
             await ctx.send("Current Prefixes: " + humanize_list(curr))
             return
 
         prefixes = [p for p in prefixes.split(" ") if p != ""]
+        self.cache[ctx.guild.id]["prefixes"] = prefixes
         await self.config.guild(ctx.guild).prefixes.set(prefixes)
         prefixes = [f"`{p}`" for p in prefixes]
         await ctx.send("Prefixes set to: " + humanize_list(prefixes))
@@ -58,7 +83,7 @@ class Markov(commands.Cog):
         Max size is 2800.
         """
         if not length:
-            curr = await self.config.guild(ctx.guild).max_len()
+            curr = self.cache[ctx.guild.id]["max_len"]
             await ctx.send(f"Current max length of generated text is `{curr}` characters.")
             return
 
@@ -66,6 +91,7 @@ class Markov(commands.Cog):
             await ctx.send(error("Max length is 2800."))
             return
 
+        self.cache[ctx.guild.id]["max_len"] = length
         await self.config.guild(ctx.guild).max_len.set(length)
         await ctx.tick()
 
@@ -78,13 +104,13 @@ class Markov(commands.Cog):
 
         Text generated is based on what users say in the current channel
         """
-        model = await self.config.guild(ctx.guild).model()
+        model = self.cache[ctx.guild.id]["model"]
         try:
             model = model[str(ctx.channel.id)]
         except KeyError:
             await ctx.send(error("This channel has no data, try talking in it for a bit first!"))
             return
-
+        print(model)
         starting_text = starting_text.split(" ") if starting_text else None
         last_word = starting_text[-1] if starting_text else None
 
@@ -95,7 +121,7 @@ class Markov(commands.Cog):
         else:
             markov_text = starting_text + [random.choice(model[last_word])]
 
-        max_len = await self.config.guild(ctx.guild).max_len()
+        max_len = self.cache[ctx.guild.id]["max_len"]
 
         tries = 0
         max_tries = 20
@@ -139,24 +165,28 @@ class Markov(commands.Cog):
     async def on_message(self, message):
         # updates model
         content = message.content
+        guild = message.guild
         if not content or not message.guild or message.author == message.guild.me:
             return
 
         # check if this is a bot message
-        prefixes = await self.config.guild(message.guild).prefixes()
+        prefixes = self.cache[guild.id]["prefixes"]
         for prefix in prefixes:
             if prefix == content[: len(prefix)]:
                 return
 
-        async with self.config.guild(message.guild).model() as model:
-            content = content.split(" ")
-            try:
-                model[str(message.channel.id)]
-            except KeyError:
-                model[str(message.channel.id)] = {}
+        content = content.split(" ")
+        model = self.cache[guild.id]["model"]
+        print(self.cache[guild.id])
+        try:
+            model[str(message.channel.id)]
+        except KeyError:
+            model[str(message.channel.id)] = {}
 
-            for i in range(len(content) - 1):
-                if content[i] not in model[str(message.channel.id)]:
-                    model[str(message.channel.id)][content[i]] = list()
+        for i in range(len(content) - 1):
+            if content[i] not in model[str(message.channel.id)]:
+                model[str(message.channel.id)][content[i]] = list()
 
-                model[str(message.channel.id)][content[i]].append(content[i + 1])
+            model[str(message.channel.id)][content[i]].append(content[i + 1])
+
+        self.cache[guild.id]["model"] = model
