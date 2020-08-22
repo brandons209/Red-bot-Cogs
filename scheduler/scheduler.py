@@ -235,8 +235,9 @@ class Scheduler(commands.Cog):
         await asyncio.sleep(delay)
         task.update_objects(self.bot)
         chan = task.channel
-        if not chan.permissions_for(chan.guild.me).read_messages:
-            return
+        if isinstance(chan, discord.TextChannel):
+            if not chan.permissions_for(chan.guild.me).read_messages:
+                return
         message = await task.get_message(self.bot)
         context = await self.bot.get_context(message)
         context.assume_yes = True
@@ -502,7 +503,6 @@ class Scheduler(commands.Cog):
 
     @commands.check(lambda ctx: not ctx.assume_yes)
     @commands.command(name="remindme", usage="<what to be reminded of> <args>")
-    @commands.guild_only()
     async def reminder(self, ctx: commands.GuildContext, *, reminder: Schedule):
         """
         Schedule a reminder DM from the bot

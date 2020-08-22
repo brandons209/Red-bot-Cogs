@@ -30,8 +30,10 @@ class Task:
         return hash(self.uid)
 
     async def get_message(self, bot):
-
-        pfx = (await bot.get_prefix(self.channel))[0]
+        if isinstance(self.channel, discord.DMChannel):
+            pfx = (await bot.get_valid_prefixes())[0]
+        else:
+            pfx = (await bot.get_valid_prefixes(self.channel.guild))[0]
         content = f"{pfx}{self.content}"
         return SchedulerMessage(content=content, author=self.author, channel=self.channel)
 
@@ -134,14 +136,24 @@ class Task:
 
     def update_objects(self, bot):
         """ Updates objects or throws an AttributeError """
-        guild_id = self.author.guild.id
+        # Is in a guild
+        if isinstance(self.author, discord.Member):
+            guild_id = self.author.guild.id
+            author_id = self.author.id
+            channel_id = self.channel.id
+
+            guild = bot.get_guild(guild_id)
+            self.author = guild.get_member(author_id)
+            self.channel = guild.get_channel(channel_id)
+            if not hasattr(self.channel, "id"):
+                raise AttributeError()
+            return
+        # Not in a guild.
         author_id = self.author.id
         channel_id = self.channel.id
-
-        guild = bot.get_guild(guild_id)
-        self.author = guild.get_member(author_id)
-        self.channel = guild.get_channel(channel_id)
-        if not hasattr(self.channel, "id"):
-            raise AttributeError()
+        self.author = bot.get_user(author_id)
+        self.channel = self.author.dm_channel
+        if self.channel is None:
+            raise AssertationError("Cannot create user DM outside async function.")
         # Yes, this is slower than an inline `self.channel.id`
         # It's also not slow anywhere important, and I prefer the clear intent

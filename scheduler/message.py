@@ -64,9 +64,7 @@ class SchedulerMessage(discord.Message):
         self.author = author
         self.channel = channel
         self.content = content
-        self.guild = channel.guild  # type: ignore
         # this attribute being in almost everything (and needing to be) is a pain
-        self._state = self.guild._state  # type: ignore
         # sane values below, fresh messages which are commands should exhibit these.
         self.call = None
         self.type = discord.MessageType.default
@@ -81,18 +79,27 @@ class SchedulerMessage(discord.Message):
         # pylint: disable=E1133
         # pylint improperly detects the inherited properties here as not being iterable
         # This should be fixed with typehint support added to upstream lib later
-        self.mentions: List[Union[discord.User, discord.Member]] = list(
-            filter(None, [self.guild.get_member(idx) for idx in self.raw_mentions])
-        )
-        self.channel_mentions: List[discord.TextChannel] = list(
-            filter(
-                None,
-                [
-                    self.guild.get_channel(idx)  # type: ignore
-                    for idx in self.raw_channel_mentions
-                ],
+        if not isinstance(self.channel, discord.DMChannel):
+            self.guild = channel.guild  # type: ignore
+            self._state = self.guild._state  # type: ignore
+            self.mentions: List[Union[discord.User, discord.Member]] = list(
+                filter(None, [self.guild.get_member(idx) for idx in self.raw_mentions])
             )
-        )
-        self.role_mentions: List[discord.Role] = list(
-            filter(None, [self.guild.get_role(idx) for idx in self.raw_role_mentions])
-        )
+            self.channel_mentions: List[discord.TextChannel] = list(
+                filter(
+                    None,
+                    [
+                        self.guild.get_channel(idx)  # type: ignore
+                        for idx in self.raw_channel_mentions
+                    ],
+                )
+            )
+            self.role_mentions: List[discord.Role] = list(
+                filter(None, [self.guild.get_role(idx) for idx in self.raw_role_mentions])
+            )
+        else:
+            self.guild = None
+            self._state = None
+            self.mentions: List[Union[discord.User, discord.Member]] = list()
+            self.channel_mentions: List[discord.TextChannel] = list()
+            self.role_mentions: List[discord.Role] = list()
