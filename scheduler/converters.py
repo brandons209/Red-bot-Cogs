@@ -49,9 +49,7 @@ class Schedule:
             command = None
 
         parser = NoExitParser(description="Scheduler event parsing", add_help=False)
-        parser.add_argument(
-            "-q", "--quiet", action="store_true", dest="quiet", default=False
-        )
+        parser.add_argument("-q", "--quiet", action="store_true", dest="quiet", default=False)
         parser.add_argument("--every", nargs="*", dest="every", default=[])
         if not command:
             parser.add_argument("command", nargs="*")
@@ -84,8 +82,7 @@ class Schedule:
                     recur = parsed
                     if recur.total_seconds() < 60:
                         raise BadArgument(
-                            "You can't schedule something to happen that frequently, "
-                            "I'll get ratelimited."
+                            "You can't schedule something to happen that frequently, " "I'll get ratelimited."
                         )
 
         if vals["at"]:

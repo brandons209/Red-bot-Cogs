@@ -100,9 +100,7 @@ class Scheduler(commands.Cog):
 
         # explain: mypy assumes this is always true, but other CCs using this API may not be using mypy.
         if not (isinstance(author, discord.Member) and isinstance(channel, discord.TextChannel)):  # type: ignore
-            raise TypeError(
-                "Must provide guild specific discord.py models for both author and channel"
-            )
+            raise TypeError("Must provide guild specific discord.py models for both author and channel")
 
         if recur is not None and recur.total_seconds() < 60:
             raise ValueError("Recuring events must be at least a minute apart.")
@@ -149,9 +147,7 @@ class Scheduler(commands.Cog):
             A string which is needed to unschedule the task
         """
 
-        tasks = await self.fetch_task_by_attrs_exact(
-            extern_cog=calling_cog.qualified_name, uid=uid
-        )
+        tasks = await self.fetch_task_by_attrs_exact(extern_cog=calling_cog.qualified_name, uid=uid)
         if tasks:
             await self._remove_tasks(*tasks)
 
@@ -161,15 +157,11 @@ class Scheduler(commands.Cog):
 
     def __init__(self, bot, *args, **kwargs):
         self.bot = bot
-        self.config = Config.get_conf(
-            self, identifier=78631113035100160, force_registration=True
-        )
+        self.config = Config.get_conf(self, identifier=78631113035100160, force_registration=True)
         self.config.register_channel(tasks={})  # Serialized Tasks go in here.
         self.log = logging.getLogger("red.sinbadcogs.scheduler")
         self.bg_loop_task: Optional[asyncio.Task] = None
-        self.scheduled: Dict[
-            str, asyncio.Task
-        ] = {}  # Might change this to a list later.
+        self.scheduled: Dict[str, asyncio.Task] = {}  # Might change this to a list later.
         self.tasks: List[Task] = []
         self._iter_lock = asyncio.Lock()
 
@@ -183,10 +175,7 @@ class Scheduler(commands.Cog):
             task.cancel()
 
     async def red_delete_data_for_user(
-        self,
-        *,
-        requester: Literal["discord_deleted_user", "owner", "user", "user_strict"],
-        user_id: int,
+        self, *, requester: Literal["discord_deleted_user", "owner", "user", "user_strict"], user_id: int,
     ):
         loaded_tasks = await self.fetch_task_by_attrs_exact(author=user_id)
         if loaded_tasks:
@@ -218,10 +207,7 @@ class Scheduler(commands.Cog):
         chan_dict = await self.config.all_channels()
         for channel_id, channel_data in chan_dict.items():
             channel = self.bot.get_channel(channel_id)
-            if (
-                not channel
-                or not channel.permissions_for(channel.guild.me).read_messages
-            ):
+            if not channel or not channel.permissions_for(channel.guild.me).read_messages:
                 continue
             tasks_dict = channel_data.get("tasks", {})
             for t in Task.bulk_from_config(bot=self.bot, **tasks_dict):
@@ -236,9 +222,7 @@ class Scheduler(commands.Cog):
     async def bg_loop(self):
         await self.bot.wait_until_ready()
         await asyncio.sleep(2)
-        _guilds = [
-            g for g in self.bot.guilds if g.large and not (g.chunked or g.unavailable)
-        ]
+        _guilds = [g for g in self.bot.guilds if g.large and not (g.chunked or g.unavailable)]
         await self.bot.request_offline_members(*_guilds)
 
         async with self._iter_lock:
@@ -256,11 +240,7 @@ class Scheduler(commands.Cog):
         message = await task.get_message(self.bot)
         context = await self.bot.get_context(message)
         context.assume_yes = True
-        if (
-            context.invoked_with
-            and context.command
-            and context.command.qualified_name in SUSPICIOUS_COMMANDS
-        ):
+        if context.invoked_with and context.command and context.command.qualified_name in SUSPICIOUS_COMMANDS:
             self.log.warning(
                 f"Handling scheduled {context.command.qualified_name} "
                 "if you are using this to avoid an issue with another cog, "
@@ -305,9 +285,7 @@ class Scheduler(commands.Cog):
         for task in self.tasks:
             delay = task.next_call_delay
             if delay < 30 and task.uid not in self.scheduled:
-                self.scheduled[task.uid] = asyncio.create_task(
-                    self.delayed_wrap_and_invoke(task, delay)
-                )
+                self.scheduled[task.uid] = asyncio.create_task(self.delayed_wrap_and_invoke(task, delay))
                 if not task.recur:
                     to_remove.append(task)
 
@@ -317,9 +295,7 @@ class Scheduler(commands.Cog):
 
         # explain: mypy assumes this is always true, but other CCs using this API may not be using mypy.
         if not (isinstance(author, discord.Member) and isinstance(channel, discord.TextChannel)):  # type: ignore
-            raise TypeError(
-                "Must provide guild specific discord.py models for both author and channel"
-            )
+            raise TypeError("Must provide guild specific discord.py models for both author and channel")
 
     async def fetch_task_by_attrs_exact(self, **kwargs) -> List[Task]:
         def pred(item):
@@ -331,9 +307,7 @@ class Scheduler(commands.Cog):
         async with self._iter_lock:
             return [t for t in self.tasks if pred(t)]
 
-    async def fetch_task_by_attrs_lax(
-        self, lax: Optional[dict] = None, strict: Optional[dict] = None
-    ) -> List[Task]:
+    async def fetch_task_by_attrs_lax(self, lax: Optional[dict] = None, strict: Optional[dict] = None) -> List[Task]:
         def pred(item):
             try:
                 if strict and not all(getattr(item, k) == v for k, v in strict.items()):
@@ -358,9 +332,7 @@ class Scheduler(commands.Cog):
     @checks.mod_or_permissions(manage_guild=True)
     @commands.guild_only()
     @commands.command(usage="<eventname> <command> <args>")
-    async def schedule(
-        self, ctx: commands.GuildContext, event_name: NonNumeric, *, schedule: Schedule
-    ):
+    async def schedule(self, ctx: commands.GuildContext, event_name: NonNumeric, *, schedule: Schedule):
         """
         Schedule something
 
@@ -419,16 +391,12 @@ class Scheduler(commands.Cog):
 
         quiet: bool = schedule.quiet
 
-        if await self.fetch_task_by_attrs_exact(
-            author=ctx.author, channel=ctx.channel, nicename=event_name.parsed
-        ):
+        if await self.fetch_task_by_attrs_exact(author=ctx.author, channel=ctx.channel, nicename=event_name.parsed):
             if not quiet:
                 return await ctx.send("You already have an event by that name here.")
 
         async with self._iter_lock:
-            async with self.config.channel(ctx.channel).tasks(
-                acquire_lock=False
-            ) as tsks:
+            async with self.config.channel(ctx.channel).tasks(acquire_lock=False) as tsks:
                 tsks.update(t.to_config())
             self.tasks.append(t)
 
@@ -460,23 +428,15 @@ class Scheduler(commands.Cog):
         """
 
         tasks = await self.fetch_task_by_attrs_lax(
-            lax={"uid": info, "nicename": info},
-            strict={"author": ctx.author, "channel": ctx.channel},
+            lax={"uid": info, "nicename": info}, strict={"author": ctx.author, "channel": ctx.channel},
         )
 
         if not tasks:
-            await ctx.send(
-                f"Hmm, I couldn't find that task. (try `{ctx.clean_prefix}showscheduled`)"
-            )
+            await ctx.send(f"Hmm, I couldn't find that task. (try `{ctx.clean_prefix}showscheduled`)")
 
         elif len(tasks) > 1:
-            self.log.warning(
-                f"Mutiple tasks where should be unique. Task data: {tasks}"
-            )
-            await ctx.send(
-                "There seems to have been breakage here. "
-                "Cleaning up and logging incident."
-            )
+            self.log.warning(f"Mutiple tasks where should be unique. Task data: {tasks}")
+            await ctx.send("There seems to have been breakage here. " "Cleaning up and logging incident.")
             return
 
         else:
@@ -486,9 +446,7 @@ class Scheduler(commands.Cog):
     @checks.bot_has_permissions(add_reactions=True, embed_links=True)
     @commands.guild_only()
     @commands.command()
-    async def showscheduled(
-        self, ctx: commands.GuildContext, all_channels: bool = False
-    ):
+    async def showscheduled(self, ctx: commands.GuildContext, all_channels: bool = False):
         """
         Shows your scheduled tasks in this, or all channels.
         """
@@ -497,9 +455,7 @@ class Scheduler(commands.Cog):
             tasks = await self.fetch_tasks_by_guild(ctx.guild)
             tasks = [t for t in tasks if t.author == ctx.author]
         else:
-            tasks = await self.fetch_task_by_attrs_exact(
-                author=ctx.author, channel=ctx.channel
-            )
+            tasks = await self.fetch_task_by_attrs_exact(author=ctx.author, channel=ctx.channel)
 
         if not tasks:
             return await ctx.send("No scheduled tasks")
@@ -507,10 +463,7 @@ class Scheduler(commands.Cog):
         await self.task_menu(ctx, tasks)
 
     async def task_menu(
-        self,
-        ctx: commands.GuildContext,
-        tasks: List[Task],
-        message: Optional[discord.Message] = None,
+        self, ctx: commands.GuildContext, tasks: List[Task], message: Optional[discord.Message] = None,
     ):
 
         color = await ctx.embed_color()
@@ -539,10 +492,7 @@ class Scheduler(commands.Cog):
                     await message.delete()
 
         count = len(tasks)
-        embeds = [
-            t.to_embed(index=i, page_count=count, color=color)
-            for i, t in enumerate(tasks, 1)
-        ]
+        embeds = [t.to_embed(index=i, page_count=count, color=color) for i, t in enumerate(tasks, 1)]
 
         controls = DEFAULT_CONTROLS.copy()
         page_mapping = {i: t for i, t in enumerate(tasks)}
@@ -604,9 +554,7 @@ class Scheduler(commands.Cog):
         )
 
         async with self._iter_lock:
-            async with self.config.channel(ctx.channel).tasks(
-                acquire_lock=False
-            ) as tsks:
+            async with self.config.channel(ctx.channel).tasks(acquire_lock=False) as tsks:
                 tsks.update(t.to_config())
             self.tasks.append(t)
 
@@ -672,17 +620,11 @@ class Scheduler(commands.Cog):
         tasks = await self.fetch_task_by_attrs_exact(uid=task_id)
 
         if not tasks:
-            await ctx.send(
-                f"Hmm, I couldn't find that task. (try `{ctx.clean_prefix}showscheduled`)"
-            )
+            await ctx.send(f"Hmm, I couldn't find that task. (try `{ctx.clean_prefix}showscheduled`)")
 
         elif len(tasks) > 1:
-            self.log.warning(
-                f"Mutiple tasks where should be unique. Task data: {tasks}"
-            )
-            return await ctx.send(
-                "There seems to have been breakage here. Cleaning up and logging incident."
-            )
+            self.log.warning(f"Mutiple tasks where should be unique. Task data: {tasks}")
+            return await ctx.send("There seems to have been breakage here. Cleaning up and logging incident.")
 
         else:
             await self._remove_tasks(*tasks)
@@ -772,13 +714,9 @@ class Scheduler(commands.Cog):
         )
 
         async with self._iter_lock:
-            self.scheduled[mute_task.uid] = asyncio.create_task(
-                self.delayed_wrap_and_invoke(mute_task, 0)
-            )
+            self.scheduled[mute_task.uid] = asyncio.create_task(self.delayed_wrap_and_invoke(mute_task, 0))
 
-            async with self.config.channel(ctx.channel).tasks(
-                acquire_lock=False
-            ) as tsks:
+            async with self.config.channel(ctx.channel).tasks(acquire_lock=False) as tsks:
                 tsks.update(unmute_task.to_config())
             self.tasks.append(unmute_task)
 
@@ -835,12 +773,8 @@ class Scheduler(commands.Cog):
         )
 
         async with self._iter_lock:
-            self.scheduled[mute_task.uid] = asyncio.create_task(
-                self.delayed_wrap_and_invoke(mute_task, 0)
-            )
+            self.scheduled[mute_task.uid] = asyncio.create_task(self.delayed_wrap_and_invoke(mute_task, 0))
 
-            async with self.config.channel(ctx.channel).tasks(
-                acquire_lock=False
-            ) as tsks:
+            async with self.config.channel(ctx.channel).tasks(acquire_lock=False) as tsks:
                 tsks.update(unmute_task.to_config())
             self.tasks.append(unmute_task)

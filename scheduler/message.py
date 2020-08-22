@@ -30,9 +30,7 @@ def neuter_coroutines(klass):
 
 
 async def replacement_delete_messages(self, messages):
-    message_ids = list(
-        {m.id for m in messages if m.__class__.__name__ != "SchedulerMessage"}
-    )
+    message_ids = list({m.id for m in messages if m.__class__.__name__ != "SchedulerMessage"})
 
     if not message_ids:
         return
@@ -42,9 +40,7 @@ async def replacement_delete_messages(self, messages):
         return
 
     if len(message_ids) > 100:
-        raise discord.ClientException(
-            "Can only bulk delete messages up to 100 messages"
-        )
+        raise discord.ClientException("Can only bulk delete messages up to 100 messages")
 
     await self._state.http.delete_messages(self.id, message_ids)
 
@@ -61,9 +57,7 @@ class SchedulerMessage(discord.Message):
     Be careful when using this in other use cases.
     """
 
-    def __init__(
-        self, *, content: str, author: discord.Member, channel: discord.TextChannel
-    ) -> None:
+    def __init__(self, *, content: str, author: discord.Member, channel: discord.TextChannel) -> None:
         # auto current time
         self.id = discord.utils.time_snowflake(datetime.utcnow())
         # important properties for even being processed
@@ -81,9 +75,9 @@ class SchedulerMessage(discord.Message):
         # suport for attachments somehow later maybe?
         self.attachments: List[discord.Attachment] = []
         # mentions
-        self.mention_everyone = self.channel.permissions_for(
-            self.author
-        ).mention_everyone and bool(EVERYONE_REGEX.match(self.content))
+        self.mention_everyone = self.channel.permissions_for(self.author).mention_everyone and bool(
+            EVERYONE_REGEX.match(self.content)
+        )
         # pylint: disable=E1133
         # pylint improperly detects the inherited properties here as not being iterable
         # This should be fixed with typehint support added to upstream lib later
