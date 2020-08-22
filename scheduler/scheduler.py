@@ -318,7 +318,6 @@ class Scheduler(commands.Cog):
         # explain: mypy assumes this is always true, but other CCs using this API may not be using mypy.
         if not (isinstance(author, discord.Member) and isinstance(channel, discord.TextChannel)):  # type: ignore
             raise TypeError(
-            raise Tya fupeError(
                 "Must provide guild specific discord.py models for both author and channel"
             )
 
