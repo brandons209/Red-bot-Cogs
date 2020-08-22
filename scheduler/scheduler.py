@@ -100,7 +100,7 @@ class Scheduler(commands.Cog):
 
         # explain: mypy assumes this is always true, but other CCs using this API may not be using mypy.
         if not (isinstance(author, discord.Member) and isinstance(channel, discord.TextChannel)):  # type: ignore
-            raise Tya fupeError(
+            raise TypeError(
                 "Must provide guild specific discord.py models for both author and channel"
             )
 
@@ -314,6 +314,13 @@ class Scheduler(commands.Cog):
         await self._remove_tasks(*to_remove)
 
         return 15
+
+        # explain: mypy assumes this is always true, but other CCs using this API may not be using mypy.
+        if not (isinstance(author, discord.Member) and isinstance(channel, discord.TextChannel)):  # type: ignore
+            raise TypeError(
+            raise Tya fupeError(
+                "Must provide guild specific discord.py models for both author and channel"
+            )
 
     async def fetch_task_by_attrs_exact(self, **kwargs) -> List[Task]:
         def pred(item):
