@@ -11,9 +11,7 @@ def can_run_command(command_name: str):
             return False
 
         try:
-            can_run = await command.can_run(
-                ctx, check_all_parents=True, change_permission_state=False
-            )
+            can_run = await command.can_run(ctx, check_all_parents=True, change_permission_state=False)
         except commands.CommandError:
             can_run = False
 

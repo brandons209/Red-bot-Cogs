@@ -264,7 +264,7 @@ class SFX(commands.Cog):
             await ctx.send(error("Please reload the cog after the Audio cog has been loaded!"))
             return
 
-        inject_path = str(code_path(cog_instance=self) / "injection.py")
+        inject_path = str(code_path(cog_instance=self) / "injection.txt")
         with open(inject_path, "r") as f:
             injection = f.read()
 

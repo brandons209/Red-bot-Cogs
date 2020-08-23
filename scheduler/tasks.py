@@ -33,9 +33,7 @@ class Task:
 
         pfx = (await bot.get_prefix(self.channel))[0]
         content = f"{pfx}{self.content}"
-        return SchedulerMessage(
-            content=content, author=self.author, channel=self.channel
-        )
+        return SchedulerMessage(content=content, author=self.author, channel=self.channel)
 
     def to_config(self):
 
@@ -72,12 +70,7 @@ class Task:
 
             with contextlib.suppress(AttributeError, ValueError):
                 yield cls(
-                    initial=initial,
-                    recur=recur,
-                    channel=channel,
-                    author=author,
-                    uid=uid,
-                    **data,
+                    initial=initial, recur=recur, channel=channel, author=author, uid=uid, **data,
                 )
 
     @property
