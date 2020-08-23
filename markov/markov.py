@@ -24,6 +24,7 @@ class Markov(commands.Cog):
             asyncio.create_task(self.config.guild(guild).model.set(self.cache[guild.id]["model"]))
 
     async def init(self):
+        await self.bot.wait_until_ready()
         # caches all the models, uses more ram but bot
         # slows down once file gets big otherwise
         for guild in self.bot.guilds:
