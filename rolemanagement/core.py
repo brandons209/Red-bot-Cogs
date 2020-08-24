@@ -972,7 +972,6 @@ class RoleManagement(
                 msg += f"You need one of these roles in order to get this role: {humanize_list(roles)}\n"
             await ctx.send(msg)
         except ConflictingRoleException as e:
-            print(e.conflicts)
             roles = [r.name for r in ctx.guild.roles if r in e.conflicts]
             plural = "are" if len(roles) > 1 else "is"
             await ctx.send(

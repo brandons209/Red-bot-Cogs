@@ -174,10 +174,10 @@ class UtilMixin(MixinMeta):
         ex = []
         for ex_roles in ex_data:
             ex.extend(ex_roles)
-        conflicts: List[int] = [r.id for r in who.roles if r.id in ex]
+        conflicts: List[discord.Role] = [r for r in who.roles if r.id in ex]
 
         for r in conflicts:
-            if not data.get(r, {}).get("self_removable", False):
+            if not data.get(r.id, {}).get("self_removable", False):
                 raise ConflictingRoleException(conflicts=conflicts)
         return conflicts
 
