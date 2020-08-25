@@ -193,7 +193,7 @@ class PersonalRoles(commands.Cog):
         Cannot be higher than the bot's highest role
         """
         if role_pos > ctx.guild.me.top_role:
-            await ctx.send("The role must be under by highest role.")
+            await ctx.send("The role must be under my highest role.")
             return
 
         await self.config.guild(ctx.guild).position_role.set(role_pos.id)

@@ -124,9 +124,9 @@ class Birthday(commands.Cog):
                 # unhandled their birthday, cya next year!
                 await self.config.member(member).birthday_handeled.set(False)
 
-    @commands.command()
-    async def test(self, ctx, *, member: discord.Member):
-        await self.check_bdays()
+    #@commands.command()
+    #async def test(self, ctx, *, member: discord.Member):
+    #    await self.check_bdays()
 
     @commands.group(name="bdayset")
     @commands.guild_only()
