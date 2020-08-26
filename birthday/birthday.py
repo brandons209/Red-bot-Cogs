@@ -124,8 +124,8 @@ class Birthday(commands.Cog):
                 # unhandled their birthday, cya next year!
                 await self.config.member(member).birthday_handeled.set(False)
 
-    #@commands.command()
-    #async def test(self, ctx, *, member: discord.Member):
+    # @commands.command()
+    # async def test(self, ctx, *, member: discord.Member):
     #    await self.check_bdays()
 
     @commands.group(name="bdayset")
@@ -247,10 +247,16 @@ class Birthday(commands.Cog):
             bday = await self.config.member(member).birthday()
             if bday:
                 embed = discord.Embed(title=f"{member.display_name}", colour=ctx.guild.me.colour)
-                bday, age = self.get_date_and_age(self.parse_date(bday))
+                bday_datetime = self.parse_date(bday)
+                bday, age = self.get_date_and_age(bday_datetime)
                 embed.add_field(name="Birthday", value=bday)
                 if age:
-                    embed.add_field(name="Turning", value=age)
+                    now = datetime.datetime.utcnow()
+                    bday_datetime = bday_datetime.replace(year=now.year)
+                    if now > bday_datetime:
+                        embed.add_field(name="Turned", value=age)
+                    else:
+                        embed.add_field(name="Turning", value=age)
                 embeds.append(embed)
 
         for i, embed in enumerate(embeds):
