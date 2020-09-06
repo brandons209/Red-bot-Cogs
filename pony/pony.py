@@ -43,16 +43,16 @@ class Pony(commands.Cog):
     @checks.admin()
     async def ponyfilter(self, ctx: commands.Context):
         """Manages pony filters
-           Warning: Can be used to allow NSFW images
+        Warning: Can be used to allow NSFW images
 
-           Filters automatically apply tags to each search"""
+        Filters automatically apply tags to each search"""
         pass
 
     @ponyfilter.command(name="add")
     async def _add_ponyfilter(self, ctx, filter_tag: str):
         """Adds a tag to the server's pony filter list
 
-           Example: !ponyfilter add safe"""
+        Example: !ponyfilter add safe"""
         guild = ctx.guild
         filters = await self.config.guild(guild).filters()
         max_filters = await self.config.maxfilters()
@@ -71,9 +71,9 @@ class Pony(commands.Cog):
     async def _del_ponyfilter(self, ctx, filter_tag: str = ""):
         """Deletes a tag from the server's pony filter list
 
-           Without arguments, reverts to the default pony filter list
+        Without arguments, reverts to the default pony filter list
 
-           Example: !ponyfilter del safe"""
+        Example: !ponyfilter del safe"""
         guild = ctx.guild
         filters = await self.config.guild(guild).filters()
         if len(filter_tag) > 0:
@@ -139,9 +139,9 @@ class Pony(commands.Cog):
     async def _maxfilters_ponyset(self, ctx, new_max_filters: int):
         """Sets the global tag limit for the filter list.
 
-           Leave blank to get current max filters.
+        Leave blank to get current max filters.
 
-           Gives an error when a user tries to add a filter while the server's filter list contains a certain amount of tags"""
+        Gives an error when a user tries to add a filter while the server's filter list contains a certain amount of tags"""
         if new_max_filters is None:
             max_filters = self.config.maxfilters()
             await ctx.send("Current filter limit: {} filters.".format(max_filters))

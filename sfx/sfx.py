@@ -15,8 +15,8 @@ EXT = ("mp3", "flac", "ogg", "wav")
 
 
 class SFX(commands.Cog):
-    """ Play saysounds in VC's in your guild
-        Supports costs, files, and links.
+    """Play saysounds in VC's in your guild
+    Supports costs, files, and links.
     """
 
     def __init__(self, bot):

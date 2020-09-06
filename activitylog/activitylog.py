@@ -1132,7 +1132,7 @@ class ActivityLogger(commands.Cog):
     @commands.guild_only()
     async def set_prefixes(self, ctx, *, prefixes: str = None):
         """Set list of prefixes to mark messages as bot commands for user stats.
-           Seperate prefixes with spaces
+        Seperate prefixes with spaces
         """
         if not prefixes:
             curr = [f"`{p}`" for p in self.cache[ctx.guild.id]["prefixes"]]

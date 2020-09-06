@@ -71,24 +71,24 @@ class ReactPoll(commands.Cog):
     @checks.bot_has_permissions(manage_messages=True)
     async def rpoll(self, ctx, *text):
         """Starts/stops a reaction poll
-        Usage example (time argument is optional)
-        [p]rpoll question;option1;option2...;t=<date to end on or time duration>
-        [p]rpoll stop
+         Usage example (time argument is optional)
+         [p]rpoll question;option1;option2...;t=<date to end on or time duration>
+         [p]rpoll stop
 
-        Durations look like (must be greater than 10 seconds):
-           15s
-           5 minutes
-           1 minute 30 seconds
-           1 hour
-           2 days
-           5h30m
+         Durations look like (must be greater than 10 seconds):
+            15s
+            5 minutes
+            1 minute 30 seconds
+            1 hour
+            2 days
+            5h30m
 
-        times look like:
-           February 14 at 6pm EDT
-           2019-04-13 06:43:00 PST
-           01/20/18 at 21:00:43
+         times look like:
+            February 14 at 6pm EDT
+            2019-04-13 06:43:00 PST
+            01/20/18 at 21:00:43
 
-       times default to UTC if no timezone provided.
+        times default to UTC if no timezone provided.
         """
         message = ctx.message
         channel = message.channel

@@ -587,7 +587,12 @@ class MoreAdmin(commands.Cog):
     @checks.admin_or_permissions(administrator=True)
     @checks.bot_has_permissions(kick_members=True)
     async def purge(
-        self, ctx, role: discord.Role, check_messages: bool = True, *, threshold: str = None,
+        self,
+        ctx,
+        role: discord.Role,
+        check_messages: bool = True,
+        *,
+        threshold: str = None,
     ):
         """
         Purge inactive users with role.

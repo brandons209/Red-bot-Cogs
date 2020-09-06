@@ -22,9 +22,9 @@ class Confession(commands.Cog):
     @confessionset.command(name="confess")
     async def confessionset_confess(self, ctx, *, channel: discord.TextChannel = None):
         """Set a confession room
-           Leave empty to unset the room.
+        Leave empty to unset the room.
 
-           **Make sure bot is able to embed messages in confession room.**
+        **Make sure bot is able to embed messages in confession room.**
         """
 
         room = await self.config.guild(ctx.guild).confession_room()
@@ -51,12 +51,12 @@ class Confession(commands.Cog):
     @confessionset.command(name="track")
     async def confessionset_track(self, ctx, *, channel: discord.TextChannel = None):
         """Set a tracker room
-           Leave empty to unset the room.
+        Leave empty to unset the room.
 
-           Tracker room has confessions sent along with who sent them,
-           for easy moderation purposes. This is optional to set.
+        Tracker room has confessions sent along with who sent them,
+        for easy moderation purposes. This is optional to set.
 
-           **Make sure bot is able to embed messages in tracker room.**
+        **Make sure bot is able to embed messages in tracker room.**
         """
 
         room = await self.config.guild(ctx.guild).tracker_room()

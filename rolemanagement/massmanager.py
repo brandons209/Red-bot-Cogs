@@ -124,7 +124,11 @@ class MassManagementMixin(MixinMeta):
 
     @mrole.command(name="user")
     async def mrole_user(
-        self, ctx: GuildContext, users: commands.Greedy[discord.Member], *, _query: RoleSyntaxConverter,
+        self,
+        ctx: GuildContext,
+        users: commands.Greedy[discord.Member],
+        *,
+        _query: RoleSyntaxConverter,
     ) -> None:
         """
         adds/removes roles to one or more users
@@ -133,13 +137,13 @@ class MassManagementMixin(MixinMeta):
 
         Example Usage:
 
-        [p]massrole user Sinbad --add RoleToGive "Role with spaces to give" 
+        [p]massrole user Sinbad --add RoleToGive "Role with spaces to give"
         --remove RoleToRemove "some other role to remove" Somethirdrole
 
         [p]massrole user LoudMouthedUser ProfaneUser --add muted
 
         For role operations based on role membership, permissions had, or whether someone is a bot
-        (or even just add to/remove from all) see `[p]massrole search` and `[p]massrole modify` 
+        (or even just add to/remove from all) see `[p]massrole search` and `[p]massrole modify`
         """
         query = _query.parsed
         apply = query["add"] + query["remove"]
@@ -245,7 +249,8 @@ class MassManagementMixin(MixinMeta):
                 filename += f"-part{part}"
             filename += ".csv"
             await ctx.send(
-                content=f"Data for {ctx.author.mention}", files=[discord.File(data, filename=filename)],
+                content=f"Data for {ctx.author.mention}",
+                files=[discord.File(data, filename=filename)],
             )
             csvf.close()
             data.close()
@@ -256,7 +261,7 @@ class MassManagementMixin(MixinMeta):
     async def mrole_complex(self, ctx: GuildContext, *, _query: ComplexActionConverter):
         """
         Similar syntax to search, while applying/removing roles
-        
+
         --has-all roles
         --has-none roles
         --has-any roles
@@ -276,7 +281,7 @@ class MassManagementMixin(MixinMeta):
         --only-humans
         --only-bots
         --everyone
-        
+
         --add roles
         --remove roles
         """
@@ -299,11 +304,17 @@ class MassManagementMixin(MixinMeta):
                     await self.update_roles_atomically(who=member, give=query["add"], remove=query["remove"])
                 except RoleManagementException:
                     log.debug(
-                        "Internal filter failure on member id %d guild id %d query %s", member.id, ctx.guild.id, query,
+                        "Internal filter failure on member id %d guild id %d query %s",
+                        member.id,
+                        ctx.guild.id,
+                        query,
                     )
                 except discord.HTTPException:
                     log.debug(
-                        "Unpredicted failure for member id %d in guild id %d query %s", member.id, ctx.guild.id, query,
+                        "Unpredicted failure for member id %d in guild id %d query %s",
+                        member.id,
+                        ctx.guild.id,
+                        query,
                     )
 
         await ctx.tick()
