@@ -137,8 +137,8 @@ class Birthday(commands.Cog):
 
     @bdayset.command(name="dmmessage")
     async def bdayset_dm_message(self, ctx, *, message: str = None):
-        """ Set message DMed to users when its their birthday!
-            Leave empty to get/clear current message
+        """Set message DMed to users when its their birthday!
+        Leave empty to get/clear current message
         """
         if not message:
             current = await self.config.guild(ctx.guild).dm_message()
@@ -188,7 +188,7 @@ class Birthday(commands.Cog):
 
     @bday.command(name="set")
     async def bday_set(self, ctx, *, date: str = None):
-        """ Set your birthday. Year not required.
+        """Set your birthday. Year not required.
         Date can be any valid date format, like:
         05/20/99
         05-20-99
