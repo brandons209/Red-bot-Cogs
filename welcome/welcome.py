@@ -6,7 +6,7 @@ import random
 from typing import Optional, Union
 
 from redbot.core import Config, checks, commands
-from redbot.core.utils.chat_formatting import box, pagify
+from redbot.core.utils.chat_formatting import box, pagify, humanize_list
 
 from .enums import WhisperType
 from .errors import WhisperError
@@ -310,6 +310,8 @@ class Welcome(commands.Cog):
           `{server}` is the server
           `{count}` is the number of members who have joined today
           `{plural}` is an 's' if `count` is not 1, and nothing if it is
+          `{stats}` to include user stats (if using activitylog cog)
+          `{roles}` to show member roles at time of event
 
         For example:
           {member.mention}... What are you doing here???
@@ -341,6 +343,7 @@ class Welcome(commands.Cog):
           `{server}` is the server
           `{count}` is the number of members who have joined today
           `{plural}` is an 's' if `count` is not 1, and nothing if it is
+
 
         For example:
           {bot.mention} beep boop.
@@ -401,6 +404,8 @@ class Welcome(commands.Cog):
           `{server}` is the server
           `{count}` is the number of members who have left today
           `{plural}` is an 's' if `count` is not 1, and nothing if it is
+          `{stats}` to include user stats (if using activitylog cog)
+          `{roles}` to show member roles at time of event
 
         For example:
           {member.name}... Why did you leave???
@@ -470,6 +475,8 @@ class Welcome(commands.Cog):
           `{server}` is the server
           `{count}` is the number of members who have been banned today
           `{plural}` is an 's' if `count` is not 1, and nothing if it is
+          `{stats}` to include user stats (if using activitylog cog)
+          `{roles}` to show member roles at time of event
 
         For example:
           {member.name} was banned... What did you do???
@@ -782,7 +789,7 @@ class Welcome(commands.Cog):
             roles = [r for r in user.roles if r.name != "@everyone"]
             roles.sort(reverse=True)
             roles = [r.name for r in roles]
-            roles = self.format_list(*roles)
+            roles = humanize_list(roles)
         else:
             roles = []
 
@@ -808,6 +815,9 @@ class Welcome(commands.Cog):
         except discord.DiscordException:
             log.error(f"Failed to send {event} message to channel ID {channel.id} (server ID {guild.id})")
             return None
+        except KeyError:
+            log.error(f"Failed to send {event} message to channel ID {channel.id} (server id {guild.id}) because there is an error in message formatting.")
+            return await channel.send(f"{box(format_str)} has an unknown key in brackets. Please fix this format.")
 
     async def __get_random_message_format(self, guild: discord.guild, event: str) -> str:
         """Gets a random message for event of type event."""
@@ -879,12 +889,3 @@ class Welcome(commands.Cog):
         """Gets today's date in ordinal form."""
 
         return datetime.date.today().toordinal()
-
-    @staticmethod
-    def format_list(*items, join="and", delim=", "):
-        if len(items) > 1:
-            return (" %s " % join).join((delim.join(items[:-1]), items[-1]))
-        elif items:
-            return items[0]
-        else:
-            return ""
