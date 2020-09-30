@@ -50,11 +50,7 @@ MAX_EMBED = 25
 
 
 class RoleManagement(
-    UtilMixin,
-    MassManagementMixin,
-    EventMixin,
-    commands.Cog,
-    metaclass=CompositeMetaClass,
+    UtilMixin, MassManagementMixin, EventMixin, commands.Cog, metaclass=CompositeMetaClass,
 ):
     """
     Cog for role management
@@ -312,12 +308,7 @@ class RoleManagement(
     @checks.admin_or_permissions(manage_guild=True)
     @commands.command(name="rolebind")
     async def bind_role_to_reactions(
-        self,
-        ctx: GuildContext,
-        role: discord.Role,
-        channel: discord.TextChannel,
-        msgid: int,
-        emoji: str,
+        self, ctx: GuildContext, role: discord.Role, channel: discord.TextChannel, msgid: int, emoji: str,
     ):
         """
         Binds a role to a reaction on a message...
@@ -356,11 +347,7 @@ class RoleManagement(
 
         cfg = self.config.custom("REACTROLE", str(message.id), eid)
         await cfg.set(
-            {
-                "roleid": role.id,
-                "channelid": message.channel.id,
-                "guildid": role.guild.id,
-            }
+            {"roleid": role.id, "channelid": message.channel.id, "guildid": role.guild.id,}
         )
         await ctx.send(
             f"Remember, the reactions only function according to "
@@ -1048,11 +1035,7 @@ class RoleManagement(
 
                 channel_id = data.get("channelid", None)
                 if channel_id:
-                    link = linkfmt.format(
-                        guild_id=role.guild.id,
-                        channel_id=channel_id,
-                        message_id=message_id,
-                    )
+                    link = linkfmt.format(guild_id=role.guild.id, channel_id=channel_id, message_id=message_id,)
                 else:
                     link = (
                         f"unknown message with id {message_id}" f" (use `roleset fixup` to find missing data for this)"

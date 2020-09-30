@@ -70,12 +70,7 @@ class Task:
 
             with contextlib.suppress(AttributeError, ValueError):
                 yield cls(
-                    initial=initial,
-                    recur=recur,
-                    channel=channel,
-                    author=author,
-                    uid=uid,
-                    **data,
+                    initial=initial, recur=recur, channel=channel, author=author, uid=uid, **data,
                 )
 
     @property

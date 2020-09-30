@@ -86,8 +86,7 @@ class SchedulerMessage(discord.Message):
         )
         self.channel_mentions: List[discord.TextChannel] = list(
             filter(
-                None,
-                [self.guild.get_channel(idx) for idx in self.raw_channel_mentions],  # type: ignore
+                None, [self.guild.get_channel(idx) for idx in self.raw_channel_mentions],  # type: ignore
             )
         )
         self.role_mentions: List[discord.Role] = list(

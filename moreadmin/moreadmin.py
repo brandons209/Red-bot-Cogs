@@ -587,12 +587,7 @@ class MoreAdmin(commands.Cog):
     @checks.admin_or_permissions(administrator=True)
     @checks.bot_has_permissions(kick_members=True)
     async def purge(
-        self,
-        ctx,
-        role: discord.Role,
-        check_messages: bool = True,
-        *,
-        threshold: str = None,
+        self, ctx, role: discord.Role, check_messages: bool = True, *, threshold: str = None,
     ):
         """
         Purge inactive users with role.
@@ -799,7 +794,7 @@ class MoreAdmin(commands.Cog):
     @commands.command(hidden=True)
     @commands.guild_only()
     async def say(self, ctx, *, content: str):
-        await ctx.send(escape(content, mass_mentions=True))
+        await ctx.send(escape(content, mass_mentions=True), allowed_mentions=discord.AllowedMentions())
 
     @commands.command(hidden=True)
     @commands.guild_only()
@@ -839,7 +834,7 @@ class MoreAdmin(commands.Cog):
         Sends a message to a channel from Aurelia.
         """
         try:
-            await channel.send(msg)
+            await channel.send(msg, allowed_mentions=discord.AllowedMentions())
         except:
             await ctx.send("Could not send message in that channel.")
 
@@ -890,6 +885,33 @@ class MoreAdmin(commands.Cog):
             await ctx.send("(no message content)")
         else:
             await ctx.send("{}".format(escape(message.content, formatting=True, mass_mentions=True)))
+
+    @commands.command()
+    @commands.guild_only()
+    @checks.mod()
+    async def getall(self, ctx, channel: discord.TextChannel, message_id: int):
+        """
+        Gets ALL messages with it's formatting from Aurelia after the specified message.
+
+        For now, limit is 100 messages
+        """
+        messages = []
+        try:
+            message = await channel.fetch_message(message_id)
+        except:
+            await ctx.send("Sorry, that message could not be found.")
+            return
+
+        async for m in channel.history(limit=100, after=message.created_at):
+            if m.author == ctx.guild.me:
+                messages.append(m)
+
+        for message in messages:
+            if message.content == "":
+                await ctx.send("(no message content)")
+            else:
+                await ctx.send("{}".format(escape(message.content, formatting=True, mass_mentions=True)))
+            await asyncio.sleep(0.2)
 
     @commands.command()
     @commands.guild_only()

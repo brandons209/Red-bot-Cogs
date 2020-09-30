@@ -816,7 +816,9 @@ class Welcome(commands.Cog):
             log.error(f"Failed to send {event} message to channel ID {channel.id} (server ID {guild.id})")
             return None
         except KeyError:
-            log.error(f"Failed to send {event} message to channel ID {channel.id} (server id {guild.id}) because there is an error in message formatting.")
+            log.error(
+                f"Failed to send {event} message to channel ID {channel.id} (server id {guild.id}) because there is an error in message formatting."
+            )
             return await channel.send(f"{box(format_str)} has an unknown key in brackets. Please fix this format.")
 
     async def __get_random_message_format(self, guild: discord.guild, event: str) -> str:

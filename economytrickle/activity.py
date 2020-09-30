@@ -27,10 +27,7 @@ class RecentActivityRecord:
         return len(self.activities) + len(self.messages)
 
     def _filter(
-        self,
-        *,
-        after: Optional[datetime] = None,
-        message_check: Optional[MessagePredicate] = None,
+        self, *, after: Optional[datetime] = None, message_check: Optional[MessagePredicate] = None,
     ) -> List[Union[datetime, discord.Message]]:
 
         ret: List[Union[datetime, discord.Message]] = []
@@ -52,10 +49,7 @@ class RecentActivityRecord:
         return ret
 
     def conditional_count(
-        self,
-        *,
-        after: Optional[datetime] = None,
-        message_check: Optional[MessagePredicate] = None,
+        self, *, after: Optional[datetime] = None, message_check: Optional[MessagePredicate] = None,
     ) -> int:
 
         ret = len(self._filter(after=after, message_check=message_check))
@@ -63,10 +57,7 @@ class RecentActivityRecord:
         return ret
 
     def conditional_remove(
-        self,
-        *,
-        before: Optional[datetime] = None,
-        message_check: Optional[MessagePredicate] = None,
+        self, *, before: Optional[datetime] = None, message_check: Optional[MessagePredicate] = None,
     ):
         if before:
             self.activities = [a for a in self.activities if a > before]
@@ -109,11 +100,7 @@ class RecordHandler:
         self.records[guild][member].add_message(message)
 
     def get_active_for_guild(
-        self,
-        *,
-        guild: discord.Guild,
-        after: datetime,
-        message_check: Optional[MessagePredicate] = None,
+        self, *, guild: discord.Guild, after: datetime, message_check: Optional[MessagePredicate] = None,
     ) -> Iterator[discord.Member]:
 
         with contextlib.suppress(KeyError):

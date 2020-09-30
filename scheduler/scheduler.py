@@ -175,10 +175,7 @@ class Scheduler(commands.Cog):
             task.cancel()
 
     async def red_delete_data_for_user(
-        self,
-        *,
-        requester: Literal["discord_deleted_user", "owner", "user", "user_strict"],
-        user_id: int,
+        self, *, requester: Literal["discord_deleted_user", "owner", "user", "user_strict"], user_id: int,
     ):
         loaded_tasks = await self.fetch_task_by_attrs_exact(author=user_id)
         if loaded_tasks:
@@ -431,8 +428,7 @@ class Scheduler(commands.Cog):
         """
 
         tasks = await self.fetch_task_by_attrs_lax(
-            lax={"uid": info, "nicename": info},
-            strict={"author": ctx.author, "channel": ctx.channel},
+            lax={"uid": info, "nicename": info}, strict={"author": ctx.author, "channel": ctx.channel},
         )
 
         if not tasks:
@@ -467,10 +463,7 @@ class Scheduler(commands.Cog):
         await self.task_menu(ctx, tasks)
 
     async def task_menu(
-        self,
-        ctx: commands.GuildContext,
-        tasks: List[Task],
-        message: Optional[discord.Message] = None,
+        self, ctx: commands.GuildContext, tasks: List[Task], message: Optional[discord.Message] = None,
     ):
 
         color = await ctx.embed_color()
@@ -577,7 +570,7 @@ class Scheduler(commands.Cog):
 
     @helpers.command(name="say")
     async def say(self, ctx: commands.GuildContext, *, content: str):
-        await ctx.send(content)
+        await ctx.send(content, allowed_mentions=discord.AllowedMentions())
 
     @helpers.command(name="selfwhisper")
     async def swhisp(self, ctx: commands.GuildContext, *, content: str):

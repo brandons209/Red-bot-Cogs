@@ -311,6 +311,18 @@ class NitroEmoji(commands.Cog):
                     await self.del_emoji(after.guild, after, emoji=emoji, reason=reason)
 
     @commands.Cog.listener()
+    async def on_member_leave(self, member):
+        # remove all member emojis on leave
+        emojis = await self.config.member(member).emojis()
+        for emoji in emojis:
+            emoji = self.find_emoji(member.guild, emoji)
+            if not emoji:
+                continue
+            await self.del_emoji(member.guild, member, emoji=emoji, reason="Member left.")
+
+        await self.config.member(member).clear()
+
+    @commands.Cog.listener()
     async def on_guild_emojis_update(self, guild, before, after):
         b_e = set(before)
         a_e = set(after)
