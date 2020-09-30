@@ -834,7 +834,7 @@ class MoreAdmin(commands.Cog):
         Sends a message to a channel from Aurelia.
         """
         try:
-            await channel.send(msg, allowed_mentions=discord.AllowedMentions())
+            await channel.send(msg)#, allowed_mentions=discord.AllowedMentions())
         except:
             await ctx.send("Could not send message in that channel.")
 
