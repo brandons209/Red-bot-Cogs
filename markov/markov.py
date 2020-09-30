@@ -55,7 +55,7 @@ class Markov(commands.Cog):
 
     @markovset.command(name="prefix")
     async def markovset_prefixes(self, ctx, *, prefixes: str = None):
-        """ Set prefixes for bots in your server
+        """Set prefixes for bots in your server
         This is so markov won't log bot commands.
         """
         if not prefixes:
@@ -101,7 +101,7 @@ class Markov(commands.Cog):
     @commands.cooldown(rate=1, per=10, type=commands.BucketType.user)
     @checks.bot_has_permissions(embed_links=True)
     async def markov(self, ctx, *, starting_text: str = None):
-        """ Generate text using markov chains!
+        """Generate text using markov chains!
 
         Text generated is based on what users say in the current channel
         """
