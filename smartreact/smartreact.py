@@ -1,4 +1,3 @@
-import copy
 import discord
 from redbot.core import Config, commands, checks
 from redbot.core.utils.chat_formatting import pagify
@@ -36,6 +35,7 @@ class SmartReact(commands.Cog):
 
     def fix_custom_emoji(self, emoji):
         if emoji[:2] not in ["<:", "<a"]:
+            # default emoji
             return emoji
         for guild in self.bot.guilds:
             for e in guild.emojis:
@@ -94,6 +94,23 @@ class SmartReact(commands.Cog):
         except (discord.errors.HTTPException, discord.errors.InvalidArgument):
             await message.channel.send("That's not an emoji I recognize. " "(might be custom!)")
 
+    async def clean_dead_emojis(self, guild):
+        """
+        Clean all emojis that don't exist anymore in the server
+        """
+        reacts = await self.conf.guild(guild).reactions()
+        to_delete = []
+
+        for emoji in reacts.keys():
+            e = self.fix_custom_emoji(emoji)
+            if not e:
+                to_delete.append(emoji)
+
+        for emoji in to_delete:
+            del reacts[emoji]
+
+        await self.conf.guild(guild).reactions.set(reacts)
+
     # Thanks irdumb#1229 for the help making this "more Pythonic"
     @commands.Cog.listener()
     async def on_message(self, message):
@@ -102,13 +119,16 @@ class SmartReact(commands.Cog):
         if message.author == self.bot.user:
             return
         guild = message.guild
-        reacts = copy.deepcopy(await self.conf.guild(guild).reactions())
+        reacts = await self.conf.guild(guild).reactions()
         if reacts is None:
             return
         words = message.content.lower().split()
         for emoji in reacts:
             if set(w.lower() for w in reacts[emoji]).intersection(words):
                 emoji = self.fix_custom_emoji(emoji)
+                if not emoji:
+                    await self.clean_dead_emojis(guild)
+                    return
                 try:
                     await message.add_reaction(emoji)
                 except discord.errors.Forbidden:
