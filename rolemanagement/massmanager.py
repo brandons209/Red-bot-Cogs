@@ -124,7 +124,11 @@ class MassManagementMixin(MixinMeta):
 
     @mrole.command(name="user")
     async def mrole_user(
-        self, ctx: GuildContext, users: commands.Greedy[discord.Member], *, _query: RoleSyntaxConverter,
+        self,
+        ctx: GuildContext,
+        users: commands.Greedy[discord.Member],
+        *,
+        _query: RoleSyntaxConverter,
     ) -> None:
         """
         adds/removes roles to one or more users
@@ -245,7 +249,8 @@ class MassManagementMixin(MixinMeta):
                 filename += f"-part{part}"
             filename += ".csv"
             await ctx.send(
-                content=f"Data for {ctx.author.mention}", files=[discord.File(data, filename=filename)],
+                content=f"Data for {ctx.author.mention}",
+                files=[discord.File(data, filename=filename)],
             )
             csvf.close()
             data.close()
@@ -299,11 +304,17 @@ class MassManagementMixin(MixinMeta):
                     await self.update_roles_atomically(who=member, give=query["add"], remove=query["remove"])
                 except RoleManagementException:
                     log.debug(
-                        "Internal filter failure on member id %d guild id %d query %s", member.id, ctx.guild.id, query,
+                        "Internal filter failure on member id %d guild id %d query %s",
+                        member.id,
+                        ctx.guild.id,
+                        query,
                     )
                 except discord.HTTPException:
                     log.debug(
-                        "Unpredicted failure for member id %d in guild id %d query %s", member.id, ctx.guild.id, query,
+                        "Unpredicted failure for member id %d in guild id %d query %s",
+                        member.id,
+                        ctx.guild.id,
+                        query,
                     )
 
         await ctx.tick()
