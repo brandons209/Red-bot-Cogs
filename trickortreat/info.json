@@ -1,0 +1,17 @@
+"author": [
+  "Brandons209"
+],
+"bot_version": [
+  3,
+  0,
+  0
+],
+"description": "Trick or treat! Sometimes you get some credits, sometimes you get tricked and lose them!",
+"hidden": false,
+"install_msg": "Thank you for using this cog! Please make sure to setup the cog using [p]totset",
+"requirements": [],
+"short": "Provides a fun way to get currency during spooktober.",
+"tags": [
+  "brandons209",
+  "Halloween"
+]
