@@ -79,7 +79,11 @@ class UtilMixin(MixinMeta):
         return variation_stripper_re.sub("", s)
 
     async def update_roles_atomically(
-        self, *, who: discord.Member, give: List[discord.Role] = None, remove: List[discord.Role] = None,
+        self,
+        *,
+        who: discord.Member,
+        give: List[discord.Role] = None,
+        remove: List[discord.Role] = None,
     ):
         """
         Give and remove roles as a single op with some slight sanity
