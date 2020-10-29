@@ -170,6 +170,8 @@ class MoreAdmin(commands.Cog):
         SLEEP_TIME = 300
         while True:
             for guild in self.bot.guilds:
+                if await self.bot.cog_disabled_in_guild(self, guild):
+                    continue
                 channel = await self.config.guild(guild).user_count_channel()
                 if channel:
                     channel = guild.get_channel(channel)
@@ -799,13 +801,13 @@ class MoreAdmin(commands.Cog):
     @commands.command(hidden=True)
     @commands.guild_only()
     async def say(self, ctx, *, content: str):
-        await ctx.send(escape(content, mass_mentions=True), allowed_mentions=discord.AllowedMentions())
+        await ctx.send(escape(content, mass_mentions=True), allowed_mentions=discord.AllowedMentions.all())
 
     @commands.command(hidden=True)
     @commands.guild_only()
     async def selfdm(self, ctx, *, content: str):
         try:
-            await ctx.author.send(content)
+            await ctx.author.send(content, allowed_mentions=discord.AllowedMentions.all())
         except:
             await ctx.send(
                 "I couldn't send you the DM, make sure to turn on messages from server members! Here is the message:"
@@ -827,7 +829,7 @@ class MoreAdmin(commands.Cog):
             return
 
         try:
-            await message.edit(content=msg)
+            await message.edit(content=msg, allowed_mentions=discord.AllowedMentions.all())
         except:
             await ctx.send("Could not edit message.")
 
@@ -839,7 +841,7 @@ class MoreAdmin(commands.Cog):
         Sends a message to a channel from Aurelia.
         """
         try:
-            await channel.send(msg)  # , allowed_mentions=discord.AllowedMentions())
+            await channel.send(msg, allowed_mentions=discord.AllowedMentions.all())
         except:
             await ctx.send("Could not send message in that channel.")
 
@@ -974,6 +976,10 @@ class MoreAdmin(commands.Cog):
 
     @commands.Cog.listener()
     async def on_member_join(self, member):
+        if await self.bot.cog_disabled_in_guild(self, member.guild):
+            return
+        if await self.bot.cog_disabled_in_guild(self, member.guild):
+            return
         sus_threshold = await self.config.guild(member.guild).sus_user_threshold()
         if not sus_threshold:
             return
@@ -1003,6 +1009,8 @@ class MoreAdmin(commands.Cog):
 
     @commands.Cog.listener()
     async def on_message(self, message):
+        if await self.bot.cog_disabled_in_guild(self, message.guild):
+            return
         # Set user's last message
         if not message.guild:
             return

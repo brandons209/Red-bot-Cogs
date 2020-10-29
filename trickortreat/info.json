@@ -3,7 +3,7 @@
 ],
 "bot_version": [
   3,
-  0,
+  4,
   0
 ],
 "description": "Trick or treat! Sometimes you get some credits, sometimes you get tricked and lose them!",
@@ -14,4 +14,5 @@
 "tags": [
   "brandons209",
   "Halloween"
-]
+],
+"end_user_data_statement": "This doesn't store any user data."

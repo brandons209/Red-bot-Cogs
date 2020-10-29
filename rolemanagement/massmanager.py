@@ -206,7 +206,11 @@ class MassManagementMixin(MixinMeta):
             embed = discord.Embed(description=description)
             if ctx.guild:
                 embed.color = ctx.guild.me.color
-            await ctx.send(embed=embed, content=f"Search results for {ctx.author.mention}")
+            await ctx.send(
+                embed=embed,
+                content=f"Search results for {ctx.author.mention}",
+                allowed_mentions=discord.AllowedMentions.all(),
+            )
 
         else:
             await self.send_maybe_chunked_csv(ctx, list(members))
@@ -251,6 +255,7 @@ class MassManagementMixin(MixinMeta):
             await ctx.send(
                 content=f"Data for {ctx.author.mention}",
                 files=[discord.File(data, filename=filename)],
+                allowed_mentions=discord.AllowedMentions.all(),
             )
             csvf.close()
             data.close()

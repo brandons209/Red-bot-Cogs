@@ -287,6 +287,8 @@ class Leveler(commands.Cog):
         await ctx.send(file=discord.File(img))
 
     async def listener(self, message):
+        if await self.bot.cog_disabled_in_guild(self, message.guild):
+            return
         if type(message.author) != discord.Member:
             # throws an error when webhooks talk, this fixes it
             return
@@ -330,7 +332,10 @@ class Leveler(commands.Cog):
             await self.profiles._set_user_lastmessage(message.author, timenow)
             lvl = await self.profiles._get_level(message.author)
             if lvl == oldlvl + 1 and await self.profiles.data.guild(message.guild).lvlup_announce():
-                await message.channel.send(_("{} is now level {} !".format(message.author.mention, lvl)))
+                await message.channel.send(
+                    _("{} is now level {} !".format(message.author.mention, lvl)),
+                    allowed_mentions=discord.AllowedMentions.all(),
+                )
             await self.profiles._check_exp(message.author)
             await self.profiles._check_role_member(message.author)
 
@@ -644,5 +649,7 @@ class Leveler(commands.Cog):
     # Listeners
     @commands.Cog.listener()
     async def on_member_remove(self, member):
+        if await self.bot.cog_disabled_in_guild(self, member.guild):
+            return
         # reset level stats on leave.
         await self.profiles.data.member(member).clear()

@@ -6,5 +6,7 @@
     "INSTALL_MSG" : "Thanks for installing ReactPoll. Please make sure your bot has the 'Manage Messages' permission so it can manage emoji reactions on messages.",
     "REQUIREMENTS" : ["python-dateutil", "pytz"],
     "TAGS" : ["poll", "reaction", "emoji", "react"],
-    "DISABLED" : false
+    "DISABLED" : false,
+    "min_bot_version": "3.4.0",
+    "end_user_data_statement": "This cog won't store user data."
 }

@@ -6,7 +6,7 @@
   ],
   "bot_version": [
     3,
-    0,
+    4,
     0
   ],
   "description": "Search derpibooru for images of ponies! Fully customizable filter list!",
@@ -20,5 +20,6 @@
     "pony",
     "mlp",
     "image"
-  ]
+  ],
+    "end_user_data_statement": "This doesn't store any data."
 }

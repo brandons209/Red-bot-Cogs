@@ -4,16 +4,16 @@
   ],
   "bot_version": [
     3,
-    0,
+    4,
     0
   ],
-  "description": "",
+  "description": "Tracks specified roles on when they are added, removed, and who updates them.",
   "hidden": false,
-  "install_msg": "",
+  "install_msg": "Thank you for using my cog!",
   "requirements": [],
-  "short": "",
   "tags": [
     "brandons209",
     "pancakesparkle"
-  ]
+  ],
+  "end_user_data_statement": "Depending on setup, can log user messages, voice channel activity, audit actions in guilds, activity statistics per guild, user name changes, and any moderation actions per guild."
 }

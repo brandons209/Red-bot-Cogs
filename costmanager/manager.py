@@ -126,7 +126,8 @@ class CostManager(commands.Cog):
             except:
                 if receipt != -1:  # send mention if first time getting this message
                     await ctx.send(
-                        f"Hey {member.mention}, please turn on DMs from server members in your settings so I can send you receipts for purchase of commands."
+                        f"Hey {member.mention}, please turn on DMs from server members in your settings so I can send you receipts for purchase of commands.",
+                        allowed_mentions=discord.AllowedMentions.all(),
                     )
 
                     await self.config.member(member).receipt.set(-1)
@@ -400,7 +401,8 @@ class CostManager(commands.Cog):
             currency_name = await bank.get_currency_name(ctx.guild)
             balance = await bank.get_balance(ctx.author)
             message = await ctx.send(
-                f"Sorry {ctx.author.name}, you do not have enough {currency_name} to use that command. (Cost: {cost}, Balance: {balance})"
+                f"Sorry {ctx.author.name}, you do not have enough {currency_name} to use that command. (Cost: {cost}, Balance: {balance})",
+                allowed_mentions=discord.AllowedMentions.all(),
             )
             await asyncio.sleep(10)
             await message.delete()

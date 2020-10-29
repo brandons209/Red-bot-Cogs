@@ -14,5 +14,7 @@
   ],
   "requirements": [
     "tabulate"
-  ]
+  ],
+  "min_bot_version": "3.4.0",
+  "end_user_data_statement": "This will store what a user's custom role is if they have one."
 }

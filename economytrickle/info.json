@@ -10,5 +10,6 @@
     "short": "Trickle money into user's account on activity.",
     "description": "Trickle money into user's account on activity, modified by Brandons209 from Sinbad.",
     "hidden": false,
-    "min_bot_version": "3.1.8"
+    "min_bot_version": "3.4.0",
+    "end_user_data_statement": "This cog only stores internal variables per user."
 }

@@ -4,7 +4,7 @@
   ],
   "bot_version": [
     3,
-    3,
+    4,
     0
   ],
   "description": "Allow nitro boosters to add an emoji to the server, with channel logging.",
@@ -17,5 +17,6 @@
     "nitro",
     "boost",
     "emoji"
-  ]
+  ],
+  "end_user_data_statement": "This cog will store a user's custom emojis in each guild."
 }

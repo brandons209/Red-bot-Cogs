@@ -6,5 +6,7 @@
     "INSTALL_MSG" : "Thanks for installing EveryoneEmoji.",
     "REQUIREMENTS" : [],
     "TAGS" : ["emoji", "EveryoneEmoji", "everyone"],
-    "DISABLED" : false
+    "DISABLED" : false,
+    "min_bot_version": "3.4.0",
+    "end_user_data_statement": "This cog stores no data."
 }

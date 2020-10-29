@@ -43,6 +43,8 @@ class EventMixin(MixinMeta):
         Section has been optimized assuming member._roles
         remains an iterable containing snowflakes
         """
+        if await self.bot.cog_disabled_in_guild(self, after.guild):
+            return
         await self.wait_for_ready()
         if before._roles == after._roles:
             return
@@ -85,6 +87,8 @@ class EventMixin(MixinMeta):
     @commands.Cog.listener()
     async def on_member_join(self, member: discord.Member):
         await self.wait_for_ready()
+        if await self.bot.cog_disabled_in_guild(self, member.guild):
+            return
         guild = member.guild
         if not guild.me.guild_permissions.manage_roles:
             return
@@ -134,6 +138,9 @@ class EventMixin(MixinMeta):
             await self.maybe_update_guilds(guild)
         else:
             return
+
+        if await self.bot.cog_disabled_in_guild(self, guild):
+            return
         member = guild.get_member(payload.user_id)
 
         if member is None or member.bot:
@@ -181,6 +188,8 @@ class EventMixin(MixinMeta):
         guild = self.bot.get_guild(payload.guild_id)
         if not guild:
             # Where's it go?
+            return
+        if await self.bot.cog_disabled_in_guild(self, guild):
             return
         member = guild.get_member(payload.user_id)
         if not member or member.bot:

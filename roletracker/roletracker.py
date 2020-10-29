@@ -200,6 +200,8 @@ class RoleTracker(commands.Cog):
         """
         Listens for role updates and more
         """
+        if await self.bot.cog_disabled_in_guild(self, after.guild):
+            return
 
         if before.roles != after.roles:
             user = self.bot.user

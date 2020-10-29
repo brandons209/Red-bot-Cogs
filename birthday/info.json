@@ -6,7 +6,7 @@
     ],
     "bot_version": [
       3,
-      0,
+      4,
       0
     ],
     "description": "Cog used for setting birthdays and announcing them and giving people roles on their birthday",
@@ -17,5 +17,6 @@
     "tags": [
       "brandons209",
       "pancakesparkle"
-    ]
+    ],
+    "end_user_data_statement": "This cog will store a user's birthday."
   }

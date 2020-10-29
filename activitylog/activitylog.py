@@ -5,13 +5,14 @@ from redbot.core.data_manager import cog_data_path
 from redbot.core.utils.mod import is_mod_or_superior
 import discord
 
-from .time_utils import *
+from .utils import *
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
 import time
 import os
 import asyncio
 import glob
+import io
 
 # plotting
 from bisect import bisect_left
@@ -44,66 +45,6 @@ DELETE_TEMPLATE = AUTHOR_TEMPLATE + " deleted message from {1} ({0.clean_content
 DELETE_AUDIT_TEMPLATE = "@{0.name}#{0.discriminator}(id:{0.id}) deleted message from {3} @{2.name}#{2.discriminator}(id:{2.id}): ({1.clean_content})"
 
 MAX_LINES = 50000
-
-
-def get_all_names(guild_files, user):
-    names = [str(user)]
-    for log in guild_files:
-        if not os.path.exists(log):
-            continue
-        with open(log, "r") as f:
-            for line in f:
-                if str(user.id) in line:
-                    # user change their name
-                    if "Member username:" in line:
-                        username = line.strip().split('"')
-                        discrim = username[1].split("#")[-1]
-                        username = username[-2] + "#" + discrim
-                        names.append(username)
-                    # user changed their 4 digit discriminator
-                    elif "Member discriminator:" in line:
-                        username = line.strip().split('"')[-2]
-                        names.append(username)
-                    # starting name
-                    elif "Member join:" in line:
-                        username = line.strip().split("@")[-1].split("#")
-                        username = username[0] + "#" + username[1].split(" ")[0]
-                        if username is not str(user):
-                            names.append(username)
-    return set(names)
-
-
-def format_list(*items, join="and", delim=", "):
-    if len(items) > 1:
-        return (" %s " % join).join((delim.join(items[:-1]), items[-1]))
-    elif items:
-        return items[0]
-    else:
-        return ""
-
-
-class LogHandle:
-    """basic wrapper for logfile handles, used to keep track of stale handles"""
-
-    def __init__(self, path, time=None, mode="a", buf=1):
-        self.handle = open(path, mode, buf, errors="backslashreplace")
-        self.lock = asyncio.Lock()
-
-        if time:
-            self.time = time
-        else:
-            self.time = datetime.fromtimestamp(os.path.getmtime(path))
-
-    async def write(self, value):
-        async with self.lock:
-            self._write(value)
-
-    def close(self):
-        self.handle.close()
-
-    def _write(self, value):
-        self.time = datetime.utcnow()
-        self.handle.write(value)
 
 
 class ActivityLogger(commands.Cog):
@@ -259,7 +200,7 @@ class ActivityLogger(commands.Cog):
 
         if is_mod:
             try:
-                await ctx.send(embed=data)
+                await ctx.send(embed=data, allowed_mentions=discord.AllowedMentions.all())
             except discord.HTTPException:
                 await ctx.send("I need the `Embed links` permission to send this")
         else:
@@ -317,18 +258,9 @@ class ActivityLogger(commands.Cog):
         )
         msg += f"Bans: `{bans}`, Kicks: `{kicks}`, Mutes: `{mutes}`, Warnings: `{warns}`"
         if len(names) > 1:
-            return msg, format_list(*names)
+            return msg, humanize_list(names)
 
         return msg, None
-
-    @commands.command(name="fixavglen")
-    @checks.is_owner()
-    async def fixavglen(self, ctx):
-        for guild in self.bot.guilds:
-            for member in guild.members:
-                async with self.config.member(member).stats() as stats:
-                    stats["avg_len"] = stats["total_msg"] - stats["bot_cmd"]
-        await ctx.tick()
 
     @commands.command(name="graphstats")
     @checks.mod()
@@ -1141,14 +1073,14 @@ class ActivityLogger(commands.Cog):
                 await self.config.guild(ctx.guild).prefixes.set([ctx.clean_prefix])
                 self.cache[ctx.guild.id]["prefixes"] = [ctx.clean_prefix]
                 return
-            await ctx.send("Current Prefixes: " + format_list(*curr, delim=", "))
+            await ctx.send("Current Prefixes: " + humanize_list(curr))
             return
 
         prefixes = [p for p in prefixes.split(" ")]
         await self.config.guild(ctx.guild).prefixes.set(prefixes)
         self.cache[ctx.guild.id]["prefixes"] = prefixes
         prefixes = [f"`{p}`" for p in prefixes]
-        await ctx.send("Prefixes set to: " + format_list(*prefixes, delim=", "))
+        await ctx.send("Prefixes set to: " + humanize_list(prefixes))
 
     @logset.command(name="rotation")
     async def set_rotation(self, ctx, freq: str = None):
@@ -1434,16 +1366,22 @@ class ActivityLogger(commands.Cog):
     # Listeners
     @commands.Cog.listener()
     async def on_message(self, message):
+        if await self.bot.cog_disabled_in_guild(self, message.guild):
+            return
         await self.message_handler(message)
 
     @commands.Cog.listener()
     async def on_message_edit(self, before, after):
+        if await self.bot.cog_disabled_in_guild(self, after.guild):
+            return
         timestamp = before.created_at.strftime(TIMESTAMP_FORMAT)
         entry = EDIT_TEMPLATE.format(before, after, timestamp)
         await self.log(after.channel, entry, after.edited_at)
 
     @commands.Cog.listener()
     async def on_message_delete(self, message):
+        if await self.bot.cog_disabled_in_guild(self, message.guild):
+            return
         entry_s = None
         timestamp = message.created_at.strftime(TIMESTAMP_FORMAT)
         try:
@@ -1468,16 +1406,22 @@ class ActivityLogger(commands.Cog):
 
     @commands.Cog.listener()
     async def on_guild_join(self, guild):
+        if await self.bot.cog_disabled_in_guild(self, guild):
+            return
         entry = "this bot joined the guild"
         await self.log(guild, entry)
 
     @commands.Cog.listener()
     async def on_guild_remove(self, guild):
+        if await self.bot.cog_disabled_in_guild(self, guild):
+            return
         entry = "this bot left the guild"
         await self.log(guild, entry)
 
     @commands.Cog.listener()
     async def on_guild_update(self, before, after):
+        if await self.bot.cog_disabled_in_guild(self, after):
+            return
         entries = []
         user = None
         try:
@@ -1535,6 +1479,8 @@ class ActivityLogger(commands.Cog):
 
     @commands.Cog.listener()
     async def on_guild_role_create(self, role):
+        if await self.bot.cog_disabled_in_guild(self, role.guild):
+            return
         user = None
         try:
             async for entry in role.guild.audit_logs(limit=2):
@@ -1553,6 +1499,8 @@ class ActivityLogger(commands.Cog):
 
     @commands.Cog.listener()
     async def on_guild_role_delete(self, role):
+        if await self.bot.cog_disabled_in_guild(self, role.guild):
+            return
         user = None
         try:
             async for entry in role.guild.audit_logs(limit=2):
@@ -1571,6 +1519,8 @@ class ActivityLogger(commands.Cog):
 
     @commands.Cog.listener()
     async def on_guild_role_update(self, before, after):
+        if await self.bot.cog_disabled_in_guild(self, after.guild):
+            return
         entries = []
         user = None
         try:
@@ -1655,6 +1605,8 @@ class ActivityLogger(commands.Cog):
 
     @commands.Cog.listener()
     async def on_member_join(self, member):
+        if await self.bot.cog_disabled_in_guild(self, member.guild):
+            return
         entry = "Member join: @{0} (id {0.id})".format(member)
 
         async with self.config.user(member).past_names() as past_names:
@@ -1665,6 +1617,8 @@ class ActivityLogger(commands.Cog):
 
     @commands.Cog.listener()
     async def on_member_remove(self, member):
+        if await self.bot.cog_disabled_in_guild(self, member.guild):
+            return
         user = None
         try:
             async for entry in member.guild.audit_logs(limit=2):
@@ -1688,6 +1642,8 @@ class ActivityLogger(commands.Cog):
 
     @commands.Cog.listener()
     async def on_member_ban(self, guild, member):
+        if await self.bot.cog_disabled_in_guild(self, guild):
+            return
         user = None
         try:
             async for entry in guild.audit_logs(limit=2):
@@ -1706,6 +1662,8 @@ class ActivityLogger(commands.Cog):
 
     @commands.Cog.listener()
     async def on_member_unban(self, guild, member):
+        if await self.bot.cog_disabled_in_guild(self, guild):
+            return
         user = None
         try:
             async for entry in guild.audit_logs(limit=2):
@@ -1724,6 +1682,8 @@ class ActivityLogger(commands.Cog):
 
     @commands.Cog.listener()
     async def on_member_update(self, before, after):
+        if await self.bot.cog_disabled_in_guild(self, after.guild):
+            return
         entries = []
         user = None
         try:
@@ -1799,6 +1759,8 @@ class ActivityLogger(commands.Cog):
 
     @commands.Cog.listener()
     async def on_guild_channel_create(self, channel):
+        if await self.bot.cog_disabled_in_guild(self, channel.guild):
+            return
         user = None
         try:
             async for entry in channel.guild.audit_logs(limit=2):
@@ -1819,6 +1781,8 @@ class ActivityLogger(commands.Cog):
 
     @commands.Cog.listener()
     async def on_guild_channel_delete(self, channel):
+        if await self.bot.cog_disabled_in_guild(self, channel.guild):
+            return
         user = None
         try:
             async for entry in channel.guild.audit_logs(limit=2):
@@ -1839,6 +1803,8 @@ class ActivityLogger(commands.Cog):
 
     @commands.Cog.listener()
     async def on_guild_channel_update(self, before, after):
+        if await self.bot.cog_disabled_in_guild(self, after.guild):
+            return
         user = None
         try:
             async for entry in after.guild.audit_logs(limit=2):
@@ -1900,6 +1866,8 @@ class ActivityLogger(commands.Cog):
 
     @commands.Cog.listener()
     async def on_voice_state_update(self, member, before, after):
+        if await self.bot.cog_disabled_in_guild(self, member.guild):
+            return
         if not self.should_log(before.channel):
             return
 
@@ -1958,3 +1926,19 @@ class ActivityLogger(commands.Cog):
         if before.self_video != after.self_video:
             verb = "start-video" if after.self_video else "stop-video"
             await self.log(before.channel, "guild self-{0}: {1} (id {1.id})".format(verb, member))
+
+    # async def red_get_data_for_user(self, user_id: int):
+    # default_user = {"past_names": []}
+    # default_member = {
+    #    "stats": {"total_msg": 0, "bot_cmd": 0, "avg_len": 0.0, "vc_time_sec": 0.0, "last_vc_time": None}
+    #    }
+    # past_names = await self.config.user_from_id(user_id).past_names()
+    # data = {"past_names": past_names}
+
+    # for guild in self.bot.guilds:
+    #    member = guild.get_member(user_id)
+    #    if member:
+    #        data[guild.name] = await self.config.member(member).stats()
+
+    async def red_delete_data_for_user(self, requester: str, user_id: int):
+        pass

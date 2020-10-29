@@ -4,7 +4,7 @@
   ],
   "bot_version": [
     3,
-    0,
+    4,
     0
   ],
   "description": "Uses markov chains to generate unique text in your guild! Text generated is based on what users say per channel. The markov model can be reset if needed as well per channel.",
@@ -18,5 +18,6 @@
     "markov",
     "generaton",
     "markov chain"
-  ]
+  ],
+  "end_user_data_statement": "This doesn't store any user data."
 }

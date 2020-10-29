@@ -18,7 +18,7 @@ import textwrap
 
 log = logging.getLogger("red.punish")
 
-__version__ = "3.0.0"
+__version__ = "3.3.0"
 
 PURGE_MESSAGES = 1  # for cpunish
 
@@ -1373,6 +1373,8 @@ class Punish(commands.Cog):
     # Listeners
     @commands.Cog.listener()
     async def on_guild_channel_create(self, channel):
+        if await self.bot.cog_disabled_in_guild(self, channel.guild):
+            return
         """Run when new channels are created and set up role permissions"""
         role = await self.get_role(channel.guild, quiet=True)
         if not role:
@@ -1383,6 +1385,8 @@ class Punish(commands.Cog):
     @commands.Cog.listener()
     async def on_member_update(self, before, after):
         """Remove scheduled unpunish when manually removed role"""
+        if await self.bot.cog_disabled_in_guild(self, after.guild):
+            return
         try:
             assert before.roles != after.roles
             guild_data = await self.config.guild(before.guild).PUNISHED()
@@ -1411,6 +1415,8 @@ class Punish(commands.Cog):
     @commands.Cog.listener()
     async def on_member_join(self, member):
         """Restore punishment if punished user leaves/rejoins"""
+        if await self.bot.cog_disabled_in_guild(self, member.guild):
+            return
         guild = member.guild
         punished = await self.config.guild(guild).PUNISHED()
         data = punished.get(str(member.id), {})
@@ -1434,6 +1440,8 @@ class Punish(commands.Cog):
 
     @commands.Cog.listener()
     async def on_voice_state_update(self, member, before, after):
+        if await self.bot.cog_disabled_in_guild(self, after.guild):
+            return
         if not after.channel:
             return
 
@@ -1454,6 +1462,8 @@ class Punish(commands.Cog):
     @commands.Cog.listener()
     async def on_member_ban(self, member):
         """Remove punishment record when member is banned."""
+        if await self.bot.cog_disabled_in_guild(self, member.guild):
+            return
         guild = member.guild
         data = await self.config.guild(guild).PUNISHED()
         member_data = data.get(str(member.id))

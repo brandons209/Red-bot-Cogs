@@ -570,6 +570,8 @@ class Welcome(commands.Cog):
     @commands.Cog.listener()
     async def on_member_join(self, member: discord.Member) -> None:
         """Listens for member joins."""
+        if await self.bot.cog_disabled_in_guild(self, member.guild):
+            return
 
         guild: discord.Guild = member.guild
         guild_settings = self.config.guild(guild)
@@ -601,12 +603,16 @@ class Welcome(commands.Cog):
     @commands.Cog.listener()
     async def on_member_remove(self, member: discord.Member) -> None:
         """Listens for member leaves."""
+        if await self.bot.cog_disabled_in_guild(self, member.guild):
+            return
 
         await self.__handle_event(member.guild, member, "leave")
 
     @commands.Cog.listener()
     async def on_member_ban(self, guild: discord.Guild, member: discord.Member) -> None:
         """Listens for user bans."""
+        if await self.bot.cog_disabled_in_guild(self, member.guild):
+            return
 
         await self.__handle_event(guild, member, "ban")
 
@@ -804,7 +810,8 @@ class Welcome(commands.Cog):
             return await channel.send(
                 format_str.format(
                     member=user, server=guild, bot=user, count=count or "", plural=plural, roles=roles, stats=stats
-                )
+                ),
+                allowed_mentions=discord.AllowedMentions.all(),
             )
         except discord.Forbidden:
             log.error(
@@ -848,7 +855,10 @@ class Welcome(commands.Cog):
         message_format = await self.config.guild(member.guild).join.whisper.message()
 
         try:
-            await member.send(message_format.format(member=member, server=member.guild))
+            await member.send(
+                message_format.format(member=member, server=member.guild),
+                allowed_mentions=discord.AllowedMentions.all(),
+            )
         except discord.Forbidden:
             log.error(
                 f"Failed to send DM to member ID {member.id} (server ID {member.guild.id}): insufficient permissions"

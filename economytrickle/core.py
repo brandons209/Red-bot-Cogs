@@ -49,6 +49,8 @@ class EconomyTrickle(commands.Cog):
 
     @commands.Cog.listener()
     async def on_message(self, message):
+        if await self.bot.cog_disabled_in_guild(self, message.guild):
+            return
         if message.guild and await self.config.guild(message.guild).active():
             self.recordhandler.proccess_message(message)
 

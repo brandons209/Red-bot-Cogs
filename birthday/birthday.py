@@ -63,6 +63,8 @@ class Birthday(commands.Cog):
 
     async def check_bdays(self):
         for guild in self.bot.guilds:
+            if await self.bot.cog_disabled_in_guild(self, guild):
+                continue
             for member in guild.members:
                 await self.check_member_bday(member)
 
@@ -97,7 +99,7 @@ class Birthday(commands.Cog):
                     else:
                         embed.description = f"Happy Birthday to {member.mention}!"
                     try:
-                        await channel.send(embed=embed)
+                        await channel.send(embed=embed, allow_mentions=True)
                     except:
                         pass
 

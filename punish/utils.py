@@ -145,9 +145,9 @@ def role_from_string(guild, rolename, roles=None):
 
         if role:
             return role
-
-    rolename = rolename.lower()
-    role = discord.utils.find(lambda r: r.name.lower() == rolename, roles)
+    else:
+        rolename = rolename.lower()
+        role = discord.utils.find(lambda r: r.name.lower() == rolename, roles)
 
     return role
 

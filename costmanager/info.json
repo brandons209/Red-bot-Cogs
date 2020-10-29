@@ -4,7 +4,7 @@
   ],
   "bot_version": [
     3,
-    0,
+    4,
     0
   ],
   "description": "Allow setting up costs for any commands of your bot, with user, and role hierarchy. Also allows setting roles who do not have to pay for commands. Has receptions DMed and updated to allow users to track their spending.",
@@ -15,5 +15,6 @@
   "tags": [
     "brandons209",
     "redbot"
-  ]
+  ],
+  "end_user_data_statement": "This cog won't store anything for a user."
 }

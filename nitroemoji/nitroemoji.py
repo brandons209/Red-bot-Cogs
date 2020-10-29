@@ -285,6 +285,8 @@ class NitroEmoji(commands.Cog):
 
     @commands.Cog.listener()
     async def on_member_update(self, before, after):
+        if await self.bot.cog_disabled_in_guild(self, after.guild):
+            return
         # check if they stopped boosting
         if (before.premium_since != after.premium_since and after.premium_since is None) or before.roles != after.roles:
             boosts = await self.get_boosts(after)
@@ -312,6 +314,8 @@ class NitroEmoji(commands.Cog):
 
     @commands.Cog.listener()
     async def on_member_leave(self, member):
+        if await self.bot.cog_disabled_in_guild(self, member.guild):
+            return
         # remove all member emojis on leave
         emojis = await self.config.member(member).emojis()
         for emoji in emojis:
@@ -324,6 +328,8 @@ class NitroEmoji(commands.Cog):
 
     @commands.Cog.listener()
     async def on_guild_emojis_update(self, guild, before, after):
+        if await self.bot.cog_disabled_in_guild(self, guild):
+            return
         b_e = set(before)
         a_e = set(after)
         diff = b_e - a_e

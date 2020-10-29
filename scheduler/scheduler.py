@@ -577,7 +577,7 @@ class Scheduler(commands.Cog):
 
     @helpers.command(name="say")
     async def say(self, ctx: commands.GuildContext, *, content: str):
-        await ctx.send(content, allowed_mentions=discord.AllowedMentions())
+        await ctx.send(content, allowed_mentions=discord.AllowedMentions.all())
 
     @helpers.command(name="selfwhisper")
     async def swhisp(self, ctx: commands.GuildContext, *, content: str):

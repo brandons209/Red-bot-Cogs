@@ -70,6 +70,8 @@ class Disable(commands.Cog):
 
     @commands.Cog.listener()
     async def on_command_error(self, ctx, exception):
+        if await self.bot.cog_disabled_in_guild(self, ctx.guild):
+            return
         if isinstance(exception, DisabledError):
             msg = await self.config.guild(ctx.guild).disabled_message()
             await ctx.send(msg.format(ctx.command.name))

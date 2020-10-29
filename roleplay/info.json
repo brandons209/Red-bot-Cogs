@@ -1,0 +1,19 @@
+{
+  "author": [
+    "TheBluekr"
+  ],
+  "bot_version": [
+    3,
+    4,
+    0
+  ],
+  "description": "Roleplay commands for booping, hugging, etc.",
+  "hidden": false,
+  "install_msg": "Thanks for using my cog!",
+  "requirements": [],
+  "tags": [
+    "brandons209",
+    "Som3thing"
+  ],
+  "end_user_data_statement": "No data is stored."
+}
