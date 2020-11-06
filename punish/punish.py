@@ -1069,6 +1069,22 @@ class Punish(commands.Cog):
             await ctx.send("You can't punish the bot.")
             return
 
+        # check if user is isolated, fix conflict with isolate cog
+        isolate = self.bot.get_cog("Isolate")
+
+        if isolate:
+            isolated = await isolate.config.guild(guild).ISOLATED()
+            if str(member.id) in isolated:
+                await ctx.send(
+                    warning("This person is isolated, I will remove it now before punishing to avoid conflicts.")
+                )
+                await ctx.invoke(isolate.isolate_end, user=member, reason="Conflict with punish cog.")
+            # double check it actually worked
+            isolated = await isolate.config.guild(guild).ISOLATED()
+            if str(member.id) in isolated:
+                await ctx.send(error("Couldn't remove isolation from user, please do it manually."))
+                return
+
         if duration and duration.lower() in ["forever", "inf", "infinite"]:
             duration = None
         else:
