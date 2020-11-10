@@ -19,6 +19,7 @@ class RolePlay(commands.Cog):
 
         mass_mentions = True
         self.config = Config.get_conf(self, identifier=3674895735)
+        self.bot = bot
         self.default_guild = {
             "slap_items": [
                 "a floppy disk",
@@ -116,10 +117,26 @@ class RolePlay(commands.Cog):
             elif intensity <= 9:
                 msg = "(つ≧▽≦)つ" + name
             elif intensity >= 10:
-                msg = "(づ￣ ³￣)づ{} ⊂(´・ω・｀⊂)".format(name)
+                msg = "(づ￣ ³￣)づ {} ⊂(´・ω・｀⊂)".format(name)
             await ctx.send(msg)
         else:
             await ctx.send("Member not found.")
+
+    @commands.command()
+    async def grouphug(self, ctx, *users: discord.Member):
+        """
+        Give a group hug to multiple users!
+
+        If not pinging, you must put quotes around names with spaces
+        Can also use user ids
+        """
+        if not users:
+            await self.bot.send_help_for(ctx, "grouphug")
+            return
+
+        names = [italics(user.display_name) for user in users]
+        names = ", ".join(names)
+        await ctx.send("(づ￣ ³￣)づ {} ⊂(´・ω・｀⊂)".format(names))
 
     @commands.group(invoke_without_command=True)
     async def slap(self, ctx, *, user: discord.Member = None):
