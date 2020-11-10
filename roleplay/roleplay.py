@@ -123,7 +123,7 @@ class RolePlay(commands.Cog):
             await ctx.send("Member not found.")
 
     @commands.command()
-    async def grouphug(self, ctx, *users: discord.Member):
+    async def grouphug(self, ctx, intensity: int, *users: discord.Member):
         """
         Give a group hug to multiple users!
 
@@ -136,7 +136,19 @@ class RolePlay(commands.Cog):
 
         names = [italics(user.display_name) for user in users]
         names = ", ".join(names)
-        await ctx.send("(づ￣ ³￣)づ {} ⊂(´・ω・｀⊂)".format(names))
+
+        if intensity <= 0:
+            msg = "(っ˘̩╭╮˘̩)っ {} ⊂(˘̩╭╮˘̩⊂)".format(names)
+        elif intensity <= 3:
+            msg = "(っ´▽｀)っ {} ⊂(￣▽￣⊂)".format(names)
+        elif intensity <= 6:
+            msg = "╰(*´︶`*)╯ {} ╰(*´︶`*)╯".format(names)
+        elif intensity <= 9:
+            msg = "(つ≧▽≦)つ {} ⊂(・▽・⊂)".format(names)
+        elif intensity >= 10:
+            msg = "(づ￣ ³￣)づ {} ⊂(´・ω・｀⊂)".format(names)
+
+        await ctx.send(msg)
 
     @commands.group(invoke_without_command=True)
     async def slap(self, ctx, *, user: discord.Member = None):
