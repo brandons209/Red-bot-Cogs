@@ -85,7 +85,7 @@
         seek = 0
 
         if not await self.is_query_allowed(
-            self.config, ctx.guild, f"{query}", query_obj=query
+            self.config, ctx, f"{query}", query_obj=query
         ):
             raise QueryUnauthorized(
                 _("{query} is not an allowed query.").format(query=query.to_string_user())
@@ -160,11 +160,12 @@
                 single_track.start_timestamp = seek * 1000
             if not await self.is_query_allowed(
                 self.config,
-                ctx.guild,
+                ctx,
                 (
                     f"{single_track.title} {single_track.author} {single_track.uri} "
                     f"{str(Query.process_input(single_track, self.local_folder_current_path))}"
                 ),
+                query_obj=query
             ):
                 if IS_DEBUG:
                     log.debug(f"Query is not allowed in {ctx.guild} ({ctx.guild.id})")
@@ -174,6 +175,13 @@
                 )
             elif guild_data["maxlength"] > 0:
                 if self.is_track_length_allowed(single_track, guild_data["maxlength"]):
+                    single_track.extras.update(
+                        {
+                            "enqueue_time": int(time.time()),
+                            "vc": player.channel.id,
+                            "requester": ctx.author.id,
+                        }
+                    )
                     player.add(ctx.author, single_track)
                     player.maybe_shuffle()
                     self.bot.dispatch(
@@ -189,6 +197,13 @@
                     )
 
             else:
+                single_track.extras.update(
+                        {
+                            "enqueue_time": int(time.time()),
+                            "vc": player.channel.id,
+                            "requester": ctx.author.id,
+                        }
+                )
                 player.add(ctx.author, single_track)
                 player.maybe_shuffle()
                 self.bot.dispatch(
