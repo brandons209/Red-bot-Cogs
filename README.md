@@ -146,6 +146,13 @@ Sound effect cog that allows people to play sound effects in voice channels. Sou
 
 Also, since it does use the Audio cog, if users in different VC's queue sfx sounds while the bot is playing a sound, it'll play all sounds in whatever VC is it currently in. This is a limitation of the Audio cog which I am working on fixing.
 
+#### Shootout
+A game cog that rewards players for fast typing. The first player to type a message wins a pot of currency.
+**Features:**
+- Configurable message to type to win.
+- Settable pot amount, even zero!
+- Configurable wait time after the first player has joined the game.
+
 
 #### Smart React
 Auto react to messages based on keywords. Based off of [FlapJack's](https://github.com/flapjax/FlapJack-Cogs/) cog. Minor bug fixes and planned features, like using regex to parse messages.
