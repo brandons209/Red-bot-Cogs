@@ -207,18 +207,51 @@ class Shootout(commands.Cog):
         await ctx.tick()
         return
 
-    @soset.command(name="victory")
-    async def soset_victory(self, ctx, *, victories: str):
-        """Sets the random victory messages the bot displays when someone wins.
-        Use full string in quotation marks to break up the messages.
+    @soset.group(name="victory")
+    async def soset_victory(self, ctx):
+        """Root command for the random victory messages."""
+        pass
 
-        Failure to use quotation marks will set victory messages with a single word.
-        **This WILL cause errors during `[p]shootout` command execution!**
+    @soset_victory.command(name="list")
+    async def soset_victory_list(self, ctx):
+        """List all the victories."""
+        victories = await self.config.guild(ctx.guild).Victory()
+
+        msg = "Victories:\n\n"
+        partial = []
+        for index, victory in enumerate(victories, start=1):
+            partial.append("{}. {}".format(index, victory))
+
+        msg += "\n".join(partial)
+        return await ctx.send(msg)
+
+    @soset_victory.command(name="add")
+    async def soset_victory_add(self, ctx, *, victory: str):
+        """Adds a random victory message the bot displays when someone wins.
+        Three groups of brackets `{}` are required.
+        The first bracket is the winner's mention.
+        The second bracket is the amount won.
+        The third bracket is the currency name.
         """
 
-        await self.config.guild(ctx.guild).Victory.set(shlex.split(victories))
-        await ctx.tick()
-        return
+        victories = await self.config.guild(ctx.guild).Victory()
+        victories.append(victory)
+        await self.config.guild(ctx.guild).Victory.set(victories)
+        return await ctx.tick()
+
+    @soset_victory.command(name="rem")
+    async def soset_victory_rem(self, ctx, vic_id: int):
+        """Removes a victory from the list given the `vic_id` from `[p]soset victory list`."""
+        vic_id -= 1
+        if vic_id < 0:
+            return await ctx.send("Victory id must be positive.")
+        victories = await self.config.guild(ctx.guild).Victory()
+        try:
+            to_remove = victories.pop(vic_id)
+        except IndexError:
+            return await ctx.send("That is an invalid path number.")
+        await self.config.guild(ctx.guild).Victory.set(victories)
+        return await ctx.tick()
 
     @soset.command(name="lobby")
     async def soset_wait(self, ctx, wait: int):
