@@ -10,7 +10,7 @@ class Shootout(commands.Cog):
     default_config = {
         "cost": 50,
         "Messages": ["Shoot!", "Draw!", "Fire!", "Kill!"],
-        "Session": {"Pot": 0, "Players": [], "Active": False},
+        "Sessions": [],
         "Times": {"lobby": 60, "delay": 10, "fuzzy": 3},
         "Victory": [
             "{} has won the shootout! {} {} has been deposited to their account!",
@@ -18,6 +18,12 @@ class Shootout(commands.Cog):
             "{} must practice. That draw time was insane! The pot of {} {} belongs to them.",
             "{} fires their gun, and all of their enemies fall to the ground! They claim the bounty of {} {}.",
         ],
+    }
+    session_config = {
+        "Channel": None,
+        "Pot": 0,
+        "Players": [],
+        "Active": False,
     }
 
     def __init__(self, bot):
@@ -31,14 +37,15 @@ class Shootout(commands.Cog):
         return
 
     async def game_checks(self, ctx, settings) -> bool:
-        if bool(settings["Session"]["Active"]):
+        session = await self.get_session_from_context(ctx)
+        if bool(session["Active"]):
             await ctx.send("There's already a shootout! Wait for them to finish!")
             return False
-        if ctx.author.id in settings["Session"]["Players"]:
+        if ctx.author.id in session["Players"]:
             await ctx.send("You're already waiting for the shootout!")
             return False
         try:
-            await bank.withdraw_credits(ctx.author, settings["cost"])  # <- Might raise a ValueError!
+            await bank.withdraw_credits(ctx.author, settings["cost"])
             return True
         except ValueError:
             currency = await bank.get_currency_name(ctx.guild)
@@ -46,12 +53,15 @@ class Shootout(commands.Cog):
             return False
 
     async def add_player(self, ctx, cost):
-        current_pot = await self.config.guild(ctx.guild).Session.Pot()
-        await self.config.guild(ctx.guild).Session.Pot.set(value=(current_pot + cost))
+        session = await self.get_session_from_context(ctx)
 
-        async with self.config.guild(ctx.guild).Session.Players() as players:
-            players.append(ctx.author.id)
-            num_players = len(players)
+        current_pot = session["Pot"]
+        session["Pot"] = current_pot + cost
+
+        session["Players"].append(ctx.author.id)
+        num_players = len(session["Players"])
+
+        await self.save_session_to_config(ctx, session)
 
         if num_players == 1:
             wait = await self.config.guild(ctx.guild).Times.lobby()
@@ -66,7 +76,7 @@ class Shootout(commands.Cog):
             await ctx.send("{} joined the shootout!".format(ctx.author.mention))
 
     async def start_game(self, ctx):
-        session = await self.config.guild(ctx.guild).Session.all()
+        session = await self.get_session_from_context(ctx)
         players = [ctx.guild.get_member(player) for player in session["Players"]]
         filtered_players = [player for player in players if isinstance(player, discord.Member)]
         if len(filtered_players) < 2:
@@ -75,10 +85,11 @@ class Shootout(commands.Cog):
             except BalanceTooHigh as e:
                 await bank.set_balance(ctx.author, e.max_balance)
             await ctx.send("A shootout with yourself means just shooting at some bottles. For that, no charge.")
-            await self.config.guild(ctx.guild).Session.clear()
+            await self.clear_session(ctx)
             return
         listen_message = await self.get_random_draw_message(ctx)
-        await self.config.guild(ctx.guild).Session.Active.set(True)
+        session["Active"] = True
+        await self.save_session_to_config(ctx, session)
         await ctx.send(
             'A shootout is about to start! When I say "Draw!",  type `{}` to shoot your weapon! First person who shoots wins!'.format(
                 listen_message
@@ -98,13 +109,14 @@ class Shootout(commands.Cog):
 
     async def end_game(self, ctx, winner: discord.Member):
         currency = await bank.get_currency_name(ctx.guild)
-        total = await self.config.guild(ctx.guild).Session.Pot()
+        session = await self.get_session_from_context(ctx)
+        total = session["Pot"]
         try:
             await bank.deposit_credits(winner, total)
         except BalanceTooHigh as e:
             await bank.set_balance(winner, e.max_balance)
         await ctx.send((await self.get_random_win_message(ctx)).format(winner.mention, total, currency))
-        await self.config.guild(ctx.guild).Session.clear()
+        await self.clear_session(ctx)
 
     async def get_random_draw_message(self, ctx) -> str:
         return random.choice((await self.config.guild(ctx.guild).Messages()))
@@ -116,6 +128,34 @@ class Shootout(commands.Cog):
         delay = await self.config.guild(ctx.guild).Times.delay()
         fuzzy = await self.config.guild(ctx.guild).Times.fuzzy()
         return random.randint(delay - fuzzy, delay + fuzzy)
+
+    async def get_session_from_context(self, ctx):
+        channel_id = ctx.channel.id
+        sessions = await self.config.guild(ctx.guild).Sessions()
+        # Check through all of our currently loaded sessions
+        for session in sessions:
+            if session["Channel"] == channel_id:
+                return session
+        # Session for this channel does not exist
+        new_session = self.session_config.copy()
+        new_session["Channel"] = channel_id
+        sessions.append(new_session)
+        await self.config.guild(ctx.guild).Sessions.set(sessions)
+        return new_session
+
+    async def save_session_to_config(self, ctx, the_session) -> None:
+        sessions = await self.config.guild(ctx.guild).Sessions()
+        for index, session in enumerate(sessions):
+            if session["Channel"] == the_session["Channel"]:
+                sessions[index] = the_session
+        await self.config.guild(ctx.guild).Sessions.set(sessions)
+
+    async def clear_session(self, ctx) -> None:
+        sessions = await self.config.guild(ctx.guild).Sessions()
+        for index, session in enumerate(sessions):
+            if session["Channel"] == ctx.channel.id:
+                sessions.remove(session)
+        await self.config.guild(ctx.guild).Sessions.set(sessions)
 
     @commands.command()
     @commands.guild_only()
@@ -269,13 +309,33 @@ class Shootout(commands.Cog):
         **These commands require the Administrator permission node.**"""
         pass
 
-    @soset_admin.command(name="reset")
+    @soset_admin.group(name="reset")
     async def soset_admin_reset(self, ctx):
-        """Clears all session data. Useful for if you break something.
-        **THIS COMMAND CLEARS ALL SESSION DATA. DO NOT USE WHILE A GAME IS IN SESSION, OR IT WILL BE DESTROYED.**
+        """Clear session data. Useful if you break something."""
+        pass
+
+    @soset_admin_reset.command(name="channel")
+    async def soset_admin_reset_channel(self, ctx):
+        """Clears session data for this channel. Useful for if you break something.
+        **THIS COMMAND CLEARS SESSION FOR THIS CHANNELS. DO NOT USE WHILE A GAME IS IN SESSION, OR IT WILL BE DESTROYED.**
         """
-        await self.config.guild(ctx.guild).Session.clear()
+        await self.clear_session(ctx)
+        await ctx.send("I cleared data for this channel.")
         await ctx.tick()
+        return
+
+    @soset_admin_reset.command(name="all")
+    async def soset_admin_reset_all(self, ctx):
+        """Clears all session data. Useful for if you break something.
+        **THIS COMMAND CLEARS ALL SESSION FOR ALL CHANNELS DATA. DO NOT USE WHILE GAMES ARE IN SESSION, OR THEY WILL BE DESTROYED.**
+        """
+        await self.config.guild(ctx.guild).Sessions.clear()
+        await ctx.send("I cleared data for all sessions.")
+        await ctx.tick()
+
+    @soset_admin.command(name="test")
+    async def soset_admin_test(self, ctx):
+        return await ctx.send(await self.get_session_from_context(ctx))
 
     @soset_admin.command(name="dump")
     async def soset_admin_dump(self, ctx):

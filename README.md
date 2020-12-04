@@ -154,6 +154,7 @@ A game cog that rewards players for fast typing. The first player to type a mess
 - Configurable random time between when the lobby ends and the game starts.
 - Settable pot amount, even zero!
 - Configurable wait time after the first player has joined the game.
+- Shootouts in multiple channels!
 
 
 #### Smart React
