@@ -150,6 +150,8 @@ Also, since it does use the Audio cog, if users in different VC's queue sfx soun
 A game cog that rewards players for fast typing. The first player to type a message wins a pot of currency.
 **Features:**
 - Configurable message to type to win.
+- Configurable randomized victory messages.
+- Configurable random time between when the lobby ends and the game starts.
 - Settable pot amount, even zero!
 - Configurable wait time after the first player has joined the game.
 
