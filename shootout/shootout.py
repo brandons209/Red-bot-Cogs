@@ -368,7 +368,6 @@ class Shootout(commands.Cog):
         **THIS COMMAND CLEARS SESSION FOR THIS CHANNELS. DO NOT USE WHILE A GAME IS IN SESSION, OR IT WILL BE DESTROYED.**
         """
         await self.clear_session(ctx)
-        await ctx.send("I cleared data for this channel.")
         await ctx.tick()
         return
 
@@ -378,12 +377,7 @@ class Shootout(commands.Cog):
         **THIS COMMAND CLEARS ALL SESSION FOR ALL CHANNELS DATA. DO NOT USE WHILE GAMES ARE IN SESSION, OR THEY WILL BE DESTROYED.**
         """
         await self.config.guild(ctx.guild).Sessions.clear()
-        await ctx.send("I cleared data for all sessions.")
         await ctx.tick()
-
-    @soset_admin.command(name="test")
-    async def soset_admin_test(self, ctx):
-        return await ctx.send(await self.get_session_from_context(ctx))
 
     @soset_admin.command(name="dump")
     async def soset_admin_dump(self, ctx):
