@@ -13,10 +13,10 @@ class Shootout(commands.Cog):
         "Sessions": [],
         "Times": {"lobby": 60, "delay": 10, "fuzzy": 3},
         "Victory": [
-            "{} has won the shootout! {} {} has been deposited to their account!",
-            "Looks like {} is the fastest shot in the server! They were given the pot of {} {}",
-            "{} must practice. That draw time was insane! The pot of {} {} belongs to them.",
-            "{} fires their gun, and all of their enemies fall to the ground! They claim the bounty of {} {}.",
+            "{winner} has won the shootout! {amount} {currency} has been deposited to their account!",
+            "Looks like {winner} is the fastest shot in the server! They were given the pot of {amount} {currency}",
+            "{winner} must practice. That draw time was insane! The pot of {amount} {currency} belongs to them.",
+            "{winner} fires their gun, and all of their enemies fall to the ground! They claim the bounty of {amount} {currency}.",
         ],
     }
     session_config = {
@@ -115,7 +115,9 @@ class Shootout(commands.Cog):
             await bank.deposit_credits(winner, total)
         except BalanceTooHigh as e:
             await bank.set_balance(winner, e.max_balance)
-        await ctx.send((await self.get_random_win_message(ctx)).format(winner.mention, total, currency))
+        await ctx.send(
+            (await self.get_random_win_message(ctx)).format(winner=winner.mention, amount=total, currency=currency)
+        )
         await self.clear_session(ctx)
 
     async def get_random_draw_message(self, ctx) -> str:
@@ -228,12 +230,20 @@ class Shootout(commands.Cog):
     @soset_victory.command(name="add")
     async def soset_victory_add(self, ctx, *, victory: str):
         """Adds a random victory message the bot displays when someone wins.
-        Three groups of brackets `{}` are required.
-        The first bracket is the winner's mention.
-        The second bracket is the amount won.
-        The third bracket is the currency name.
-        """
+        - {winner} will be replaced by the winner's mention.
+        - {amount} will be replaced by the amount of currency won.
+        - {currency} will be replaced by the name of the currency.
 
+
+        As an example,
+        `{winner} has won the shootout! {amount} {currency} has been deposited to their account!` is a valid victory.
+        """
+        if "{winner}" not in victory:
+            await ctx.send("{winner} tag isn't in your victory message!")
+        if "{amount}" not in victory:
+            await ctx.send("{amount} tag isn't in your victory message!")
+        if "{currency}" not in victory:
+            await ctx.send("{currency} tag isn't in your victory message!")
         victories = await self.config.guild(ctx.guild).Victory()
         victories.append(victory)
         await self.config.guild(ctx.guild).Victory.set(victories)
