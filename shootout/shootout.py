@@ -193,11 +193,16 @@ class Shootout(commands.Cog):
         return
 
     @soset.command(name="draw")
-    async def soset_draw(self, ctx, *, draws: str):
+    async def soset_draw(self, ctx, *, draws: str = None):
         """Sets the message that the bot listens for during shootout games.
         One will randomly be selected per game.
         """
-
+        if draws is None:
+            messages = await self.config.guild(ctx.guild).Messages()
+            result = ""
+            for message in messages:
+                result = result + message + "\n"
+            return await ctx.send(result)
         await self.config.guild(ctx.guild).Messages.set(shlex.split(draws))
         await ctx.tick()
         return
