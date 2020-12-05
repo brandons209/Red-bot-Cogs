@@ -3,6 +3,7 @@
 # https://github.com/Redjumpman/Jumper-Plugins/blob/a5a55e3968cb366bf257cb0e886a1c30588e85ef/russianroulette/russianroulette.py
 #
 from redbot.core import bank, commands, checks, Config
+from redbot.core.utils.chat_formatting import *
 import asyncio, contextlib, discord, random, shlex
 
 
@@ -225,7 +226,9 @@ class Shootout(commands.Cog):
             partial.append("{}. {}".format(index, victory))
 
         msg += "\n".join(partial)
-        return await ctx.send(msg)
+        for page in pagify(msg):
+            await ctx.send(box(page))
+        return
 
     @soset_victory.command(name="add")
     async def soset_victory_add(self, ctx, *, victory: str):
