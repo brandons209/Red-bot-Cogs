@@ -195,20 +195,57 @@ class Shootout(commands.Cog):
         await ctx.tick()
         return
 
-    @soset.command(name="draw")
-    async def soset_draw(self, ctx, *, draws: str = None):
-        """Sets the message that the bot listens for during shootout games.
-        One will randomly be selected per game.
-        """
-        if draws is None:
-            messages = await self.config.guild(ctx.guild).Messages()
-            result = ""
-            for message in messages:
-                result = result + message + "\n"
-            return await ctx.send(result)
-        await self.config.guild(ctx.guild).Messages.set(shlex.split(draws))
-        await ctx.tick()
+    @soset.group(name="draw")
+    async def soset_draw(self, ctx):
+        """Root command for draw messages.
+
+        This is the message that will be listened to when the game has started.
+
+        One will randomly be selected per game from the registered list."""
+        pass
+
+    @soset_draw.command(name="list")
+    async def soset_draw_list(self, ctx):
+        """List all of the draw messages currently registered."""
+        messages = await self.config.guild(ctx.guild).Messages()
+
+        msg = "Draws:\n\n"
+        partial = []
+        for index, message in enumerate(messages, start=1):
+            partial.append("{}. {}".format(index, message))
+
+        msg += "\n".join(partial)
+        for page in pagify(msg):
+            await ctx.send(box(page))
         return
+
+    @soset_draw.command(name="add")
+    async def soset_draw_add(self, ctx, *, draw: str):
+        """Adds a random draw message.
+
+        There are no formatting options for this command. The entire input will be used as the draw.
+
+        Spaces are accepted.
+        """
+
+        messages = await self.config.guild(ctx.guild).Messages()
+        messages.append(draw)
+        await self.config.guild(ctx.guild).Messages.set(messages)
+        return await ctx.tick()
+
+    @soset_draw.command(name="rem")
+    async def soset_draw_rem(self, ctx, msg_id: int):
+        """Removes a draw from the list given the `msg_id` from `[p]soset draw list`."""
+        msg_id -= 1
+        if msg_id < 0:
+            return await ctx.send("Message id must be positive.")
+        messages = await self.config.guild(ctx.guild).Messages()
+        try:
+            to_remove = messages.pop(msg_id)
+        except IndexError:
+            return await ctx.send("That is an invalid path number.")
+        await self.config.guild(ctx.guild).Messages.set(messages)
+        return await ctx.tick()
 
     @soset.group(name="victory")
     async def soset_victory(self, ctx):
