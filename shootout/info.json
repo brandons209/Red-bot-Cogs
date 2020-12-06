@@ -1,0 +1,10 @@
+{
+  "author" : ["shroomdog27"],
+  "bot_version": [3,4,3],
+  "install_msg" : "Let's duel at high noon!",
+  "short" : "Let's duel!",
+  "description" : "Lets users put money into a pot and duel each other. First user to type a set message wins the pot",
+  "tags" : ["duel", "fast_typing", "typing"],
+  "hidden" : false,
+  "end_user_data_statement": "This cog won't store anything for a user."
+}
