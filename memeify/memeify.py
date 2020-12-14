@@ -8,19 +8,24 @@ class Memeify(commands.Cog):
     def __init__(self, bot):
         super().__init__()
 
-        self.config = Config.get_conf(self, identifier=2934875294)
+        self.config = Config.get_conf(self, identifier=2934875294, force_registration=True)
         self.bot = bot
 
     @commands.command()
     async def b(self, ctx, *, content: str = None):
         """Replaces all B's with :b:'s"""
         if not content:
-            # gets above message
-            msg = (await ctx.channel.history(limit=2).flatten())[1].clean_content
-            if msg:
-                await ctx.send(self.__bify(msg, False))
+            msg_c = ""
+            # gets previous messages
+            msg = await ctx.channel.history(limit=5).flatten()
+            for i in msg[1:]:
+                if i.clean_content:
+                    msg_c = i.clean_content
+                    break
+            if msg_c:
+                await ctx.send(self.__bify(msg_c, False))
             else:
-                await ctx.send("Where's the :b:essage?")
+                await ctx.send("Where's the 🅱️essage?")
         else:
             await ctx.send(self.__bify(ctx.message.clean_content, True))
 
@@ -57,4 +62,4 @@ class Memeify(commands.Cog):
         elif len(bif) > 1:
             # replaces first letter with b
             bif = "b" + bif[1:]
-        return bif.replace("b", ":b:")
+        return bif.replace("b", "🅱️")
