@@ -36,7 +36,7 @@ class Memeify(commands.Cog):
     def __bify(self, bify_str, cmd) -> str:
         mention = re.compile("^@|^#|^&")
         custom_emoji = re.compile("<:[^:]+:\d{18}>")
-        bify = bify_str.split()
+        bify = bify_str.split(" ")
         # remove first letter if it bifys the command message itself
         if cmd:
             bify.pop(0)
