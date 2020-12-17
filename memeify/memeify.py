@@ -12,7 +12,7 @@ class Memeify(commands.Cog):
         self.bot = bot
 
     @commands.command()
-    async def b(self, ctx, *, content: str = None):
+    async def bify(self, ctx, *, content: str = None):
         """Replaces all B's with :b:'s"""
         if not content:
             msg_c = ""
@@ -35,6 +35,7 @@ class Memeify(commands.Cog):
     # emojis are a bit fucked tho
     def __bify(self, bify_str, cmd) -> str:
         mention = re.compile("^@|^#|^&")
+        custom_emoji = re.compile("<:[^:]+:\d{18}>")
         bify = bify_str.split()
         # remove first letter if it bifys the command message itself
         if cmd:
@@ -44,7 +45,7 @@ class Memeify(commands.Cog):
             # no code blocks >:(
             i = i.replace("`", "")
             # special cases for custom emojis and mentions
-            if i[0] == ":" and i[-1] == ":":
+            if custom_emoji.search(i):
                 b.append(i + " ")
                 continue
             elif mention.match(i):
