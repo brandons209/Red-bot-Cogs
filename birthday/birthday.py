@@ -99,7 +99,7 @@ class Birthday(commands.Cog):
                     else:
                         embed.description = f"Happy Birthday to {member.mention}!"
                     try:
-                        await channel.send(embed=embed, allow_mentions=True)
+                        await channel.send(embed=embed, allowed_mentions=discord.AllowedMentions.all())
                     except:
                         pass
 

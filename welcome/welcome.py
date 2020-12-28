@@ -609,10 +609,8 @@ class Welcome(commands.Cog):
         await self.__handle_event(member.guild, member, "leave")
 
     @commands.Cog.listener()
-    async def on_member_ban(self, guild: discord.Guild, member: discord.Member) -> None:
+    async def on_member_ban(self, guild: discord.Guild, member: discord.User) -> None:
         """Listens for user bans."""
-        if await self.bot.cog_disabled_in_guild(self, member.guild):
-            return
 
         await self.__handle_event(guild, member, "ban")
 
