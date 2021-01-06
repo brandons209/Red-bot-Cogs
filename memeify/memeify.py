@@ -17,7 +17,7 @@ class Memeify(commands.Cog):
 
         self.config = Config.get_conf(self, identifier=2934875294, force_registration=True)
         self.bot = bot
-    
+
     async def __get_content(self, ctx, content):
         if not content:
             msg_c = ""
@@ -33,7 +33,6 @@ class Memeify(commands.Cog):
                 return
         else:
             return ctx.message.clean_content, True
-
 
     # ------------ bify ------------
     @commands.command()
@@ -78,7 +77,6 @@ class Memeify(commands.Cog):
             bif = "b" + bif[1:]
         return bif.replace("b", "🅱️")
 
-
     # ------------ frenchify ------------
     @commands.command()
     async def frenchify(self, ctx, *, content: str = None):
@@ -94,7 +92,7 @@ class Memeify(commands.Cog):
         if cmd:
             french_cmd_fix = french.split(" ")
             french_str = " ".join(french_cmd_fix[1:])
-        
+
         emoji_match = re.finditer(custom_emoji, french_str)
         for i in emoji_match:
             emoji_list.append(i.group(0))
@@ -105,64 +103,64 @@ class Memeify(commands.Cog):
             final.append(self.__french(i))
             if emoji_list:
                 final.append(emoji_list.pop(0))
-        
+
         return "".join(final)
 
     def __french(self, text):
-        text = text.replace('age','aje')
-        text = text.replace('ale','aile')
-        text = text.replace('ant','ent')
-        text = text.replace('ared','aired')
-        text = text.replace('ay','ai')
-        text = text.replace('blem','blaim')
-        text = text.replace('ble','buhl')
-        text = text.replace('bout','but')
-        text = text.replace('ck','k')
-        text = text.replace('eal','eahl')
-        text = text.replace('ear','air')
-        text = text.replace('ess','ez')
-        text = text.replace('ew','u')
-        text = text.replace('gen','jen')
-        text = text.replace('gon','jen')
-        text = text.replace('ies','ees')
-        text = text.replace('ill','eehl')
-        text = text.replace('ing','eng')
-        text = text.replace('ired','iaired')
-        text = text.replace('ire','iyaire')
-        text = text.replace('ise','ize')
-        text = text.replace('ising','izeeng')
-        text = text.replace('ist','eest')
-        text = text.replace('ith','iv')
-        text = text.replace("it's",'eet eez')
-        text = text.replace("i've",'I have')
-        text = text.replace('lar','lair')
-        text = text.replace('logic','lojic')
-        text = text.replace('loth','luth')
-        text = text.replace('ment','mont')
-        text = text.replace('ol','ul')
-        text = text.replace('ool','oo-el')
-        text = text.replace('oom','uhm')
-        text = text.replace('orl','hirl')
-        text = text.replace('or','air')
-        text = text.replace('our','ur')
-        text = text.replace('oute','oote')
-        text = text.replace('out','oot')
-        text = text.replace('shion','she-on')
-        text = text.replace('sion','she-on')
-        text = text.replace('some','zum')
-        text = text.replace('stion','stshe-on')
-        text = text.replace('suit','zoot')
-        text = text.replace('them','zem')
-        text = text.replace('thing','theeng')
-        text = text.replace('tion','she-on')
-        text = text.replace('tle','-tell')
-        text = text.replace('ture','tuair')
-        text = text.replace('ty','tay')
-        text = text.replace('ver','vair')
-        text = text.replace("you've",'you have')
+        text = text.replace("age", "aje")
+        text = text.replace("ale", "aile")
+        text = text.replace("ant", "ent")
+        text = text.replace("ared", "aired")
+        text = text.replace("ay", "ai")
+        text = text.replace("blem", "blaim")
+        text = text.replace("ble", "buhl")
+        text = text.replace("bout", "but")
+        text = text.replace("ck", "k")
+        text = text.replace("eal", "eahl")
+        text = text.replace("ear", "air")
+        text = text.replace("ess", "ez")
+        text = text.replace("ew", "u")
+        text = text.replace("gen", "jen")
+        text = text.replace("gon", "jen")
+        text = text.replace("ies", "ees")
+        text = text.replace("ill", "eehl")
+        text = text.replace("ing", "eng")
+        text = text.replace("ired", "iaired")
+        text = text.replace("ire", "iyaire")
+        text = text.replace("ise", "ize")
+        text = text.replace("ising", "izeeng")
+        text = text.replace("ist", "eest")
+        text = text.replace("ith", "iv")
+        text = text.replace("it's", "eet eez")
+        text = text.replace("i've", "I have")
+        text = text.replace("lar", "lair")
+        text = text.replace("logic", "lojic")
+        text = text.replace("loth", "luth")
+        text = text.replace("ment", "mont")
+        text = text.replace("ol", "ul")
+        text = text.replace("ool", "oo-el")
+        text = text.replace("oom", "uhm")
+        text = text.replace("orl", "hirl")
+        text = text.replace("or", "air")
+        text = text.replace("our", "ur")
+        text = text.replace("oute", "oote")
+        text = text.replace("out", "oot")
+        text = text.replace("shion", "she-on")
+        text = text.replace("sion", "she-on")
+        text = text.replace("some", "zum")
+        text = text.replace("stion", "stshe-on")
+        text = text.replace("suit", "zoot")
+        text = text.replace("them", "zem")
+        text = text.replace("thing", "theeng")
+        text = text.replace("tion", "she-on")
+        text = text.replace("tle", "-tell")
+        text = text.replace("ture", "tuair")
+        text = text.replace("ty", "tay")
+        text = text.replace("ver", "vair")
+        text = text.replace("you've", "you have")
 
         text_arr = text.split(" ")
-        
+
         for key, word in enumerate(text_arr):
 
             if self.__compare_format(word) == "hello":
@@ -172,7 +170,7 @@ class Memeify(commands.Cog):
             elif self.__compare_format(word) != "hello" and self.__compare_format(word) != "hi":
                 if word != "the" and word[:1] == "h":
                     text_arr[key] = "'" + word[1:]
-            
+
             if self.__compare_format(word) == "i":
                 text_arr[key] = "ai"
 
@@ -183,7 +181,11 @@ class Memeify(commands.Cog):
 
             if self.__compare_format(word) == "mister" or self.__compare_format(word) == "sir":
                 text_arr[key] = "Monsieur"
-            if self.__compare_format(word) == "miss" or self.__compare_format(word) == "missus" or self.__compare_format(word) == "madame":
+            if (
+                self.__compare_format(word) == "miss"
+                or self.__compare_format(word) == "missus"
+                or self.__compare_format(word) == "madame"
+            ):
                 text_arr[key] = "Madamoiselle"
 
             if self.__compare_format(word) == "it":
@@ -196,14 +198,14 @@ class Memeify(commands.Cog):
                 option = random.randrange(1, 5)
                 if option == 1:
                     text_arr[key] = "et"
-            
+
             if self.__compare_format(word) == "my":
                 text_arr[key] = "mon"
             if self.__compare_format(word) == "one":
                 text_arr[key] = "un"
             if self.__compare_format(word) == "two":
                 text_arr[key] = "deux"
-            
+
             if self.__compare_format(word)[-2:] == "ly":
                 text_arr[key] = word[:-2] + "-lee"
             if self.__compare_format(word)[-3:] == "tre":
@@ -241,7 +243,7 @@ class Memeify(commands.Cog):
 
             if self.__compare_format(word) == "french":
                 text_arr[key] = "francais"
-            
+
             if self.__compare_format(word) == "shit":
                 text_arr[key] = "merde"
             if self.__compare_format(word) == "god":
@@ -253,30 +255,30 @@ class Memeify(commands.Cog):
         " ".join(w.capitalize() for w in text.split())
 
         return text
-            
+
     def __compare_format(self, word):
-        word = word.translate(str.maketrans('', '', string.punctuation))
+        word = word.translate(str.maketrans("", "", string.punctuation))
         word = word.lower()
         return word
-    
+
     def __make_funny_es(self, text):
-        bits = text.split('e')
+        bits = text.split("e")
         text = ""
 
         for bit in bits:
-            option = random.randrange(1,5)
+            option = random.randrange(1, 5)
             if option == 4:
-                text += (bit + "eacute")
+                text += bit + "eacute"
             else:
-                text += (bit + "e")
-        
-        text = text.replace('eeacute','ee')
-        text = text.replace('eacutee','ee')
-        text = text.replace('eacuteeacute','ee')
+                text += bit + "e"
 
-        if text.endswith('eacute'):
+        text = text.replace("eeacute", "ee")
+        text = text.replace("eacutee", "ee")
+        text = text.replace("eacuteeacute", "ee")
+
+        if text.endswith("eacute"):
             text = text[:-6]
-        elif text.endswith('e'):
+        elif text.endswith("e"):
             text = text[:-1]
 
         return text
