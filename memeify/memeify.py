@@ -78,6 +78,7 @@ class Memeify(commands.Cog):
         return bif.replace("b", "🅱️")
 
     # ------------ frenchify ------------
+    # Based heavily on SSPayne's fake french accent translator
     @commands.command()
     async def frenchify(self, ctx, *, content: str = None):
         """Writes a message with a french accent"""
@@ -92,6 +93,8 @@ class Memeify(commands.Cog):
         if cmd:
             french_cmd_fix = french.split(" ")
             french_str = " ".join(french_cmd_fix[1:])
+        else:
+            french_str = french
 
         emoji_match = re.finditer(custom_emoji, french_str)
         for i in emoji_match:
@@ -106,6 +109,9 @@ class Memeify(commands.Cog):
 
         return "".join(final)
 
+    # translated from SPPayne's fake french accent translator,
+    # as well as __compare_format() and __make_funny_es()
+    # https://github.com/SPPayne/fake_french_accent_translator
     def __french(self, text):
         text = text.replace("age", "aje")
         text = text.replace("ale", "aile")
