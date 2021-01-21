@@ -1,4 +1,5 @@
 from redbot.core import Config, commands
+from redbot.core.utils.chat_formatting import pagify
 import re
 import random
 import string
@@ -34,6 +35,11 @@ class Memeify(commands.Cog):
         else:
             return ctx.message.clean_content, True
 
+    async def __send_pagify(self, ctx, message):
+        pages = pagify(message)
+        for msg in pages:
+            await ctx.send(msg)
+
     # ------------ bify ------------
     @commands.command()
     async def bify(self, ctx, *, content: str = None):
@@ -42,7 +48,7 @@ class Memeify(commands.Cog):
         if len(msg_c) != 2:
             await ctx.send("Where's the 🅱️essage?")
         else:
-            await ctx.send(self.__bify(*msg_c))
+            await self.__send_pagify(ctx, self.__bify(*msg_c))
 
     # takes a clean discord message and replaces all B's and
     # first characters with :b:, unless the word is 1
@@ -86,7 +92,7 @@ class Memeify(commands.Cog):
         if len(msg_c) != 2:
             await ctx.send("No message")
         else:
-            await ctx.send(self.__french_pre_f(*msg_c))
+            await self.__send_pagify(ctx, self.__french_pre_f(*msg_c))
 
     def __french_pre_f(self, french, cmd):
         emoji_list = []
