@@ -38,6 +38,9 @@ PURGE_DM_WARN_MESSAGE_MSG = "**__WARNING! You may be kicked from {0.name} soon!_
 # 0 is guild object
 PURGE_DM_WARN_MESSAGE = "**__WARNING! You may be kicked from {0.name} soon!__**\n\nDue to your inactivity, it may happen that you get kicked. If you don't want that, then we recommend you chat with people in text channels! Once you get the trusted role you will be marked as active.\n\nHowever, you can't just spam letters or messages! We aren't doing this to be rude but simply to try and keep active people within our community. We hope you understand and apologize for any inconveniences.\nIf you have any questions or concerns please message one of the staff members!"
 
+# guild is guild name
+BAN_DM_MESSAGE = "You have been banned from {guild} for {reason}."
+
 
 def parse_timedelta(argument: str) -> Optional[timedelta]:
     matches = TIME_RE.match(argument)
@@ -66,6 +69,7 @@ class MoreAdmin(commands.Cog):
             "prefixes": [],
             "purge_dm_msg": PURGE_DM_WARN_MESSAGE_MSG,
             "purge_dm": PURGE_DM_WARN_MESSAGE,
+            "ban_dm": BAN_DM_MESSAGE,
         }
 
         default_role = {"addable": []}  # role ids who can add this role
@@ -366,6 +370,24 @@ class MoreAdmin(commands.Cog):
             msg += "Removed: {}".format(humanize_list(list(removed)))
 
         await ctx.send(msg)
+
+    @adminset.command(name="ban-dm-msg")
+    async def adminset_ban_dm_msg(self, ctx, *, msg: str = None):
+        """
+        Set a message to be DMed to a user when they are banned using the bandm command
+
+        Use {guild} to put the guild name in the message, {member} to put the member's name,
+        and {reason} to put the reason
+
+        Run empty to see current message
+        """
+        if not msg:
+            curr = await self.config.guild(ctx.guild).ban_dm()
+            await ctx.send("Current message:")
+            return await ctx.send(escape(curr, formatting=True))
+
+        await self.config.guild(ctx.guild).ban_dm.set(msg)
+        await ctx.tick()
 
     @commands.group(name="purgeset")
     @commands.guild_only()
@@ -971,6 +993,32 @@ class MoreAdmin(commands.Cog):
         num = len(results)
         plural = "s" if num > 1 else ""
         await ctx.send(f"That is {num} member{plural} with these role(s)")
+
+    @commands.command()
+    @commands.guild_only()
+    @checks.admin_or_permissions(ban_members=True)
+    @checks.bot_has_permissions(ban_members=True)
+    async def bandm(self, ctx, member: discord.Member, *, reason: str = None):
+        """
+        Ban a member and have the bot DM them a message
+        """
+        ban_command = self.bot.get_command("ban")
+
+        if not ban_command:
+            await ctx.send("The Mod cog is required for this command to work. Please load the Mod cog.")
+            return
+
+        dm_msg = await self.config.guild(ctx.guild).ban_dm()
+        guild = ctx.guild.name
+        member_name = member.name
+
+        try:
+            await member.send(dm_msg.format(guild=guild, member=member_name, reason=reason))
+        except discord.HTTPException:
+            pass
+
+        await ctx.invoke(ban_command, member, reason=reason)
+        await ctx.tick()
 
     ### Listeners ###
 
