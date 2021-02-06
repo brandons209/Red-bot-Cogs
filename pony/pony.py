@@ -14,7 +14,11 @@ class Pony(commands.Cog):
 
         self.config = Config.get_conf(self, identifier=7384662719)
         default_global = {"maxfilters": 50}
-        self.default_guild = {"filters": ["-meme", "safe", "-spoiler:*", "-vulgar"], "verbose": False}
+        self.default_guild = {
+            "filters": ["-meme", "safe", "-spoiler:*", "-vulgar"],
+            "verbose": False,
+            "display_artist": False,
+        }
         self.config.register_guild(**self.default_guild)
         self.config.register_global(**default_global)
 
@@ -109,30 +113,43 @@ class Pony(commands.Cog):
         """Manages pony options"""
         pass
 
+    @ponyset.command(name="artist")
+    async def _display_artist_ponyset(self, ctx, toggle: bool):
+        """
+        Turn on displaying artists on pony commands
+        """
+        guild = ctx.guild
+        display = await self.config.guild(guild).display_artist()
+        if toggle:
+            if not display:
+                await self.config.guild(guild).display_artist.set(True)
+                await ctx.send("Display artist mode is now enabled.")
+            else:
+                await ctx.send("Display artist is already enabled.")
+        else:
+            if display:
+                await self.config.guild(guild).display_artist.set(False)
+                await ctx.send("Display artist is now disabled.")
+            else:
+                await ctx.send("Display artist is already disabled.")
+
     @ponyset.command(name="verbose")
-    async def _verbose_ponyset(self, ctx, toggle: str = "toggle"):
+    async def _verbose_ponyset(self, ctx, toggle: bool):
         """Toggles verbose mode"""
         guild = ctx.guild
         verbose = await self.config.guild(guild).verbose()
-        if toggle.lower() == "on" or toggle.lower() == "true" or toggle.lower() == "enable":
+        if toggle:
             if not verbose:
                 await self.config.guild(guild).verbose.set(True)
                 await ctx.send("Verbose mode is now enabled.")
             else:
                 await ctx.send("Verbose mode is already enabled.")
-        elif toggle.lower() == "off" or toggle.lower() == "false" or toggle.lower() == "disable":
-            if verbose:
-                await self.config.guild(guild).verbose.set(False)
-                await ctx.send("Verbose mode is now disabled.")
-            else:
-                await ctx.send("Verbose mode is already disabled.")
         else:
             if verbose:
                 await self.config.guild(guild).verbose.set(False)
                 await ctx.send("Verbose mode is now disabled.")
             else:
-                await self.config.guild(guild).verbose.set(True)
-                await ctx.send("Verbose mode is now enabled.")
+                await ctx.send("Verbose mode is already disabled.")
 
     @ponyset.command(name="maxfilters")
     @checks.is_owner()
@@ -213,6 +230,7 @@ class Pony(commands.Cog):
         guild = ctx.guild
         filters = await self.config.guild(guild).filters()
         verbose = await self.config.guild(guild).verbose()
+        display_artist = await self.config.guild(guild).display_artist()
 
         # Initialize variables
         artist = "unknown artist"
@@ -231,7 +249,7 @@ class Pony(commands.Cog):
 
         # Assign tags to URL
         if tags:
-            tagSearch += "{} ".format(" ".join(tags)).strip()
+            tagSearch += "{} ".format(" ".join(tags)).strip().strip(",")
         if filters and not mascot:
             if filters != [] and tags:
                 tagSearch += ", "
@@ -337,5 +355,21 @@ class Pony(commands.Cog):
         # Edits the pending message with the results
         if verbose:
             return await message.edit(content="Image found.", embed=output)
+        elif display_artist:
+            for tag in website["tags"]:
+                if "artist:" in tag:
+                    artistList.append(tag[7:])
+
+            # Determine if there are multiple artists
+            if len(artistList) == 1:
+                artist = artistList[0]
+            elif len(artistList) > 1:
+                artists = ", ".join(artistList)
+                artist = ""
+
+            if artist:
+                return await message.edit(content=f"Artist: `{artist}`\n{output}")
+            else:
+                return await message.edit(content=f"Artists: `{artists}`\n{output}")
         else:
             return await message.edit(content=output)
