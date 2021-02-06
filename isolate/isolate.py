@@ -843,6 +843,9 @@ class Isolate(commands.Cog):
     async def on_load(self):
         await self.bot.wait_until_ready()
 
+        _guilds = [g for g in self.bot.guilds if g.large and not (g.chunked or g.unavailable)]
+        await self.bot.request_offline_members(*_guilds)
+
         for guild in self.bot.guilds:
             me = guild.me
             role = await self.get_role(guild, quiet=True, create=True)
@@ -857,7 +860,7 @@ class Isolate(commands.Cog):
             for member_id, data in isolated.items():
 
                 until = data["until"]
-                member = guild.get_member(member_id)
+                member = guild.get_member(int(member_id))
 
                 if until and (until - time.time()) < 0:
                     if member:
@@ -868,7 +871,7 @@ class Isolate(commands.Cog):
 
                         await self._unisolate(member, reason=reason)
                     else:  # member disappeared
-                        del isolated[str(member_id)]
+                        del isolated[member_id]
                 elif member:
                     # re-check roles
                     user_roles = set(member.roles)
@@ -944,9 +947,9 @@ class Isolate(commands.Cog):
         self.enqueued.add(args)
 
         if diff < 0:
-            self.execute_queue_event(*args)
+            await self.execute_queue_event(0, *args)
         elif run_at - time.time() < QUEUE_TIME_CUTOFF:
-            self.pending[args] = asyncio.get_event_loop().call_later(diff, self.execute_queue_event, *args)
+            self.pending[args] = asyncio.create_task(self.execute_queue_event(diff, *args))
         else:
             await self.queue.put((run_at, *args))
 
@@ -961,16 +964,18 @@ class Isolate(commands.Cog):
         diff = next_time - now
 
         if diff < 0:
-            if self.execute_queue_event(*args):
+            if await self.execute_queue_event(0, *args):
                 return
         elif diff < QUEUE_TIME_CUTOFF:
-            self.pending[args] = asyncio.get_event_loop().call_later(diff, self.execute_queue_event, *args)
+            self.pending[args] = asyncio.create_task(self.execute_queue_event(diff, *args))
             return True
 
         await self.queue.put(item)
         return False
 
-    def execute_queue_event(self, *args) -> bool:
+    async def execute_queue_event(self, diff, *args) -> bool:
+        # delays then executes queue event
+        await asyncio.sleep(diff)
         self.enqueued.discard(args)
 
         try:

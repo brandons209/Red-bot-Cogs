@@ -304,7 +304,7 @@ class Punish(commands.Cog):
                 [
                     "**Reason:** %s" % (data.get("reason") or "no reason set"),
                     "**Time remaining:** %s" % remaining,
-                    "**Moderator**: %s" % (user.guild.get_member(data.get("by")) or "Missing ID#%s" % data.get("by")),
+                    "**Moderator**: %s" % (user.guild.get_member(int(data.get("by"))) or "Missing ID#%s" % data.get("by")),
                 ]
             )
             del punished[str(user.id)]
@@ -502,7 +502,7 @@ class Punish(commands.Cog):
 
         for member_id, member_data in punished.items():
 
-            member = guild.get_member(member_id)
+            member = guild.get_member(int(member_id))
 
             if not member:
                 continue
@@ -911,6 +911,9 @@ class Punish(commands.Cog):
     async def on_load(self):
         await self.bot.wait_until_ready()
 
+        _guilds = [g for g in self.bot.guilds if g.large and not (g.chunked or g.unavailable)]
+        await self.bot.request_offline_members(*_guilds)
+
         for guild in self.bot.guilds:
             me = guild.me
             role = await self.get_role(guild, quiet=True, create=True)
@@ -925,7 +928,7 @@ class Punish(commands.Cog):
             for member_id, data in punished.items():
 
                 until = data["until"]
-                member = guild.get_member(member_id)
+                member = guild.get_member(int(member_id))
 
                 if until and (until - time.time()) < 0:
                     if member:
@@ -1012,9 +1015,9 @@ class Punish(commands.Cog):
         self.enqueued.add(args)
 
         if diff < 0:
-            self.execute_queue_event(*args)
+            await self.execute_queue_event(0, *args)
         elif run_at - time.time() < QUEUE_TIME_CUTOFF:
-            self.pending[args] = asyncio.get_event_loop().call_later(diff, self.execute_queue_event, *args)
+            self.pending[args] = asyncio.create_task(self.execute_queue_event(diff, *args))
         else:
             await self.queue.put((run_at, *args))
 
@@ -1029,16 +1032,17 @@ class Punish(commands.Cog):
         diff = next_time - now
 
         if diff < 0:
-            if self.execute_queue_event(*args):
+            if await self.execute_queue_event(0, *args):
                 return
         elif diff < QUEUE_TIME_CUTOFF:
-            self.pending[args] = asyncio.get_event_loop().call_later(diff, self.execute_queue_event, *args)
+            self.pending[args] = asyncio.create_task(self.execute_queue_event(diff, *args))
             return True
 
         await self.queue.put(item)
         return False
 
-    def execute_queue_event(self, *args) -> bool:
+    async def execute_queue_event(self, diff, *args) -> bool:
+        await asyncio.sleep(diff)
         self.enqueued.discard(args)
 
         try:
@@ -1286,7 +1290,7 @@ class Punish(commands.Cog):
         if not guild:
             return False
 
-        member = guild.get_member(member_id)
+        member = guild.get_member(int(member_id))
 
         if member:
             asyncio.create_task(self._unpunish(member))
@@ -1327,7 +1331,7 @@ class Punish(commands.Cog):
             if update and caseno:
                 until = member_data.get("until") or False
                 # fallback gracefully
-                moderator = moderator or guild.get_member(member_data.get("by")) or guild.me
+                moderator = moderator or guild.get_member(int(member_data.get("by"))) or guild.me
 
                 if until:
                     until = datetime.utcfromtimestamp(until).timestamp()
