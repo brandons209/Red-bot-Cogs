@@ -3,6 +3,7 @@ from redbot.core import Config, commands, checks
 from redbot.core.utils.chat_formatting import pagify
 from typing import Literal
 
+
 class SmartReact(commands.Cog):
     """Create automatic reactions when trigger words are typed in chat"""
 

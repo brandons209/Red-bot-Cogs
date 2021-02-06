@@ -10,6 +10,7 @@ import datetime
 import discord
 from typing import Literal
 
+
 class Birthday(commands.Cog):
     """Track birthdays, add birthday role, and annouce birthdays for users."""
 

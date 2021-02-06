@@ -8,6 +8,7 @@ import discord
 from redbot.core import commands, checks
 from typing import Literal
 
+
 class EveryoneEmoji(commands.Cog):
 
     """Allows anyone to use all emojis the bot can see!"""

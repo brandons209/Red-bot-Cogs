@@ -305,7 +305,8 @@ class Punish(commands.Cog):
                 [
                     "**Reason:** %s" % (data.get("reason") or "no reason set"),
                     "**Time remaining:** %s" % remaining,
-                    "**Moderator**: %s" % (user.guild.get_member(int(data.get("by"))) or "Missing ID#%s" % data.get("by")),
+                    "**Moderator**: %s"
+                    % (user.guild.get_member(int(data.get("by"))) or "Missing ID#%s" % data.get("by")),
                 ]
             )
             del punished[str(user.id)]
