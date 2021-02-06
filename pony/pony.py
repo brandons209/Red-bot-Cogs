@@ -2,6 +2,7 @@ import discord
 from redbot.core.utils.chat_formatting import *
 from redbot.core import Config, checks, commands
 from urllib import parse
+from typing import Literal
 import aiohttp
 import os
 import traceback
@@ -373,3 +374,11 @@ class Pony(commands.Cog):
                 return await message.edit(content=f"Artists: `{artists}`\n{output}")
         else:
             return await message.edit(content=output)
+
+    async def red_delete_data_for_user(
+        self,
+        *,
+        requester: Literal["discord_deleted_user", "owner", "user", "user_strict"],
+        user_id: int,
+    ):
+        pass

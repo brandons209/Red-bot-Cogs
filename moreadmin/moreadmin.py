@@ -7,6 +7,7 @@ from redbot.core.data_manager import cog_data_path
 import discord
 
 from .utils import *
+from typing import Literal
 import asyncio
 from typing import Union
 import os
@@ -1069,3 +1070,11 @@ class MoreAdmin(commands.Cog):
 
         if to_add:
             await self.add_last_msg(message)
+
+    async def red_delete_data_for_user(
+        self,
+        *,
+        requester: Literal["discord_deleted_user", "owner", "user", "user_strict"],
+        user_id: int,
+    ):
+        pass

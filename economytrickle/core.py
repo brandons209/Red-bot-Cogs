@@ -11,6 +11,7 @@ from redbot.core import commands, checks
 from redbot.core.config import Config
 from redbot.core import bank
 from redbot.core.utils.chat_formatting import pagify, box
+from typing import Literal
 
 from .activity import RecordHandler
 from .converters import configable_guild_defaults, settings_converter
@@ -323,3 +324,11 @@ class EconomyTrickle(commands.Cog):
         pages = pagify(msg)
         for page in pages:
             await ctx.send(box(page))
+
+    async def red_delete_data_for_user(
+        self,
+        *,
+        requester: Literal["discord_deleted_user", "owner", "user", "user_strict"],
+        user_id: int,
+    ):
+        pass

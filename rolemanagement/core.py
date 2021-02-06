@@ -5,7 +5,7 @@ import asyncio
 import re
 import time
 from abc import ABCMeta
-from typing import AsyncIterator, Tuple, Optional, Union, List, Dict
+from typing import AsyncIterator, Tuple, Optional, Union, List, Dict, Literal
 
 import discord
 from discord.ext.commands import CogMeta as DPYCogMeta
@@ -1108,3 +1108,11 @@ class RoleManagement(
             for em, rdata in _outer.items():
                 if rdata and rdata["roleid"] == role.id:
                     yield (mid, em, rdata)
+
+    async def red_delete_data_for_user(
+        self,
+        *,
+        requester: Literal["discord_deleted_user", "owner", "user", "user_strict"],
+        user_id: int,
+    ):
+        pass

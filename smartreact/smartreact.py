@@ -1,7 +1,7 @@
 import discord
 from redbot.core import Config, commands, checks
 from redbot.core.utils.chat_formatting import pagify
-
+from typing import Literal
 
 class SmartReact(commands.Cog):
     """Create automatic reactions when trigger words are typed in chat"""
@@ -137,3 +137,11 @@ class SmartReact(commands.Cog):
                     pass
                 except discord.errors.InvalidArgument:
                     pass
+
+    async def red_delete_data_for_user(
+        self,
+        *,
+        requester: Literal["discord_deleted_user", "owner", "user", "user_strict"],
+        user_id: int,
+    ):
+        pass

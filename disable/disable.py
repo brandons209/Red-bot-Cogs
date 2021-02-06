@@ -1,8 +1,9 @@
 from redbot.core.utils.chat_formatting import *
 from redbot.core import Config, checks, commands
 from redbot.core.utils.mod import is_admin_or_superior
-import discord
 from discord.ext.commands import DisabledCommand
+from typing import Literal
+import discord
 
 
 class DisabledError(commands.CheckFailure):
@@ -75,3 +76,11 @@ class Disable(commands.Cog):
         if isinstance(exception, DisabledError):
             msg = await self.config.guild(ctx.guild).disabled_message()
             await ctx.send(msg.format(ctx.command.name))
+
+    async def red_delete_data_for_user(
+        self,
+        *,
+        requester: Literal["discord_deleted_user", "owner", "user", "user_strict"],
+        user_id: int,
+    ):
+        pass

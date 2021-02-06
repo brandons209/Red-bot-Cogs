@@ -3,7 +3,7 @@ import datetime
 import discord
 import logging
 import random
-from typing import Optional, Union
+from typing import Optional, Union, Literal
 
 from redbot.core import Config, checks, commands
 from redbot.core.utils.chat_formatting import box, pagify, humanize_list
@@ -899,3 +899,11 @@ class Welcome(commands.Cog):
         """Gets today's date in ordinal form."""
 
         return datetime.date.today().toordinal()
+
+    async def red_delete_data_for_user(
+        self,
+        *,
+        requester: Literal["discord_deleted_user", "owner", "user", "user_strict"],
+        user_id: int,
+    ):
+        pass

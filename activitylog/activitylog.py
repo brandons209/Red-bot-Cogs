@@ -14,6 +14,8 @@ import asyncio
 import glob
 import io
 
+from typing import Literal
+
 # plotting
 from bisect import bisect_left
 import matplotlib.pyplot as plt
@@ -1940,5 +1942,10 @@ class ActivityLogger(commands.Cog):
     #    if member:
     #        data[guild.name] = await self.config.member(member).stats()
 
-    async def red_delete_data_for_user(self, requester: str, user_id: int):
+    async def red_delete_data_for_user(
+        self,
+        *,
+        requester: Literal["discord_deleted_user", "owner", "user", "user_strict"],
+        user_id: int,
+    ):
         pass

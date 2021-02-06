@@ -11,6 +11,7 @@ from .memoizer import Memoizer
 # general
 import asyncio
 from datetime import datetime
+from typing import Literal
 import inspect
 import logging
 import time
@@ -1430,3 +1431,11 @@ class Isolate(commands.Cog):
             msg += "\n\nOriginal reason was: " + member_data["reason"]
 
         await self._unisolate(member, reason=msg, apply_roles=False, update=True, quiet=True)
+
+    async def red_delete_data_for_user(
+        self,
+        *,
+        requester: Literal["discord_deleted_user", "owner", "user", "user_strict"],
+        user_id: int,
+    ):
+        pass

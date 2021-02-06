@@ -8,7 +8,7 @@ from dateutil import parser
 import asyncio
 import datetime
 import discord
-
+from typing import Literal
 
 class Birthday(commands.Cog):
     """Track birthdays, add birthday role, and annouce birthdays for users."""
@@ -268,3 +268,11 @@ class Birthday(commands.Cog):
             await ctx.send("No one has their birthday set in your server!")
         else:
             await menu(ctx, embeds, DEFAULT_CONTROLS)
+
+    async def red_delete_data_for_user(
+        self,
+        *,
+        requester: Literal["discord_deleted_user", "owner", "user", "user_strict"],
+        user_id: int,
+    ):
+        pass

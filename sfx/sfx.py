@@ -7,6 +7,7 @@ import os
 import glob
 import asyncio
 from difflib import get_close_matches
+from typing import Literal
 import tabulate
 
 from .utils import saysound, code_path
@@ -363,3 +364,11 @@ class SFX(commands.Cog):
             except:
                 await ctx.send("Please allow DMs from server members so I can DM you the list!")
                 return
+
+    async def red_delete_data_for_user(
+        self,
+        *,
+        requester: Literal["discord_deleted_user", "owner", "user", "user_strict"],
+        user_id: int,
+    ):
+        pass

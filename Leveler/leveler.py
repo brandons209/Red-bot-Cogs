@@ -16,7 +16,7 @@ from redbot.core.i18n import Translator, cog_i18n
 from io import BytesIO
 import functools
 import textwrap
-
+from typing import Literal
 
 _ = Translator("Leveler", __file__)
 
@@ -653,3 +653,11 @@ class Leveler(commands.Cog):
             return
         # reset level stats on leave.
         await self.profiles.data.member(member).clear()
+
+    async def red_delete_data_for_user(
+        self,
+        *,
+        requester: Literal["discord_deleted_user", "owner", "user", "user_strict"],
+        user_id: int,
+    ):
+        pass

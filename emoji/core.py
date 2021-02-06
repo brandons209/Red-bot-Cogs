@@ -6,7 +6,7 @@ import unicodedata
 import aiohttp
 import discord
 from redbot.core import commands, checks
-
+from typing import Literal
 
 class EveryoneEmoji(commands.Cog):
 
@@ -108,3 +108,11 @@ class EveryoneEmoji(commands.Cog):
         img = io.BytesIO(img)
 
         await ctx.send(f"{ctx.author.display_name} says:", file=discord.File(img, name))
+
+    async def red_delete_data_for_user(
+        self,
+        *,
+        requester: Literal["discord_deleted_user", "owner", "user", "user_strict"],
+        user_id: int,
+    ):
+        pass

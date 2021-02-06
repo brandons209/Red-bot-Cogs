@@ -3,7 +3,7 @@ from redbot.core import checks, commands, Config
 from redbot.core.utils import chat_formatting as chat
 from redbot.core.utils.menus import menu, DEFAULT_CONTROLS
 import asyncio
-from typing import Union
+from typing import Union, Literal
 
 
 class Rules(commands.Cog):
@@ -137,3 +137,11 @@ class Rules(commands.Cog):
         async with self.config.channel(channel).rules() as rules:
             rules[str(rule_num)] = rule
         await ctx.tick()
+
+    async def red_delete_data_for_user(
+        self,
+        *,
+        requester: Literal["discord_deleted_user", "owner", "user", "user_strict"],
+        user_id: int,
+    ):
+        pass

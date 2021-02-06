@@ -1,5 +1,6 @@
 from redbot.core.utils.chat_formatting import *
 from redbot.core import Config, checks, commands, bank
+from typing import Literal
 import discord
 import asyncio
 
@@ -406,3 +407,11 @@ class CostManager(commands.Cog):
             )
             await asyncio.sleep(10)
             await message.delete()
+
+    async def red_delete_data_for_user(
+        self,
+        *,
+        requester: Literal["discord_deleted_user", "owner", "user", "user_strict"],
+        user_id: int,
+    ):
+        pass

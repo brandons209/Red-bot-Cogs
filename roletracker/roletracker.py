@@ -6,6 +6,7 @@ from datetime import datetime
 from redbot.core import checks, commands, Config, modlog
 from redbot.core.utils.chat_formatting import pagify
 from redbot.core.utils.predicates import MessagePredicate
+from typing import Literal
 
 try:
     from redbot.core.commands import GuildContext
@@ -267,3 +268,11 @@ class RoleTracker(commands.Cog):
                             await case.edit(edits)
 
                     await self.config.role(role).USERS.set(data)
+
+    async def red_delete_data_for_user(
+        self,
+        *,
+        requester: Literal["discord_deleted_user", "owner", "user", "user_strict"],
+        user_id: int,
+    ):
+        pass

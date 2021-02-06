@@ -9,6 +9,7 @@ from redbot.core.utils import chat_formatting as chat
 from redbot.core.utils.menus import menu, DEFAULT_CONTROLS
 from redbot.core.utils.mod import get_audit_reason
 from tabulate import tabulate
+from typing import Literal
 import asyncio
 
 _ = Translator("PersonalRoles", __file__)
@@ -434,3 +435,11 @@ class PersonalRoles(commands.Cog):
                     await role.delete()
                 except:
                     pass
+
+    async def red_delete_data_for_user(
+        self,
+        *,
+        requester: Literal["discord_deleted_user", "owner", "user", "user_strict"],
+        user_id: int,
+    ):
+        pass

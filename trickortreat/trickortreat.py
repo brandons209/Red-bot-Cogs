@@ -1,6 +1,7 @@
 from redbot.core.utils.chat_formatting import *
 from redbot.core import Config, checks, commands, bank
 from redbot.core.utils.predicates import MessagePredicate
+from typing import Literal
 import discord
 import asyncio
 import random
@@ -313,3 +314,11 @@ class TrickorTreat(commands.Cog):
                 await bank.withdraw_credits(ctx.author, amount)
 
         await self.config.member(ctx.author).last_pay.set(time.time())
+
+    async def red_delete_data_for_user(
+        self,
+        *,
+        requester: Literal["discord_deleted_user", "owner", "user", "user_strict"],
+        user_id: int,
+    ):
+        pass

@@ -1,5 +1,6 @@
 from redbot.core import Config, commands
 from redbot.core.utils.chat_formatting import pagify
+from typing import Literal
 import re
 import random
 import string
@@ -294,3 +295,11 @@ class Memeify(commands.Cog):
             text = text[:-1]
 
         return text
+
+    async def red_delete_data_for_user(
+        self,
+        *,
+        requester: Literal["discord_deleted_user", "owner", "user", "user_strict"],
+        user_id: int,
+    ):
+        pass

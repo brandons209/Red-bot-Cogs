@@ -8,6 +8,7 @@ import asyncio
 import re
 import time
 from datetime import datetime, timedelta
+from typing import Literal
 from .time_utils import *
 
 # May need to not save on every reaction add if it causes too much lag
@@ -291,6 +292,14 @@ class NewReactPoll:
         await self.channel.send(msg)
         del self.poll_sessions[str(self.channel.id)]
         await self.main.delete_poll(self)
+
+    async def red_delete_data_for_user(
+        self,
+        *,
+        requester: Literal["discord_deleted_user", "owner", "user", "user_strict"],
+        user_id: int,
+    ):
+        pass
 
 
 class LoadedPoll(NewReactPoll):

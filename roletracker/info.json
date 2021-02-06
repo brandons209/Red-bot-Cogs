@@ -15,5 +15,5 @@
     "brandons209",
     "pancakesparkle"
   ],
-  "end_user_data_statement": "Depending on setup, can log user messages, voice channel activity, audit actions in guilds, activity statistics per guild, user name changes, and any moderation actions per guild."
+  "end_user_data_statement": "This cog stores the users who have a trackable role."
 }

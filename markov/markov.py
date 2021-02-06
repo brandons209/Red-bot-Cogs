@@ -1,5 +1,6 @@
 from redbot.core.utils.chat_formatting import *
 from redbot.core import Config, checks, commands
+from typing import Literal
 import discord
 import random
 import asyncio
@@ -193,3 +194,11 @@ class Markov(commands.Cog):
             model[str(message.channel.id)][content[i]].append(content[i + 1])
 
         self.cache[guild.id]["model"] = model
+
+    async def red_delete_data_for_user(
+        self,
+        *,
+        requester: Literal["discord_deleted_user", "owner", "user", "user_strict"],
+        user_id: int,
+    ):
+        pass

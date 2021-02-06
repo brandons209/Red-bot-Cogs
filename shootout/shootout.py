@@ -5,7 +5,7 @@
 from redbot.core import bank, commands, checks, Config
 from redbot.core.utils.chat_formatting import *
 import asyncio, contextlib, discord, random, shlex
-
+from typing import Literal
 
 class Shootout(commands.Cog):
     default_config = {

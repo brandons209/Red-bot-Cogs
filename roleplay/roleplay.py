@@ -3,6 +3,7 @@ from redbot.core.utils.chat_formatting import italics, pagify, box
 from redbot.core import Config, checks, commands
 import random
 from random import choice
+from typing import Literal
 
 import asyncio
 import os
@@ -439,3 +440,11 @@ class RolePlay(commands.Cog):
             await ctx.send(msg + "(╯°□°）╯︵ " + name[::-1])
         else:
             await ctx.send("*flips a coin and... " + choice(["HEADS!*", "TAILS!*"]))
+
+    async def red_delete_data_for_user(
+        self,
+        *,
+        requester: Literal["discord_deleted_user", "owner", "user", "user_strict"],
+        user_id: int,
+    ):
+        pass

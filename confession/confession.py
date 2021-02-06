@@ -1,10 +1,10 @@
 from redbot.core import commands, checks, Config
 from redbot.core.utils.predicates import MessagePredicate
 from redbot.core.utils.menus import DEFAULT_CONTROLS, menu
+from typing import Literal
 import contextlib
 import discord
 import asyncio
-
 
 class Confession(commands.Cog):
     def __init__(self):
@@ -184,3 +184,11 @@ class Confession(commands.Cog):
                 pass
 
         await ctx.author.send("Your confession has been sent, you are forgiven now.")
+
+    async def red_delete_data_for_user(
+        self,
+        *,
+        requester: Literal["discord_deleted_user", "owner", "user", "user_strict"],
+        user_id: int,
+    ):
+        pass

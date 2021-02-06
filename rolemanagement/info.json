@@ -4,7 +4,7 @@
         "DiscordLiz",
         "brandons209"
     ],
-    "install_msg": "If you need help, I have a channel in https://discord.gg/mb85deu",
+    "install_msg": "Thank you for using RoleManagement!",
     "name": "RoleManagement",
     "disabled": false,
     "short": "Role searches, reactroles, requirements for roles, etc.",
@@ -18,5 +18,5 @@
     ],
     "hidden": false,
     "min_bot_version": "3.4.0",
-    "end_user_data_statement": "This will only store sticky roles for users."
+    "end_user_data_statement": "This will only store sticky and subscribed roles for users."
 }

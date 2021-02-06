@@ -1,6 +1,7 @@
 from redbot.core.utils.chat_formatting import *
 from redbot.core import Config, checks, commands, bank
 from redbot.core.data_manager import cog_data_path
+from typing import Literal
 import discord
 
 import aiohttp
@@ -359,3 +360,11 @@ class NitroEmoji(commands.Cog):
                         break
                     except ValueError:
                         pass
+
+    async def red_delete_data_for_user(
+        self,
+        *,
+        requester: Literal["discord_deleted_user", "owner", "user", "user_strict"],
+        user_id: int,
+    ):
+        pass
