@@ -17,5 +17,5 @@
     "brandons209",
     "redbot"
   ],
-  "end_user_data_statement": "This will store a user's last few messages (depending on configuration)"
+  "end_user_data_statement": "This will store a user's last few messages (depending on configuration), and also notes made by mods/admins on user."
 }

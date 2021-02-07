@@ -1,6 +1,7 @@
 from redbot.core.utils.chat_formatting import *
 from redbot.core.utils import mod
 from redbot.core.utils.predicates import MessagePredicate
+from redbot.core.utils.menus import menu, DEFAULT_CONTROLS
 from redbot.core import Config, checks, commands, modlog
 from redbot.core.bot import Red
 from redbot.core.data_manager import cog_data_path
@@ -9,7 +10,7 @@ import discord
 from .utils import *
 from typing import Literal
 import asyncio
-from typing import Union
+from typing import Union, Optional
 import os
 import random
 
@@ -76,7 +77,7 @@ class MoreAdmin(commands.Cog):
         default_role = {"addable": []}  # role ids who can add this role
 
         # maps message_time -> dict("channel_id":int, "message_id": int)
-        default_member = {"last_msgs": {}}
+        default_member = {"last_msgs": {}, "notes": []}
 
         self.config.register_role(**default_role)
         self.config.register_member(**default_member)
@@ -493,6 +494,88 @@ class MoreAdmin(commands.Cog):
         if pred.result:
             await ctx.send("Better grab some coffee then.")
             await self.last_message_sync(ctx)
+
+    async def note_menu(self, ctx, member: discord.Member, message: Optional[discord.Message] = None) -> list:
+        color = await ctx.embed_color()
+
+        # defines deleting a note for the user
+        async def delete_note(ctx: commands.GuildContext,
+            pages: list,
+            controls: dict,
+            message: discord.Message,
+            page: int,
+            timeout: float,
+            emoji: str
+        ):
+            async with self.config.member(member).notes() as notes:
+                del notes[page]
+            # resend menu, delete old menu with removed note
+            if len(pages) <= 1:
+                # no more notes, delete menu
+                try:
+                    await message.delete()
+                except discord.NotFound:
+                    pass
+                return
+
+            # remove reaction
+            if ctx.channel.permissions_for(ctx.me).manage_messages:
+                try:
+                    await message.remove_reaction("\N{NO ENTRY SIGN}", ctx.author)
+                except discord.HTTPException:
+                    pass
+
+            # call menu function again with updated menu
+            await self.note_menu(ctx, member, message)
+
+        notes = await self.config.member(member).notes()
+        embeds = []
+        for i, note in enumerate(notes):
+            embed = discord.Embed(title=f"Notes for {member.display_name}", color=color)
+            mod = ctx.guild.get_member(note["moderator"])
+            mod = "Mod id({})".format(note["moderator"]) if not mod else mod.display_name
+            embed = embed.set_author(name=mod)
+            embed = embed.add_field(name="Note", value=note["note"])
+            embed = embed.set_footer(text=f"Page {i+1} out of {len(notes)}")
+            embeds.append(embed)
+
+        controls = DEFAULT_CONTROLS.copy()
+        controls.update({"\N{NO ENTRY SIGN}": delete_note})
+        await menu(ctx, embeds, controls, message=message)
+
+    @commands.group()
+    @commands.guild_only()
+    @checks.mod()
+    async def notes(self, ctx):
+        """
+        Manage notes for a user
+        """
+        pass
+
+    @notes.command(name="add")
+    async def notes_add(self, ctx, member: discord.Member, *, note: str):
+        """
+        Add a new note to a user.
+        """
+        async with self.config.member(member).notes() as notes:
+            data = {"moderator": ctx.author.id, "note": note}
+            notes.append(data)
+
+        await ctx.tick()
+
+    @notes.command(name="list")
+    async def notes_list(self, ctx, member: discord.Member):
+        """
+        List notes for a user.
+
+        Delete notes by clicking the no_entry_sign emoji
+        """
+        notes = await self.config.member(member).notes()
+        if not notes:
+            await ctx.send("That user has no notes on them.")
+            return
+
+        await self.note_menu(ctx, member)
 
     @commands.command(name="giverole")
     @checks.mod_or_permissions(manage_roles=True)
