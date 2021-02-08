@@ -1,0 +1,8 @@
+{
+    "author" : ["saurichable", "brandons209"],
+    "install_msg" : "Thank you for installing my cog! Only admins can approve or reject suggestions.",
+    "name" : "Suggestion",
+    "short" : "Simple suggestion box.",
+    "description" : "Just a simple suggestion box with voting system.",
+    "tags" : ["suggestion"]
+}
