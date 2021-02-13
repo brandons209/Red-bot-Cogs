@@ -1087,7 +1087,7 @@ class MoreAdmin(commands.Cog):
     @commands.guild_only()
     @checks.admin_or_permissions(ban_members=True)
     @checks.bot_has_permissions(ban_members=True)
-    async def bandm(self, ctx, member: discord.Member, *, reason: str = None):
+    async def bandm(self, ctx, member: discord.Member, days: Optional[int] = None, *, reason: str = None):
         """
         Ban a member and have the bot DM them a message
         """
@@ -1106,7 +1106,7 @@ class MoreAdmin(commands.Cog):
         except discord.HTTPException:
             pass
 
-        await ctx.invoke(ban_command, member, reason=reason)
+        await ctx.invoke(ban_command, user=member, days=days, reason=reason)
         await ctx.tick()
 
     ### Listeners ###
