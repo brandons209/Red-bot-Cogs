@@ -95,7 +95,7 @@ class Task:
         next_run_at = now + timedelta(seconds=self.next_call_delay)
         embed = discord.Embed(color=color, timestamp=next_run_at)
         embed.title = f"Now viewing {index} of {page_count} selected tasks"
-        embed.add_field(name="Command", value=f"[p]{self.content}")
+        embed.add_field(name="Command", value=f"[p]{self.content[:990]}")
         embed.add_field(name="Channel", value=self.channel.mention)
         embed.add_field(name="Creator", value=self.author.mention)
         embed.add_field(name="Task ID", value=self.uid)
