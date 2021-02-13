@@ -192,6 +192,10 @@ class MoreAdmin(commands.Cog):
         guild = ctx.guild
         to_purge = []
 
+        # update members
+        _guilds = [g for g in self.bot.guilds if g.large and not (g.chunked or g.unavailable)]
+        await self.bot.request_offline_members(*_guilds)
+
         for member in guild.members:
             if member.id == self.bot.user.id:  # don't want to purge the bot.
                 continue
@@ -499,13 +503,14 @@ class MoreAdmin(commands.Cog):
         color = await ctx.embed_color()
 
         # defines deleting a note for the user
-        async def delete_note(ctx: commands.GuildContext,
+        async def delete_note(
+            ctx: commands.GuildContext,
             pages: list,
             controls: dict,
             message: discord.Message,
             page: int,
             timeout: float,
-            emoji: str
+            emoji: str,
         ):
             async with self.config.member(member).notes() as notes:
                 del notes[page]
@@ -774,7 +779,7 @@ class MoreAdmin(commands.Cog):
             for i, user in enumerate(to_purge):
                 try:
                     await user.send(purge_msg)
-                except:
+                except discord.HTTPException:
                     pass
 
                 if check_messages:

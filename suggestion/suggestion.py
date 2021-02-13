@@ -1,7 +1,7 @@
 import asyncio
 import discord
 
-from typing import Optional
+from typing import Optional, Literal
 from discord.utils import get
 from datetime import timedelta
 
@@ -722,3 +722,11 @@ class Suggestion(commands.Cog):
             embed.add_field(name="Votes:", value=f"For: `{num_up}`, Against: `{num_down}`", inline=False)
 
         return content, embed
+
+    async def red_delete_data_for_user(
+        self,
+        *,
+        requester: Literal["discord_deleted_user", "owner", "user", "user_strict"],
+        user_id: int,
+    ):
+        pass

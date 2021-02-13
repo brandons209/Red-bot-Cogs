@@ -1,0 +1,10 @@
+{
+  "author" : ["brandons209"],
+  "bot_version": [3,4,4],
+  "install_msg" : "Happy Valentines day! Make sure to set the fallback channel.",
+  "short" : "Happy Valentines day!",
+  "description" : "Sends a custom message and 'card' to all users in a guild. Messages and cards are choosen randomly from the available options for each user. ",
+  "tags" : ["valentine", "massdm", "cards", "holiday"],
+  "hidden" : false,
+  "end_user_data_statement": "This cog won't store anything for a user."
+}
