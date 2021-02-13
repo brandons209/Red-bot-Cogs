@@ -10,9 +10,7 @@ from redbot.core.utils.predicates import MessagePredicate
 _ = Translator("Warnings", __file__)
 
 
-async def warning_points_add_check(
-    config: Config, ctx: commands.Context, user: discord.Member, points: int
-):
+async def warning_points_add_check(config: Config, ctx: commands.Context, user: discord.Member, points: int):
     """Handles any action that needs to be taken or not based on the points"""
     guild = ctx.guild
     guild_settings = config.guild(guild)
@@ -29,9 +27,7 @@ async def warning_points_add_check(
         await create_and_invoke_context(ctx, act["exceed_command"], user)
 
 
-async def warning_points_remove_check(
-    config: Config, ctx: commands.Context, user: discord.Member, points: int
-):
+async def warning_points_remove_check(config: Config, ctx: commands.Context, user: discord.Member, points: int):
     guild = ctx.guild
     guild_settings = config.guild(guild)
     act = {}
@@ -45,9 +41,7 @@ async def warning_points_remove_check(
         await create_and_invoke_context(ctx, act["drop_command"], user)
 
 
-async def create_and_invoke_context(
-    realctx: commands.Context, command_str: str, user: discord.Member
-):
+async def create_and_invoke_context(realctx: commands.Context, command_str: str, user: discord.Member):
     m = copy(realctx.message)
     m.content = command_str.format(user=user.mention, prefix=realctx.prefix)
     fctx = await realctx.bot.get_context(m, cls=commands.Context)
@@ -99,9 +93,7 @@ async def get_command_for_exceeded_points(ctx: commands.Context):
     await ctx.send(_("You may enter your response now."))
 
     try:
-        msg = await ctx.bot.wait_for(
-            "message", check=MessagePredicate.same_context(ctx), timeout=30
-        )
+        msg = await ctx.bot.wait_for("message", check=MessagePredicate.same_context(ctx), timeout=30)
     except asyncio.TimeoutError:
         return None
     else:
@@ -143,9 +135,7 @@ async def get_command_for_dropping_points(ctx: commands.Context):
     await ctx.send(_("You may enter your response now."))
 
     try:
-        msg = await ctx.bot.wait_for(
-            "message", check=MessagePredicate.same_context(ctx), timeout=30
-        )
+        msg = await ctx.bot.wait_for("message", check=MessagePredicate.same_context(ctx), timeout=30)
     except asyncio.TimeoutError:
         return None
     else:

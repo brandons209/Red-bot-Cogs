@@ -153,15 +153,11 @@ class Warnings_Custom(commands.Cog):
         await self.config.guild(ctx.guild).show_mod.set(true_or_false)
         if true_or_false:
             await ctx.send(
-                _(
-                    "I will include the name of the moderator who issued the warning when sending a DM to a user."
-                )
+                _("I will include the name of the moderator who issued the warning when sending a DM to a user.")
             )
         else:
             await ctx.send(
-                _(
-                    "I will not include the name of the moderator who issued the warning when sending a DM to a user."
-                )
+                _("I will not include the name of the moderator who issued the warning when sending a DM to a user.")
             )
 
     @warningset.command()
@@ -174,9 +170,7 @@ class Warnings_Custom(commands.Cog):
         guild = ctx.guild
         if channel:
             await self.config.guild(guild).warn_channel.set(channel.id)
-            await ctx.send(
-                _("The warn channel has been set to {channel}.").format(channel=channel.mention)
-            )
+            await ctx.send(_("The warn channel has been set to {channel}.").format(channel=channel.mention))
         else:
             await self.config.guild(guild).warn_channel.set(channel)
             await ctx.send(_("Warnings will now be sent in the channel command was used in."))
@@ -191,9 +185,7 @@ class Warnings_Custom(commands.Cog):
         channel = self.bot.get_channel(await self.config.guild(ctx.guild).warn_channel())
         if true_or_false:
             if channel:
-                await ctx.send(
-                    _("Warnings will now be sent to {channel}.").format(channel=channel.mention)
-                )
+                await ctx.send(_("Warnings will now be sent to {channel}.").format(channel=channel.mention))
             else:
                 await ctx.send(_("Warnings will now be sent in the channel command was used in."))
         else:
@@ -279,9 +271,7 @@ class Warnings_Custom(commands.Cog):
 
     @warnreason.command(name="create", aliases=["add"])
     @commands.guild_only()
-    async def reason_create(
-        self, ctx: commands.Context, name: str, points: int, *, description: str
-    ):
+    async def reason_create(self, ctx: commands.Context, name: str, points: int, *, description: str):
         """Create a warning reason."""
         guild = ctx.guild
 
@@ -329,9 +319,9 @@ class Warnings_Custom(commands.Cog):
                     msg_list.append(em)
                 else:
                     msg_list.append(
-                        _(
-                            "Name: {reason_name}\nPoints: {points}\nDescription: {description}"
-                        ).format(reason_name=r, **v)
+                        _("Name: {reason_name}\nPoints: {points}\nDescription: {description}").format(
+                            reason_name=r, **v
+                        )
                     )
         if msg_list:
             await menu(ctx, msg_list, DEFAULT_CONTROLS)
@@ -423,8 +413,7 @@ class Warnings_Custom(commands.Cog):
                         can = False
                     if can:
                         msg += " " + _(
-                            "Do `{prefix}warningset allowcustomreasons true` to enable custom "
-                            "reasons."
+                            "Do `{prefix}warningset allowcustomreasons true` to enable custom " "reasons."
                         ).format(prefix=ctx.clean_prefix)
                     return await ctx.send(msg)
         if reason_type is None:
@@ -471,7 +460,6 @@ class Warnings_Custom(commands.Cog):
                 else:
                     context = msg.content
 
-
         member_settings = self.config.member(user)
         current_point_count = await member_settings.total_points()
         current_point_count += reason_type["points"]
@@ -493,9 +481,7 @@ class Warnings_Custom(commands.Cog):
             em.add_field(name=_("Points"), value=str(reason_type["points"]))
             try:
                 await user.send(
-                    _("You have received a warning in {guild_name}.").format(
-                        guild_name=ctx.guild.name
-                    ),
+                    _("You have received a warning in {guild_name}.").format(guild_name=ctx.guild.name),
                     embed=em,
                 )
             except discord.HTTPException:
@@ -503,10 +489,9 @@ class Warnings_Custom(commands.Cog):
 
         if dm_failed:
             await ctx.send(
-                _(
-                    "A warning for {user} has been issued,"
-                    " but I wasn't able to send them a warn message."
-                ).format(user=user.mention)
+                _("A warning for {user} has been issued," " but I wasn't able to send them a warn message.").format(
+                    user=user.mention
+                )
             )
 
         toggle_channel = guild_settings["toggle_channel"]
@@ -533,15 +518,11 @@ class Warnings_Custom(commands.Cog):
                 if warn_channel:
                     await ctx.tick()
                 else:
-                    await ctx.send(
-                        _("{user} has been warned.").format(user=user.mention), embed=em
-                    )
+                    await ctx.send(_("{user} has been warned.").format(user=user.mention), embed=em)
         else:
             if not dm_failed:
                 await ctx.tick()
-        reason_msg = _(
-            "{reason}\n\nUse `{prefix}unwarn {user} {message}` to remove this warning.{context}"
-        ).format(
+        reason_msg = _("{reason}\n\nUse `{prefix}unwarn {user} {message}` to remove this warning.{context}").format(
             reason=_("{description}\nPoints: {points}").format(
                 description=reason_type["description"], points=reason_type["points"]
             ),
@@ -551,16 +532,16 @@ class Warnings_Custom(commands.Cog):
             context=f"\n\n**Context**:\n{context}" if context else "",
         )
         case = await modlog.create_case(
-               self.bot,
-               ctx.guild,
-               ctx.message.created_at.replace(tzinfo=timezone.utc),
-               "warning",
-               user,
-               ctx.message.author,
-               reason_msg,
-               until=None,
-               channel=None,
-            )
+            self.bot,
+            ctx.guild,
+            ctx.message.created_at.replace(tzinfo=timezone.utc),
+            "warning",
+            user,
+            ctx.message.author,
+            reason_msg,
+            until=None,
+            channel=None,
+        )
 
         warning_to_add = {
             str(ctx.message.id): {
@@ -568,7 +549,7 @@ class Warnings_Custom(commands.Cog):
                 "description": reason_type["description"],
                 "mod": ctx.author.id,
                 "date": ctx.message.created_at.replace(tzinfo=timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
-                "caseno": case.case_number
+                "caseno": case.case_number,
             }
         }
         async with member_settings.warnings() as user_warnings:
@@ -600,18 +581,19 @@ class Warnings_Custom(commands.Cog):
                     else:
                         bot = ctx.bot
                         mod = bot.get_user(mod_id) or _("Unknown Moderator ({})").format(mod_id)
-                    date = user_warnings[key].get("date", None) # not all warnings may have date if switched from using warnings cog by red
-                    num = user_warnings[key].get("caseno", None) # same as above
+                    date = user_warnings[key].get(
+                        "date", None
+                    )  # not all warnings may have date if switched from using warnings cog by red
+                    num = user_warnings[key].get("caseno", None)  # same as above
                     msg += _(
-                        "{num}{num_points} point warning {reason_name} issued by {user} for "
-                        "{description}{date}\n"
+                        "{num}{num_points} point warning {reason_name} issued by {user} for " "{description}{date}\n"
                     ).format(
                         num_points=user_warnings[key]["points"],
                         reason_name=key,
                         user=mod,
                         description=user_warnings[key]["description"],
                         date=" at {}".format(date) if date else "",
-                        num=f"Case #{num}: " if num else ""
+                        num=f"Case #{num}: " if num else "",
                     )
                 await ctx.send_interactive(
                     pagify(msg, shorten_by=58),
@@ -638,16 +620,17 @@ class Warnings_Custom(commands.Cog):
                     else:
                         bot = ctx.bot
                         mod = bot.get_user(mod_id) or _("Unknown Moderator ({})").format(mod_id)
-                    date = user_warnings[key].get("date", None) # not all warnings may have date if switched from using warnings cog by red
+                    date = user_warnings[key].get(
+                        "date", None
+                    )  # not all warnings may have date if switched from using warnings cog by red
                     msg += _(
-                        "{num_points} point warning {reason_name} issued by {user} for "
-                        "{description}{date}\n"
+                        "{num_points} point warning {reason_name} issued by {user} for " "{description}{date}\n"
                     ).format(
                         num_points=user_warnings[key]["points"],
                         reason_name=key,
                         user=mod,
                         description=user_warnings[key]["description"],
-                        date=" at {}".format(date) if date else ""
+                        date=" at {}".format(date) if date else "",
                     )
                 await ctx.send_interactive(
                     pagify(msg, shorten_by=58),
