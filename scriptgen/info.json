@@ -1,0 +1,18 @@
+{
+	"author": [
+		"Brandons209"
+	],
+	"name": "ScriptGen",
+	"disabled": false,
+	"short": "A cog that loads aitextgen models for people to generate text! Make sure to put the model python_model.bin and config.json in the data directory for this cog.",
+	"description": "This cog loads a model made with aitextgen: a simple python library to train gpt2 models in pytorch. Currently, I use it to generate scripts from TV shows but you can use any model made with aitextgen! You can configure cooldowns and also cost per word generated! Cooldowns are for the entire server as not to stress the bot with multiple generations at once. A global lock can be configured such that the bot can only generate 1 text at a time.",
+	"tags": [
+		"scheduler"
+	],
+	"hidden": false,
+	"requirements": [
+		"aitextgen"
+	],
+	"min_bot_version": "3.4.0",
+	"end_user_data_statement": "This cog does not persistently store data or metadata about users."
+}
