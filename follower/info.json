@@ -1,0 +1,17 @@
+{
+	"author": [
+		"Brandons209"
+	],
+	"name": "Follower",
+	"disabled": false,
+	"short": "Allow users to follow other users and get notified when they talk.",
+	"description": "Similar to Twitter followers, this cog allows a user to follow another user, which will notify them when the followed user talks in a certain channel (after a period of inactivity, 1 hour). Users can opt out, view their followers, and block other users from following them. Followers are tracked through multiple servers, so one person can be followed in multiple channels spanning many servers.",
+	"tags": [
+		"follower",
+    "twitter",
+    "watch"
+	],
+	"hidden": false,
+	"min_bot_version": "3.4.0",
+	"end_user_data_statement": "This cog does stores user's followers, who they are following, and opt in/out status."
+}
