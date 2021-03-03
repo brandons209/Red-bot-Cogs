@@ -310,9 +310,14 @@ class Follower(commands.Cog):
             return
 
         async with self.config.user_from_id(ctx.author.id).blocked() as blocked:
+            if user.id in blocked:
+                await ctx.send(error(f"You already blocked {user.mention}!"))
+                return
             blocked.append(user.id)
 
         await self.unfollow(user.id, ctx.author.id)
+        # also unfollow yourself from them
+        await self.unfollow(ctx.author.id, user.id)
 
         await ctx.tick()
 
