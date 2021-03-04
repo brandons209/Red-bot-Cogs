@@ -48,6 +48,18 @@ Added a decay rate where xp and level decays over time. Also added a failure rat
 Made for a friend, pretty messy as it was my first v3 cog. Send custom events and log time since that event. Unsupported and won't be updated for much else.
 
 
+#### Follower
+Twitter style following system that is guild-agnostic. Allows users to follow someone else in a specific channel. They will get notified when that user speaks or joins the voice chat. Users can follow someone in multiple channels.
+**Features**
+- Users can opt out, allowing no one to follow them
+- Users can block other people from following them
+- To follow someone in a channel they must be able to view the channel (has read_messages or view_channel permission)
+- DM notification includes message link to jump to message.
+- Guild Agnostic: a user can follow a user across different guilds
+- Can't follow a user in every channel automatically (would have to add every channel from every guild), this is to avoid issues arised from users stalking someone else
+- Works from DMs as well as in guilds, use user and channel IDs for easiest use.
+
+
 #### Isolate
 Carbon copy of punish cog, except this one will remove all roles from a user and by default sets permissions so they cannot see or talk in any channel except the channel set for isolation.
 
@@ -69,6 +81,15 @@ More admin commands that provide various functionality.
 - Hidden say and selfdm commands for setting helpful aliases with these commands.
 - Send, send attachment, edit, and get commands for bot's messages. Useful for sending rules by the bot so that anyone can edit those.
 - List all users with a role/roles quickly and easily.
+- Customized DM message for banning users.
+- Mods/Admins can add notes to users for reference
+
+
+#### Memeify
+Turn text into memes.
+**Features**
+- Bify: make every word start with B emoji and every B into one.
+- Frenchify: add a French ascent to text
 
 
 #### Nitro Emoji
@@ -88,6 +109,7 @@ Search derpibooru for pony images. Ported from [Alzarath](https://github.com/Alz
 - Filter by tags.
 - Verbose mode.
 - Get random and latest image results.
+- Include Artist when posting images
 
 
 #### Punish
@@ -139,6 +161,10 @@ Allows moderators to add certain roles that are set by administrators. Added rol
 Allows easy access to guild and channel rules for a guild. Admins can set what rules they're for the entire guild, and per channel. Users can easily view these rules using a menu. Rules can be directly accessed by number as well, which allows quickly reminding a user of a rule in chats, instead of telling them to refer to a rules channel or pinned messages for channel rules.
 
 
+#### Scriptgen
+Allows using any aitextgen gpt-2 model to generate text. Can also charge users per word generated. Mainly used for generating scripts for a TV-Show for fun, but you can use it with any model.
+
+
 #### SFX
 Sound effect cog that allows people to play sound effects in voice channels. Sound effects have a customizeable cost, volume, and name. Supports direct files and URLs.
 
@@ -157,8 +183,22 @@ A game cog that rewards players for fast typing. The first player to type a mess
 - Shootouts in multiple channels!
 
 
+#### Suggestion
+Modifed from @saurichable. Adds a few features we needed.
+**Added Features**
+- Listing the final vote count when a suggestion is approved or denied
+- Added reasons for approved suggestions, since sometimes we accept a suggestion but we may modify it
+- Approved reasons are marked green, denied are marked red
+
+
 #### Smart React
 Auto react to messages based on keywords. Based off of [FlapJack's](https://github.com/flapjax/FlapJack-Cogs/) cog. Minor bug fixes and planned features, like using regex to parse messages.
+
+#### Warnings Custom
+Adds a few features that are needed for my server, modified from the built in warning cog.
+**Added Features**
+- Add context to warnings, if enabled. This allows adding some extra information after giving a warning. We had issues where warnings without context were hard to look back upon. Can send attachments too, included in modlog entry.
+- Shows dates for warnings for both users and mods, and also case number for mods when looking at a user's warnings.
 
 
 #### Welcome
