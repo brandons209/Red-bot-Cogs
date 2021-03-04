@@ -133,7 +133,7 @@ class ScriptGen(commands.Cog):
         """
         Set server wide cost per word generated
         """
-        if cooldown is None:
+        if cost is None:
             curr = await self.config.guild(ctx.guild).cost()
             await ctx.send(f"Current cost per word: `{cost}`")
             return
