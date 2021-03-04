@@ -223,26 +223,27 @@ class ScriptGen(commands.Cog):
         )
         p.start()
 
-        # in order to avoid the bot's main asyncio loop getting held up (which freezes the bot)
-        # need to wait while the queue is empty. also cant just put pass, since this
-        # will also hold up the bot's main loop
-        # asyncio.sleep(0) forces a context switch which allows other coroutines to continue running and the bot to function normally while the process is ran in a seperate thread
-        # see https://stackoverflow.com/questions/63322094/asyncio-aiohttp-create-task-blocks-event-loop-gather-results-in-this-event
-        while queue.empty():
-            await asyncio.sleep(0)
+        async with ctx.typing():
+            # in order to avoid the bot's main asyncio loop getting held up (which freezes the bot)
+            # need to wait while the queue is empty. also cant just put pass, since this
+            # will also hold up the bot's main loop
+            # asyncio.sleep(0) forces a context switch which allows other coroutines to continue running and the bot to function normally while the process is ran in a seperate thread
+            # see https://stackoverflow.com/questions/63322094/asyncio-aiohttp-create-task-blocks-event-loop-gather-results-in-this-event
+            while queue.empty():
+                await asyncio.sleep(0)
 
-        # cleanup process
-        p.join()
-        p.close()
+            # cleanup process
+            p.join()
+            p.close()
 
-        # get output
-        output = queue.get()
+            # get output
+            output = queue.get()
 
-        # unlock and reset cooldown before sending
-        await self.config.guild(ctx.guild).last_ran.set(time.time())
-        self.unlock_gen()
+            # unlock and reset cooldown before sending
+            await self.config.guild(ctx.guild).last_ran.set(time.time())
+            self.unlock_gen()
 
-        await ctx.send(box(output))
+            await ctx.send(box(output))
 
     async def red_delete_data_for_user(
         self,
