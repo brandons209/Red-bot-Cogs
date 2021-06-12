@@ -1,0 +1,11 @@
+{
+    "author": [
+        "TheScriptPony",
+        "Flame442"
+    ],
+    "name": "ImageMagic",
+    "description": "Manipulates images.",
+    "hidden": false,
+    "end_user_data_statement": "This cog does not store user data.",
+    "dependencies": ["Wand"]
+}
