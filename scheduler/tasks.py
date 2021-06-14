@@ -138,7 +138,7 @@ class Task:
         return embed
 
     def update_objects(self, bot):
-        """ Updates objects or throws an AttributeError """
+        """Updates objects or throws an AttributeError"""
         guild_id = self.author.guild.id
         author_id = self.author.id
         channel_id = self.channel.id

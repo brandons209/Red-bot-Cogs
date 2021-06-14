@@ -23,7 +23,7 @@ class Rules(commands.Cog):
     @commands.group(invoke_without_command=True, aliases=["r"])
     @commands.guild_only()
     async def rule(self, ctx, rule_num: int = None):
-        """ Display guild and channel rules """
+        """Display guild and channel rules"""
         if ctx.invoked_subcommand:
             return
         elif rule_num is not None:
@@ -37,7 +37,7 @@ class Rules(commands.Cog):
 
     @rule.command(name="list")
     async def rule_list(self, ctx):
-        """ List all guild rules """
+        """List all guild rules"""
         rules = await self.config.guild(ctx.guild).rules()
         embeds = []
         rules_keys = sorted([int(r) for r in rules.keys()])

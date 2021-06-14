@@ -326,7 +326,7 @@ class PersonalRoles(commands.Cog):
     @commands.guild_only()
     @commands.check(has_assigned_role)
     async def create(self, ctx):
-        """ Create personal role if you don't have one already """
+        """Create personal role if you don't have one already"""
 
         role = await self.config.member(ctx.author).role()
         role = ctx.guild.get_role(role)
@@ -384,7 +384,7 @@ class PersonalRoles(commands.Cog):
 
     @commands.Cog.listener("on_member_remove")
     async def remove_role(self, member):
-        """ Delete personal role if member leaves."""
+        """Delete personal role if member leaves."""
         if await self.bot.cog_disabled_in_guild(self, member.guild):
             return
         role = await self.config.member(member).role()
@@ -400,7 +400,7 @@ class PersonalRoles(commands.Cog):
 
     @commands.Cog.listener("on_member_update")
     async def modify_roles(self, before, after):
-        """ Delete personal role if member looses their auto role or looses their personal role """
+        """Delete personal role if member looses their auto role or looses their personal role"""
         if await self.bot.cog_disabled_in_guild(self, after.guild):
             return
         role = await self.config.member(after).role()

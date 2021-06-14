@@ -7,7 +7,7 @@ import asyncio
 
 
 class Markov(commands.Cog):
-    """ Generate text based on what your members say per channel"""
+    """Generate text based on what your members say per channel"""
 
     def __init__(self, bot):
         self.bot = bot
@@ -40,12 +40,12 @@ class Markov(commands.Cog):
     @checks.admin_or_permissions(administrator=True)
     @commands.guild_only()
     async def markovset(self, ctx):
-        """ Manage Markov Settings """
+        """Manage Markov Settings"""
         pass
 
     @markovset.command(name="clear")
     async def markovset_clear(self, ctx, *, channel: discord.TextChannel):
-        """ Clear data for a specific channel """
+        """Clear data for a specific channel"""
         async with self.config.guild(ctx.guild).model() as model:
             del self.cache[ctx.guild.id]["model"][str(channel.id)]
             try:  # possible that channel is cached but not saved yet

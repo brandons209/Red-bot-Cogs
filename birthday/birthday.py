@@ -136,7 +136,7 @@ class Birthday(commands.Cog):
     @commands.guild_only()
     @checks.admin_or_permissions(administrator=True)
     async def bdayset(self, ctx):
-        """ Manage birthday cog settings """
+        """Manage birthday cog settings"""
         pass
 
     @bdayset.command(name="dmmessage")
@@ -165,7 +165,7 @@ class Birthday(commands.Cog):
 
     @bdayset.command(name="channel")
     async def bdayset_channel(self, ctx, *, channel: discord.TextChannel = None):
-        """ Set channel to send birthday annoucements """
+        """Set channel to send birthday annoucements"""
         if not channel:
             await self.config.guild(ctx.guild).channel.clear()
         else:
@@ -176,7 +176,7 @@ class Birthday(commands.Cog):
     @bdayset.command(name="role")
     @checks.bot_has_permissions(manage_roles=True)
     async def bdayset_role(self, ctx, *, role: discord.Role = None):
-        """ Set role to give users on their birthday """
+        """Set role to give users on their birthday"""
         if not role:
             await self.config.guild(ctx.guild).role.clear()
         else:
@@ -187,7 +187,7 @@ class Birthday(commands.Cog):
     @commands.group(name="bday")
     @commands.guild_only()
     async def bday(self, ctx):
-        """ Manage your birthday """
+        """Manage your birthday"""
         pass
 
     @bday.command(name="set")
@@ -245,7 +245,7 @@ class Birthday(commands.Cog):
 
     @bday.command(name="list")
     async def bday_list(self, ctx):
-        """ List birthdays in the server """
+        """List birthdays in the server"""
         embeds = []
         for member in ctx.guild.members:
             bday = await self.config.member(member).birthday()

@@ -230,7 +230,7 @@ class RoleManagement(
                             s_roles.remove(role_id)
 
     async def get_cost(self, member: discord.Member, role: discord.Role):
-        """ Gets cost of a role for a user """
+        """Gets cost of a role for a user"""
         cost = await self.config.role(role).cost()
         free_roles = await self.config.guild(member.guild).free_roles()
 
@@ -275,7 +275,7 @@ class RoleManagement(
     @checks.is_owner()
     @commands.command(name="rrcleanup", hidden=True)
     async def rolemanagementcleanup(self, ctx: GuildContext):
-        """ :eyes: """
+        """:eyes:"""
         data = await self.config.custom("REACTROLE").all()
 
         key_data = {}

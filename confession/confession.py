@@ -17,7 +17,7 @@ class Confession(commands.Cog):
     @checks.admin_or_permissions(manage_guild=True)
     @commands.guild_only()
     async def confessionset(self, ctx):
-        """ Manage confession rooms """
+        """Manage confession rooms"""
         pass
 
     @confessionset.command(name="confess")

@@ -415,7 +415,7 @@ class Suggestion(commands.Cog):
     @checks.bot_has_permissions(manage_channels=True)
     @setsuggest.command(name="setup")
     async def setsuggest_setup(self, ctx: commands.Context):
-        """ Go through the initial setup process. """
+        """Go through the initial setup process."""
         await self.config.guild(ctx.guild).same.set(False)
         await self.config.guild(ctx.guild).suggest_id.set(None)
         await self.config.guild(ctx.guild).approve_id.set(None)
@@ -568,7 +568,7 @@ class Suggestion(commands.Cog):
     @checks.bot_has_permissions(add_reactions=True)
     @setsuggest.command(name="upemoji")
     async def setsuggest_upemoji(self, ctx: commands.Context, up_emoji: discord.Emoji = None):
-        """ Set custom reactions emoji instead of ✅. """
+        """Set custom reactions emoji instead of ✅."""
         if not up_emoji:
             await self.config.guild(ctx.guild).up_emoji.set(None)
         else:
@@ -582,7 +582,7 @@ class Suggestion(commands.Cog):
     @checks.bot_has_permissions(add_reactions=True)
     @setsuggest.command(name="downemoji")
     async def setsuggest_downemoji(self, ctx: commands.Context, down_emoji: discord.Emoji = None):
-        """ Set custom reactions emoji instead of ❎. """
+        """Set custom reactions emoji instead of ❎."""
         if not down_emoji:
             await self.config.guild(ctx.guild).up_emoji.set(None)
         else:
@@ -596,7 +596,7 @@ class Suggestion(commands.Cog):
     @checks.bot_has_permissions(manage_messages=True)
     @setsuggest.command(name="autodelete")
     async def setsuggest_autodelete(self, ctx: commands.Context, on_off: bool = None):
-        """ Toggle whether after `[p]suggest`, the bot deletes the message. """
+        """Toggle whether after `[p]suggest`, the bot deletes the message."""
         target_state = on_off if on_off else not (await self.config.guild(ctx.guild).delete_suggest())
         await self.config.guild(ctx.guild).delete_suggest.set(target_state)
         if target_state:
@@ -642,7 +642,7 @@ class Suggestion(commands.Cog):
 
     @setglobal.command(name="ignore")
     async def setsuggest_setglobal_ignore(self, ctx: commands.Context, server: discord.Guild = None):
-        """ Ignore suggestions from the server. """
+        """Ignore suggestions from the server."""
         if not server:
             server = ctx.guild
         if server.id not in await self.config.ignore():
@@ -654,7 +654,7 @@ class Suggestion(commands.Cog):
 
     @setglobal.command(name="unignore")
     async def setsuggest_setglobal_unignore(self, ctx: commands.Context, server: discord.Guild = None):
-        """ Remove server from the ignored list. """
+        """Remove server from the ignored list."""
         if not server:
             server = ctx.guild
         if server.id in await self.config.ignore():
