@@ -30,8 +30,17 @@ TIMESTAMP_FORMAT = "%Y-%m-%d %X"  # YYYY-MM-DD HH:MM:SS
 AUTHOR_TEMPLATE = "@{0.author.name}#{0.author.discriminator}(id:{0.author.id})"
 MESSAGE_TEMPLATE = AUTHOR_TEMPLATE + ": {0.clean_content}"
 
+# 0 is Message object, 1 is the message replied too
+REPLY_TEMPLATE = (
+    AUTHOR_TEMPLATE
+    + " replied to @{1.author.name}#{1.author.discriminator}(id:{1.author.id}): {1.clean_content} [with]: {0.clean_content}"
+)
+
 # 0 is Message object, 1 is attachment URL
 ATTACHMENT_TEMPLATE = AUTHOR_TEMPLATE + ": {0.clean_content} (attachment url(s): {1})"
+
+# 0 is Message object, 1 is sticker URL
+STICKER_TEMPLATE = AUTHOR_TEMPLATE + ": {0.clean_content} (sticker url(s): {1})"
 
 # 0 is Message object, 1 is attachment path
 DOWNLOAD_TEMPLATE = AUTHOR_TEMPLATE + ": {0.clean_content} (attachment(s) saved to {1})"
@@ -88,6 +97,8 @@ class ActivityLogger(commands.Cog):
             h.close()
 
     async def initialize(self):
+        await self.bot.wait_until_ready()
+
         guild_data = await self.config.all_guilds()
         channel_data = await self.config.all_channels()
         self.cache = await self.config.attrs()
@@ -1334,7 +1345,17 @@ class ActivityLogger(commands.Cog):
             urls = ",".join(a.url for a in message.attachments)
             entry = ATTACHMENT_TEMPLATE.format(message, urls)
         else:
-            entry = MESSAGE_TEMPLATE.format(message)
+            if message.reference:
+                ref_channel = message.guild.get_channel(message.reference.channel_id)
+                ref_message = None
+                if ref_channel:
+                    ref_message = await ref_channel.fetch_message(message.reference.message_id)
+                if ref_message:
+                    entry = REPLY_TEMPLATE.format(message, ref_message)
+                else:
+                    entry = MESSAGE_TEMPLATE.format(message)
+            else:
+                entry = MESSAGE_TEMPLATE.format(message)
 
         # don't calculate bot stats and make sure this isnt dm message
         if message.author.id != self.bot.user.id and isinstance(message.author, discord.Member):
