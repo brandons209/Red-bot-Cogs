@@ -99,7 +99,7 @@ class Birthday(commands.Cog):
                         embed.description = f"{member.mention} is now **{age} years old!**"
                     else:
                         embed.description = f"Happy Birthday to {member.mention}!"
-                    embed.set_footer("Add your birthday using the `bday` command!")
+                    # embed.set_footer("Add your birthday using the `bday` command!")
                     try:
                         await channel.send(embed=embed, allowed_mentions=discord.AllowedMentions.all())
                     except:
