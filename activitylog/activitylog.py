@@ -89,12 +89,16 @@ class ActivityLogger(commands.Cog):
 
         # remove userinfo since we are replacing it
         self.bot.remove_command("userinfo")
+        self.load_task = asyncio.create_task(self.initialize())
 
     def cog_unload(self):
         self.lock = True
 
         for h in self.handles.values():
             h.close()
+
+        if self.load_task:
+            self.load_task.cancel()
 
     async def initialize(self):
         await self.bot.wait_until_ready()
