@@ -540,7 +540,8 @@ class MoreAdmin(commands.Cog):
             mod = ctx.guild.get_member(note["moderator"])
             mod = "Mod id({})".format(note["moderator"]) if not mod else mod.display_name
             embed = embed.set_author(name=mod)
-            embed = embed.add_field(name="Note", value=note["note"])
+            for page in pagify(note["note"], page_length=1000):
+                embed = embed.add_field(name="Note", value=page)
             embed = embed.set_footer(text=f"Page {i+1} out of {len(notes)}")
             embeds.append(embed)
 
