@@ -1,0 +1,17 @@
+{
+    "author": [
+      "brandons209"
+    ],
+    "bot_version": [
+      3,
+      4,
+      0
+    ],
+    "description": "Tracks subscriptions for a role (i.e donators), reminds people when subscription is about to end, etc.",
+    "hidden": false,
+    "requirements": ["python-dateutil"],
+    "tags": [
+      "subscription",
+    ],
+    "end_user_data_statement": "This cog will store when a user's role will be removed in a guild"
+  }
