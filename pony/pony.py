@@ -25,18 +25,22 @@ class Pony(commands.Cog):
 
     @commands.command()
     @commands.guild_only()
+    @commands.cooldown(rate=1, per=10, type=commands.BucketType.user)
     async def pony(self, ctx, *text):
         """Retrieves the latest result from Derpibooru"""
         await self.fetch_image(ctx, randomize=False, tags=text)
 
     @commands.command()
     @commands.guild_only()
+    @commands.cooldown(rate=1, per=10, type=commands.BucketType.user)
     async def ponyr(self, ctx, *text):
         """Retrieves a random result from Derpibooru"""
         await self.fetch_image(ctx, randomize=True, tags=text)
 
     # needed because derpi was having trouble getting a random image from our derpi page with the filters we have
-    @commands.command(pass_context=True)
+    @commands.command()
+    @commands.guild_only()
+    @commands.cooldown(rate=1, per=10, type=commands.BucketType.user)
     async def mascot(self, ctx):
         """
         Gives a random picture of our mascot!
@@ -376,9 +380,6 @@ class Pony(commands.Cog):
             return await message.edit(content=output)
 
     async def red_delete_data_for_user(
-        self,
-        *,
-        requester: Literal["discord_deleted_user", "owner", "user", "user_strict"],
-        user_id: int,
+        self, *, requester: Literal["discord_deleted_user", "owner", "user", "user_strict"], user_id: int,
     ):
         pass
