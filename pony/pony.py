@@ -7,32 +7,48 @@ import aiohttp
 import os
 import traceback
 import json
+import asyncio
+import time
 
 
 class Pony(commands.Cog):
-    def __init__(self):
+    def __init__(self, bot):
         super().__init__()
-
+        self.bot = bot
         self.config = Config.get_conf(self, identifier=7384662719)
         default_global = {"maxfilters": 50}
         self.default_guild = {
             "filters": ["-meme", "safe", "-spoiler:*", "-vulgar"],
             "verbose": False,
             "display_artist": False,
+            "cooldown": 10,
         }
+        self.cooldowns = {}
         self.config.register_guild(**self.default_guild)
         self.config.register_global(**default_global)
 
+        self.task = asyncio.create_task(self.init())
+
+    def cog_unload(self):
+        if self.task:
+            self.task.cancel()
+
+    async def init(self):
+        """
+        Setup cooldown cache
+        """
+        await self.bot.wait_until_ready()
+        for guild in self.bot.guilds:
+            self.cooldowns[guild.id] = {}
+
     @commands.command()
     @commands.guild_only()
-    @commands.cooldown(rate=1, per=10, type=commands.BucketType.user)
     async def pony(self, ctx, *text):
         """Retrieves the latest result from Derpibooru"""
         await self.fetch_image(ctx, randomize=False, tags=text)
 
     @commands.command()
     @commands.guild_only()
-    @commands.cooldown(rate=1, per=10, type=commands.BucketType.user)
     async def ponyr(self, ctx, *text):
         """Retrieves a random result from Derpibooru"""
         await self.fetch_image(ctx, randomize=True, tags=text)
@@ -40,7 +56,6 @@ class Pony(commands.Cog):
     # needed because derpi was having trouble getting a random image from our derpi page with the filters we have
     @commands.command()
     @commands.guild_only()
-    @commands.cooldown(rate=1, per=10, type=commands.BucketType.user)
     async def mascot(self, ctx):
         """
         Gives a random picture of our mascot!
@@ -117,6 +132,14 @@ class Pony(commands.Cog):
     async def ponyset(self, ctx):
         """Manages pony options"""
         pass
+
+    @ponyset.command(name="cooldown")
+    async def _cooldown_ponyset(self, ctx, cooldown: int):
+        """
+        Set the per user cooldown for all pony commands
+        """
+        await self.config.guild(ctx.guild).cooldown.set(cooldown)
+        await ctx.tick()
 
     @ponyset.command(name="artist")
     async def _display_artist_ponyset(self, ctx, toggle: bool):
@@ -233,6 +256,17 @@ class Pony(commands.Cog):
 
     async def fetch_image(self, ctx, randomize: bool = False, tags: list = [], mascot=False):
         guild = ctx.guild
+
+        # check cooldown
+        if self.cooldowns[guild.id].get(ctx.author.id, 0) > time.time():
+            left = self.cooldowns[guild.id].get(ctx.author.id, 0) - time.time()
+            return await ctx.send(
+                "Sorry, that command is on cooldown for {:.0f} seconds.".format(left), delete_after=left
+            )
+        else:
+            cooldown = await self.config.guild(guild).cooldown()
+            self.cooldowns[guild.id][ctx.author.id] = time.time() + cooldown
+
         filters = await self.config.guild(guild).filters()
         verbose = await self.config.guild(guild).verbose()
         display_artist = await self.config.guild(guild).display_artist()
@@ -380,6 +414,9 @@ class Pony(commands.Cog):
             return await message.edit(content=output)
 
     async def red_delete_data_for_user(
-        self, *, requester: Literal["discord_deleted_user", "owner", "user", "user_strict"], user_id: int,
+        self,
+        *,
+        requester: Literal["discord_deleted_user", "owner", "user", "user_strict"],
+        user_id: int,
     ):
         pass
