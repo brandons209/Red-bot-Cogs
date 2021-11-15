@@ -1,4 +1,6 @@
 from textwrap import shorten
+from asyncio import TimeoutError as AsyncTimeoutError
+from typing import Union
 
 import discord
 from redbot.core import checks
@@ -8,9 +10,12 @@ from redbot.core.i18n import Translator, cog_i18n
 from redbot.core.utils import chat_formatting as chat
 from redbot.core.utils.menus import menu, DEFAULT_CONTROLS
 from redbot.core.utils.mod import get_audit_reason
+from redbot.core.utils.predicates import ReactionPredicate
 from tabulate import tabulate
 from typing import Literal
 import asyncio
+
+from .discord_new_features import edit_role_icon
 
 _ = Translator("PersonalRoles", __file__)
 
@@ -23,11 +28,16 @@ async def has_assigned_role(ctx):
     return len(user_roles) > 0 or ctx.guild.get_role(await ctx.cog.config.member(ctx.author).role())
 
 
+async def role_icons_feature(ctx):
+    """Check for ROLE_ICONS feature"""
+    return "ROLE_ICONS" in ctx.guild.features
+
+
 @cog_i18n(_)
 class PersonalRoles(commands.Cog):
     """Assign and edit personal roles"""
 
-    __version__ = "2.0.4"
+    __version__ = "2.2.0"
 
     # noinspection PyMissingConstructor
     def __init__(self, bot: commands.Bot):
@@ -249,6 +259,7 @@ class PersonalRoles(commands.Cog):
     @myrole.command(aliases=["color"])
     @commands.guild_only()
     @commands.check(has_assigned_role)
+    @commands.bot_has_permissions(manage_roles=True)
     async def colour(self, ctx, *, colour: discord.Colour = discord.Colour.default()):
         """Change color of personal role"""
 
@@ -287,6 +298,7 @@ class PersonalRoles(commands.Cog):
     @myrole.command()
     @commands.guild_only()
     @commands.check(has_assigned_role)
+    @commands.bot_has_permissions(manage_roles=True)
     async def name(self, ctx, *, name: str):
         """Change name of personal role
         You can't use blacklisted names
@@ -355,6 +367,136 @@ class PersonalRoles(commands.Cog):
             )
         else:
             await ctx.send(chat.warning("You already have a personal role!"))
+
+    @myrole.group()
+    @commands.check(has_assigned_role)
+    @commands.check(role_icons_feature)
+    @commands.bot_has_permissions(manage_roles=True)
+    async def icon(self, ctx):
+        """Change icon of personal role"""
+        pass
+
+    @icon.command(name="emoji")
+    @commands.cooldown(1, 30, commands.BucketType.user)
+    async def icon_emoji(self, ctx, *, emoji: Union[discord.Emoji, discord.PartialEmoji] = None):
+        """Change icon of personal role using emoji"""
+        role = await self.config.member(ctx.author).role()
+        role = ctx.guild.get_role(role)
+        if not emoji:
+            if ctx.channel.permissions_for(ctx.author).add_reactions:
+                m = await ctx.send(_("React to this message with your emoji"))
+                try:
+                    reaction = await ctx.bot.wait_for(
+                        "reaction_add",
+                        check=ReactionPredicate.same_context(message=m, user=ctx.author),
+                        timeout=30,
+                    )
+                    emoji = reaction[0].emoji
+                except AsyncTimeoutError:
+                    return
+                finally:
+                    await m.delete(delay=0)
+            else:
+                await ctx.send_help()
+                return
+        try:
+            if isinstance(emoji, discord.Emoji):
+                await edit_role_icon(
+                    self.bot,
+                    role,
+                    icon=await emoji.url_as(format="png").read(),
+                    reason=get_audit_reason(ctx.author, _("Personal Role")),
+                )
+            elif isinstance(emoji, discord.PartialEmoji):
+                if emoji.is_custom_emoji():
+                    await edit_role_icon(
+                        self.bot,
+                        role,
+                        icon=await emoji.url_as(format="png").read(),
+                        reason=get_audit_reason(ctx.author, _("Personal Role")),
+                    )
+                else:
+                    # unicode emoji
+                    await edit_role_icon(
+                        self.bot,
+                        role,
+                        unicode_emoji=emoji.name,
+                        reason=get_audit_reason(ctx.author, _("Personal Role")),
+                    )
+            else:
+                await edit_role_icon(
+                    self.bot,
+                    role,
+                    unicode_emoji=emoji,
+                    reason=get_audit_reason(ctx.author, _("Personal Role")),
+                )
+        except discord.Forbidden:
+            ctx.command.reset_cooldown(ctx)
+            await ctx.send(chat.error(_("Unable to edit role.\nRole must be lower than my top role")))
+        except discord.InvalidArgument:
+            await ctx.send(chat.error(_("This image type is unsupported, or link is incorrect")))
+        except discord.HTTPException as e:
+            ctx.command.reset_cooldown(ctx)
+            await ctx.send(chat.error(_("Unable to edit role: {}").format(e)))
+        else:
+            await ctx.send(_("Changed icon of {user}'s personal role").format(user=ctx.message.author.name))
+
+    @icon.command(name="image", aliases=["url"])
+    @commands.cooldown(1, 30, commands.BucketType.user)
+    async def icon_image(self, ctx, *, url: str = None):
+        """Change icon of personal role by using image"""
+        role = await self.config.member(ctx.author).role()
+        role = ctx.guild.get_role(role)
+        if not (ctx.message.attachments or url):
+            raise commands.BadArgument
+        if ctx.message.attachments:
+            image = await ctx.message.attachments[0].read()
+        else:
+            try:
+                async with ctx.cog.session.get(url, raise_for_status=True) as resp:
+                    image = await resp.read()
+            except aiohttp.ClientResponseError as e:
+                await ctx.send(chat.error(_("Unable to get image: {}").format(e.message)))
+                return
+        try:
+            await edit_role_icon(
+                self.bot,
+                role,
+                icon=image,
+                reason=get_audit_reason(ctx.author, _("Personal Role")),
+            )
+        except discord.Forbidden:
+            ctx.command.reset_cooldown(ctx)
+            await ctx.send(chat.error(_("Unable to edit role.\nRole must be lower than my top role")))
+        except discord.InvalidArgument:
+            await ctx.send(chat.error(_("This image type is unsupported, or link is incorrect")))
+        except discord.HTTPException as e:
+            ctx.command.reset_cooldown(ctx)
+            await ctx.send(chat.error(_("Unable to edit role: {}").format(e)))
+        else:
+            await ctx.send(_("Changed icon of {user}'s personal role").format(user=ctx.message.author.name))
+
+    @icon.command(name="reset", aliases=["remove"])
+    @commands.cooldown(1, 30, commands.BucketType.user)
+    async def icon_reset(self, ctx):
+        """Remove icon of personal role"""
+        role = await self.config.member(ctx.author).role()
+        role = ctx.guild.get_role(role)
+        try:
+            await edit_role_icon(
+                self.bot,
+                role,
+                icon=None,
+                unicode_emoji=None,
+                reason=get_audit_reason(ctx.author, _("Personal Role")),
+            )
+            await ctx.send(_("Removed icon of {user}'s personal role").format(user=ctx.message.author.name))
+        except discord.Forbidden:
+            ctx.command.reset_cooldown(ctx)
+            await ctx.send(chat.error(_("Unable to edit role.\nRole must be lower than my top role")))
+        except discord.HTTPException as e:
+            ctx.command.reset_cooldown(ctx)
+            await ctx.send(chat.error(_("Unable to edit role: {}").format(e)))
 
     ### Helper methods
     @staticmethod
