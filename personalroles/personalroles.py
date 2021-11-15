@@ -382,6 +382,10 @@ class PersonalRoles(commands.Cog):
         """Change icon of personal role using emoji"""
         role = await self.config.member(ctx.author).role()
         role = ctx.guild.get_role(role)
+        if not role:
+            await ctx.send(chat.warning(f"Please create your role using `{ctx.prefix}myrole create`!"))
+            return
+
         if not emoji:
             if ctx.channel.permissions_for(ctx.author).add_reactions:
                 m = await ctx.send(_("React to this message with your emoji"))
@@ -447,6 +451,10 @@ class PersonalRoles(commands.Cog):
         """Change icon of personal role by using image"""
         role = await self.config.member(ctx.author).role()
         role = ctx.guild.get_role(role)
+        if not role:
+            await ctx.send(chat.warning(f"Please create your role using `{ctx.prefix}myrole create`!"))
+            return
+
         if not (ctx.message.attachments or url):
             raise commands.BadArgument
         if ctx.message.attachments:
@@ -482,6 +490,10 @@ class PersonalRoles(commands.Cog):
         """Remove icon of personal role"""
         role = await self.config.member(ctx.author).role()
         role = ctx.guild.get_role(role)
+        if not role:
+            await ctx.send(chat.warning(f"Please create your role using `{ctx.prefix}myrole create`!"))
+            return
+
         try:
             await edit_role_icon(
                 self.bot,
