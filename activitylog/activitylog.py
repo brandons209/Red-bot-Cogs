@@ -1,6 +1,6 @@
 # redbot/discord
 from redbot.core.utils.chat_formatting import *
-from redbot.core import Config, checks, commands, modlog
+from redbot.core import Config, checks, commands, modlog, bank
 from redbot.core.data_manager import cog_data_path
 from redbot.core.utils.mod import is_mod_or_superior
 import discord
@@ -88,6 +88,20 @@ class ActivityLogger(commands.Cog):
         self.cache = {}
 
         # remove userinfo since we are replacing it
+        self.badge_emojis = {
+            "staff": 848556248832016384,
+            "early_supporter": 706198530837970998,
+            "hypesquad_balance": 706198531538550886,
+            "hypesquad_bravery": 706198532998299779,
+            "hypesquad_brilliance": 706198535846101092,
+            "hypesquad": 706198537049866261,
+            "verified_bot_developer": 706198727953612901,
+            "bug_hunter": 848556247632052225,
+            "bug_hunter_level_2": 706199712402898985,
+            "partner": 848556249192202247,
+            "verified_bot": 848561838974697532,
+            "verified_bot2": 848561839260434482,
+        }
         self.bot.remove_command("userinfo")
         self.load_task = asyncio.create_task(self.initialize())
 
@@ -142,91 +156,139 @@ class ActivityLogger(commands.Cog):
         author = ctx.author
         guild = ctx.guild
         is_mod = await is_mod_or_superior(self.bot, author)
+
         if not user or not is_mod:
             user = author
 
-        if is_mod:
-            roles = [x for x in user.roles if x.name != "@everyone"]
-        else:
-            roles = [x.name for x in sorted(user.roles, reverse=True) if x.name != "@everyone"]
+        async with ctx.typing():
+            if is_mod:
+                roles = [x for x in user.roles if x.name != "@everyone"]
+            else:
+                roles = [x.name for x in sorted(user.roles, reverse=True) if x.name != "@everyone"]
 
-        joined_at = user.joined_at
-        since_created = (ctx.message.created_at - user.created_at).days
-        if joined_at is not None:
-            since_joined = (ctx.message.created_at - joined_at).days
-            user_joined = joined_at.strftime("%b %d, %Y %H:%M UTC")
-        else:
-            since_joined = "?"
-            user_joined = "Unknown"
-        user_created = user.created_at.strftime("%b %d, %Y %H:%M UTC")
-        member_number = sorted(guild.members, key=lambda m: m.joined_at or ctx.message.created_at).index(user) + 1
+            joined_at = user.joined_at
+            since_created = (ctx.message.created_at - user.created_at).days
+            if joined_at is not None:
+                since_joined = (ctx.message.created_at - joined_at).days
+                user_joined = f"<t:{int(joined_at.timestamp())}>"
+            else:
+                since_joined = "?"
+                user_joined = "Unknown"
 
-        created_on = "{}\n({} days ago)".format(user_created, since_created)
-        joined_on = "{}\n({} days ago)".format(user_joined, since_joined)
+            user_created = f"<t:{int(user.created_at.timestamp())}>"
+            member_number = sorted(guild.members, key=lambda m: m.joined_at or ctx.message.created_at).index(user) + 1
 
-        game = "Chilling in {} status".format(user.status)
+            created_on = "{}\n({} days ago)".format(user_created, since_created)
+            joined_on = "{}\n({} days ago)".format(user_joined, since_joined)
 
-        if user.activity is None:  # Default status
-            activity = None
-        elif user.activity.type == discord.ActivityType.playing:
-            activity = "Playing {}".format(user.activity.name)
-        elif user.activity.type == discord.ActivityType.streaming:
-            activity = "Streaming [{}]({})".format(user.activity.name, user.activity.url)
-        elif user.activity.type == discord.ActivityType.listening:
-            activity = "Listening to {}".format(user.activity.name)
-        elif user.activity.type == discord.ActivityType.watching:
-            activity = "Watching {}".format(user.activity.name)
-        else:
-            activity = None
+            if user.is_on_mobile():
+                statusemoji = "\N{MOBILE PHONE}"
+            elif any(a.type is discord.ActivityType.streaming for a in user.activities):
+                statusemoji = "\N{LARGE PURPLE CIRCLE}"
+            elif user.status.name == "online":
+                statusemoji = "\N{LARGE GREEN CIRCLE}"
+            elif user.status.name == "offline":
+                statusemoji = "\N{MEDIUM WHITE CIRCLE}"
+            elif user.status.name == "dnd":
+                statusemoji = "\N{LARGE RED CIRCLE}"
+            elif user.status.name == "idle":
+                statusemoji = "\N{LARGE ORANGE CIRCLE}"
+            else:
+                statusemoji = "\N{MEDIUM BLACK CIRCLE}\N{VARIATION SELECTOR-16}"
 
-        if roles and is_mod:
-            roles = " ".join([x.mention for x in sorted(roles, reverse=True)])
-        elif roles:
-            roles = ", ".join(roles)
-        else:
-            roles = "None"
+            if user.activity is None:  # Default status
+                activity = "No Status"
+            elif user.activity.type == discord.ActivityType.playing:
+                activity = "Playing {}".format(user.activity.name)
+            elif user.activity.type == discord.ActivityType.streaming:
+                activity = "Streaming [{}]({})".format(user.activity.name, user.activity.url)
+            elif user.activity.type == discord.ActivityType.listening:
+                activity = "Listening to {}".format(user.activity.name)
+            elif user.activity.type == discord.ActivityType.watching:
+                activity = "Watching {}".format(user.activity.name)
+            else:
+                activity = "No Status"
 
-        if user.id != self.bot.user.id:
-            stats, names = await self.userstats(guild, user)
-        else:
-            stats = "Stats are unavailable for this account."
-            names = None
+            if roles and is_mod:
+                roles = " ".join([x.mention for x in sorted(roles, reverse=True)])
+            elif roles:
+                roles = ", ".join(roles)
+            else:
+                roles = "None"
 
-        title = guild.name if not is_mod else None
+            if user.id != self.bot.user.id:
+                stats, names = await self.userstats(guild, user)
+                if is_mod:
+                    # also add notes
+                    moreadmin = self.bot.get_cog("MoreAdmin")
+                    if moreadmin:
+                        num_notes = len(await moreadmin.config.member(user).notes())
+                        stats += f", Notes: `{num_notes}`"
+            else:
+                stats = "Stats are unavailable for this account."
+                names = None
 
-        data = discord.Embed(title=title, description=activity, colour=user.colour)
-        data.add_field(name="Joined Discord on", value=created_on)
-        data.add_field(name="Joined this server on", value=joined_on)
-        data.add_field(name="Roles", value=roles, inline=False)
-        data.add_field(name="Stats", value=stats)
-        if names:
-            names = pagify(names, page_length=1000)
-            for name in names:
-                data.add_field(name="Also known as:", value=name, inline=False)
-        data.set_footer(text="Member #{} | User ID:{}" "".format(member_number, user.id))
+            title = guild.name
 
-        name = str(user)
-        name = " ~ ".join((name, user.nick)) if user.nick else name
+            data = discord.Embed(title=title, description=f"{statusemoji} {activity}", colour=user.colour)
+            data.add_field(name="Joined Discord on", value=created_on)
+            data.add_field(name="Joined this server on", value=joined_on)
+            data.add_field(name="Roles", value=roles, inline=False)
+            data.add_field(name="Stats", value=stats)
+            if names:
+                names = pagify(names, page_length=1000)
+                for name in names:
+                    data.add_field(name="Also known as:", value=name, inline=False)
+            data.set_footer(text="Member #{} | User ID: {}" "".format(member_number, user.id))
 
-        if user.avatar:
-            avatar = user.avatar_url_as(static_format="png")
-            data.set_author(name=name, url=avatar)
-            data.set_thumbnail(url=avatar)
-        else:
-            data.set_author(name=name)
+            name = str(user)
+            name = " ~ ".join((name, user.nick)) if user.nick else name
 
-        if is_mod:
-            try:
-                await ctx.send(embed=data, allowed_mentions=discord.AllowedMentions.all())
-            except discord.HTTPException:
-                await ctx.send("I need the `Embed links` permission to send this")
-        else:
-            try:
-                await author.send(embed=data)
-            except discord.HTTPException:
-                await ctx.send("Please allow messages from server members to get your info.")
-            except Exception as e:
-                print(f"Error in userinfo: {e}")
+            if user.avatar:
+                avatar = user.avatar_url_as(static_format="png")
+                data.set_author(name=name, url=avatar)
+                data.set_thumbnail(url=avatar)
+            else:
+                data.set_author(name=name)
+
+            flags = [f.name for f in user.public_flags.all()]
+            badges = ""
+            badge_count = 0
+            if flags:
+                for badge in sorted(flags):
+                    if badge == "verified_bot":
+                        emoji1 = self.badge_emojis["verified_bot"]
+                        emoji2 = self.badge_emojis["verified_bot2"]
+                        if emoji1:
+                            emoji = f"{emoji1}{emoji2}"
+                        else:
+                            emoji = None
+                    else:
+                        emoji = self.badge_emojis[badge]
+                    if emoji:
+                        badges += f"{emoji} {badge.replace('_', ' ').title()}\n"
+                    else:
+                        badges += f"\N{BLACK QUESTION MARK ORNAMENT}\N{VARIATION SELECTOR-16} {badge.replace('_', ' ').title()}\n"
+                    badge_count += 1
+            if badges:
+                data.add_field(name="Badges" if badge_count > 1 else "Badge", value=badges)
+            if "Economy" in self.bot.cogs:
+                balance_count = 1
+                bankstat = f"**Bank**: {str(humanize_number(await bank.get_balance(user)))} {await bank.get_currency_name(ctx.guild)}\n"
+                data.add_field(name="Balance", value=bankstat)
+
+            if is_mod:
+                try:
+                    await ctx.send(embed=data, allowed_mentions=discord.AllowedMentions.all())
+                except discord.HTTPException:
+                    await ctx.send("I need the `Embed links` permission to send this")
+            else:
+                try:
+                    await author.send(embed=data)
+                except discord.HTTPException:
+                    await ctx.send("Please allow messages from server members to get your info.")
+                except Exception as e:
+                    print(f"Error in userinfo: {e}")
 
     async def userstats(self, guild, user):
         """

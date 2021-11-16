@@ -422,28 +422,30 @@ class Warnings_Custom(commands.Cog):
         # get context of reason, if provided
         context = ""
         if await self.config.guild(guild).allow_context():
-            msg = await ctx.send("Would you like to provide more context to the warning? (react with yes or no)")
+            msg = await ctx.send(
+                "Would you like to provide more context to the warning? (react with yes or no)", delete_after=31
+            )
             start_adding_reactions(msg, ReactionPredicate.YES_OR_NO_EMOJIS)
             pred = ReactionPredicate.yes_or_no(msg, ctx.author)
 
             try:
                 await self.bot.wait_for("reaction_add", check=pred, timeout=30)
             except asyncio.TimeoutError:
-                await ctx.send(error("Took too long, cancelling warning!"))
+                await ctx.send(error("Took too long, cancelling warning!"), delete_after=30)
                 return
 
             if pred.result:
                 done = False
                 while not done:
-                    await ctx.send("Please provide context as text and/or an attachment.")
+                    await ctx.send("Please provide context as text and/or an attachment.", delete_after=240)
                     pred = MessagePredicate.same_context(ctx)
                     try:
                         msg = await self.bot.wait_for("message", check=pred, timeout=240)
                     except asyncio.TimeoutError:
-                        await ctx.send(error("Took too long, cancelling warning!"))
+                        await ctx.send(error("Took too long, cancelling warning!"), delete_after=30)
                         return
 
-                    yes_or_no = await ctx.send("Continue with provided context? React no to redo.")
+                    yes_or_no = await ctx.send("Continue with provided context? React no to redo.", delete_after=31)
                     start_adding_reactions(yes_or_no, ReactionPredicate.YES_OR_NO_EMOJIS)
                     pred = ReactionPredicate.yes_or_no(yes_or_no, ctx.author)
                     try:

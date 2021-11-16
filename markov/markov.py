@@ -13,9 +13,12 @@ class Markov(commands.Cog):
         self.bot = bot
         self.config = Config.get_conf(self, identifier=5989735216541313, force_registration=True)
 
-        default_guild = {"model": {}, "prefixes": [], "max_len": 200}
+        default_guild = {"model": {}, "prefixes": [], "max_len": 200, "member_model": False}
+        default_member = {"model": {}}
         self.config.register_guild(**default_guild)
+        self.config.register_member(**default_member)
         self.cache = {}
+        self.mem_cache = {}
         self.init_task = asyncio.create_task(self.init())
 
     def cog_unload(self):
@@ -23,6 +26,8 @@ class Markov(commands.Cog):
         # save all the models before full unload/shutdown
         for guild in self.bot.guilds:
             asyncio.create_task(self.config.guild(guild).model.set(self.cache[guild.id]["model"]))
+            for member in guild.members:
+                asyncio.create_task(self.config.member(member).model.set(self.mem_cache[member.id]["model"]))
 
     async def init(self):
         await self.bot.wait_until_ready()
@@ -30,11 +35,17 @@ class Markov(commands.Cog):
         # slows down once file gets big otherwise
         for guild in self.bot.guilds:
             self.cache[guild.id] = await self.config.guild(guild).all()
+            if self.cache[guild.id]["member_model"]:
+                for member in guild.members:
+                    self.mem_cache[member.id] = await self.config.member(member).all()
 
         while True:  # save model every 5 minutes
             await asyncio.sleep(300)
             for guild in self.bot.guilds:
                 await self.config.guild(guild).model.set(self.cache[guild.id]["model"])
+                if self.cache[guild.id]["member_model"]:
+                    for member in guild.members:
+                        await self.config.member(member).model.set(self.mem_cache[member.id]["model"])
 
     @commands.group()
     @checks.admin_or_permissions(administrator=True)
@@ -42,6 +53,22 @@ class Markov(commands.Cog):
     async def markovset(self, ctx):
         """Manage Markov Settings"""
         pass
+
+    @markovset.command(name="mem-model")
+    async def memmodel(self, ctx, toggle: bool = None):
+        """
+        Enable/disable models for each guild member
+
+        **WARNING**: this can eat up a ton of RAM and space, use at your own risk!
+        """
+        if toggle is None:
+            disabled = "enabled" if self.cache[ctx.guild.id]["member_model"] else "disabled"
+            await ctx.send(f"Member models are currently {disabled}.")
+            return
+
+        self.cache[ctx.guild.id]["member_model"] = toggle
+        await self.config.guild(ctx.guild).member_model.set(toggle)
+        await ctx.tick()
 
     @markovset.command(name="clear")
     async def markovset_clear(self, ctx, *, channel: discord.TextChannel):
@@ -101,17 +128,66 @@ class Markov(commands.Cog):
     @commands.guild_only()
     @commands.cooldown(rate=1, per=10, type=commands.BucketType.user)
     @checks.bot_has_permissions(embed_links=True)
-    async def markov(self, ctx, *, starting_text: str = None):
+    async def markov(
+        self,
+        ctx,
+        num_text: Union[int, discord.Member, str] = None,
+        member: Union[discord.Member, str] = None,
+        *,
+        starting_text: str = None,
+    ):
         """Generate text using markov chains!
 
         Text generated is based on what users say in the current channel
+
+        You can generate a certain number of words using the num_text option, if num_text is not a number it is added to the starting text
         """
-        model = self.cache[ctx.guild.id]["model"]
-        try:
-            model = model[str(ctx.channel.id)]
-        except KeyError:
-            await ctx.send(error("This channel has no data, try talking in it for a bit first!"))
+        member_model = self.cache[ctx.guild.id]["member_model"]
+        if member_model:
+            if isinstance(member, discord.Member):
+                if member.id not in self.mem_cache:
+                    self.mem_cache[member.id] = {}
+                    self.mem_cache[member.id]["model"] = {}
+                model = self.mem_cache[member.id]["model"]
+            elif isinstance(num_text, discord.Member):
+                member = num_text
+                num_text = None
+                if member.id not in self.mem_cache:
+                    self.mem_cache[member.id] = {}
+                    self.mem_cache[member.id]["model"] = {}
+                model = self.mem_cache[member.id]["model"]
+            else:
+                member_model = False
+                model = self.cache[ctx.guild.id]["model"]
+        else:
+            member_model = False
+            model = self.cache[ctx.guild.id]["model"]
+
+        if member_model and not model:
+            await ctx.send(error("This member has no data."), delete_after=30)
             return
+        elif not member_model and str(ctx.channel.id) not in model:
+            await ctx.send(error("This channel has no data."), delete_after=30)
+            return
+
+        if not member_model:
+            model = model[str(ctx.channel.id)]
+
+        # if num_text is valid
+        try:
+            num = int(num_text)
+        except:
+            num = None
+
+        add_num = num is None and num_text is not None
+        add_mem = not member_model and member is not None
+
+        if add_num and add_mem:
+            starting_text = f"{num_text} {member} {starting_text if starting_text is not None else ''}"
+        elif add_num:
+            starting_text = f"{num_text} {starting_text if starting_text is not None else ''}"
+        elif add_mem:
+            starting_text = f"{member} {starting_text if starting_text is not None else ''}"
 
         starting_text = starting_text.split(" ") if starting_text else None
         last_word = starting_text[-1] if starting_text else None
@@ -128,7 +204,11 @@ class Markov(commands.Cog):
         tries = 0
         max_tries = 20
         num_chars = len(" ".join(markov_text))
-        while num_chars < max_len and tries < max_tries:
+        num_words = len(markov_text)
+        if num is None:
+            num = 1e6  # i know its trashy but it makes things easier
+
+        while num_chars < max_len and tries < max_tries and num_words < num:
             if "?" in markov_text[-1]:
                 break
             if "\r" in markov_text[-1]:
@@ -149,6 +229,8 @@ class Markov(commands.Cog):
                 markov_text.append(choice)
                 tries += 1
 
+            num_words += 1
+
         markov_text = " ".join(markov_text)
         if num_chars > max_len:
             markov_text = markov_text[:max_len]
@@ -167,6 +249,7 @@ class Markov(commands.Cog):
     async def on_message(self, message):
         if await self.bot.cog_disabled_in_guild(self, message.guild):
             return
+
         # updates model
         content = message.content
         guild = message.guild
@@ -182,6 +265,12 @@ class Markov(commands.Cog):
         content = content.split(" ")
         model = self.cache[guild.id]["model"]
 
+        if self.cache[guild.id]["member_model"]:
+            if message.author.id not in self.mem_cache:
+                self.mem_cache[message.author.id] = {}
+                self.mem_cache[message.author.id]["model"] = {}
+            mem_model = self.mem_cache[message.author.id]["model"]
+
         try:
             model[str(message.channel.id)]
         except KeyError:
@@ -190,10 +279,15 @@ class Markov(commands.Cog):
         for i in range(len(content) - 1):
             if content[i] not in model[str(message.channel.id)]:
                 model[str(message.channel.id)][content[i]] = list()
+            if self.cache[guild.id]["member_model"]:
+                if content[i] not in mem_model:
+                    mem_model[content[i]] = list()
+                mem_model[content[i]].append(content[i + 1])
 
             model[str(message.channel.id)][content[i]].append(content[i + 1])
 
         self.cache[guild.id]["model"] = model
+        self.mem_cache[message.author.id]["model"] = mem_model
 
     async def red_delete_data_for_user(
         self,

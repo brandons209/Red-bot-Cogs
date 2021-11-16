@@ -937,13 +937,14 @@ class MoreAdmin(commands.Cog):
         try:
             message = await channel.fetch_message(message_id)
         except:
-            await ctx.send("Sorry, that message could not be found.")
+            await ctx.send("Sorry, that message could not be found.", delete_after=30)
             return
 
         try:
             await message.edit(content=msg, allowed_mentions=discord.AllowedMentions.all())
+            await ctx.tick()
         except:
-            await ctx.send("Could not edit message.")
+            await ctx.send("Could not edit message.", delete_after=30)
 
     @commands.command()
     @commands.guild_only()
@@ -954,8 +955,35 @@ class MoreAdmin(commands.Cog):
         """
         try:
             await channel.send(msg, allowed_mentions=discord.AllowedMentions.all())
+            await ctx.tick()
         except:
-            await ctx.send("Could not send message in that channel.")
+            await ctx.send("Could not send message in that channel.", delete_after=30)
+
+    @commands.command()
+    @commands.guild_only()
+    @checks.admin_or_permissions(administrator=True)
+    async def react(self, ctx, channel: discord.TextChannel, message_id: int, emoji: Union[discord.Emoji, str]):
+        """
+        Have the bot react to a message
+
+        The bot must be able to access the emoji: i.e in the guild where the emoji is from
+        """
+        try:
+            message = await channel.fetch_message(message_id)
+        except:
+            await ctx.send("Sorry, that message could not be found.", delete_after=30)
+            return
+
+        try:
+            await message.add_reaction(emoji)
+            await ctx.tick()
+        except discord.NotFound:
+            await ctx.send(f"I could not find the emoji `{emoji}`", delete_after=30)
+        except discord.Forbidden:
+            await ctx.send("I do not have permissions to react to that message.", delete_after=30)
+        except discord.HTTPException:
+            # assume it couldnt find Emoji
+            await ctx.send(f"I could not find the emoji `{emoji}`", delete_after=30)
 
     @commands.command()
     @commands.guild_only()
@@ -977,7 +1005,7 @@ class MoreAdmin(commands.Cog):
                 filepaths.append(cog_data_path(cog_instance=self) / f"{ctx.author.id}_{a.filename}")
                 await a.save(filepaths[-1])
         else:
-            await ctx.send("You must provide a Discord attachment.")
+            await ctx.send("You must provide a Discord attachment.", delete_after=30)
             return
 
         files = [discord.File(file) for file in filepaths]
@@ -997,7 +1025,7 @@ class MoreAdmin(commands.Cog):
         try:
             message = await channel.fetch_message(message_id)
         except:
-            await ctx.send("Sorry, that message could not be found.")
+            await ctx.send("Sorry, that message could not be found.", delete_after=30)
             return
 
         if message.content == "":
@@ -1018,7 +1046,7 @@ class MoreAdmin(commands.Cog):
         try:
             message = await channel.fetch_message(message_id)
         except:
-            await ctx.send("Sorry, that message could not be found.")
+            await ctx.send("Sorry, that message could not be found.", delete_after=30)
             return
 
         async for m in channel.history(limit=100, after=message.created_at):

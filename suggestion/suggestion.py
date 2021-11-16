@@ -11,6 +11,7 @@ from redbot.core.utils.menus import start_adding_reactions
 from redbot.core.utils.antispam import AntiSpam
 
 from redbot.core.bot import Red
+from .discord_thread_feature import create_thread, add_user_thread
 
 
 class Suggestion(commands.Cog):
@@ -37,6 +38,7 @@ class Suggestion(commands.Cog):
             up_emoji=None,
             down_emoji=None,
             delete_suggest=False,
+            create_threads=False,
         )
         self.config.register_global(toggle=False, server_id=None, channel_id=None, next_id=1, ignore=[])
         self.config.init_custom("SUGGESTION", 2)
@@ -119,6 +121,15 @@ class Suggestion(commands.Cog):
             await ctx.message.delete()
         else:
             await ctx.tick()
+
+        if await self.config.guild(ctx.guild).create_threads():
+            # always use max archive, function will clip it if needed
+            try:
+                thread = await create_thread(self.bot, channel, msg, name=content, archive=10080)
+                await add_user_thread(self.bot, thread, ctx.author)
+            except:
+                await ctx.send("Error in creating a thread for this suggestion, please check permissions!")
+
         try:
             await ctx.author.send(content="Your suggestion has been sent for approval!", embed=embed)
         except discord.Forbidden:
@@ -412,6 +423,14 @@ class Suggestion(commands.Cog):
         """Suggestion settings"""
         pass
 
+    @setsuggest.command(name="threads")
+    async def setsuggest_threads(self, ctx: commands.Context, toggle: bool):
+        """
+        Enable automatic thread creation for each suggestion, for discussion
+        """
+        await self.config.guild(ctx.guild).create_threads.set(toggle)
+        await ctx.tick()
+
     @checks.bot_has_permissions(manage_channels=True)
     @setsuggest.command(name="setup")
     async def setsuggest_setup(self, ctx: commands.Context):
@@ -563,6 +582,20 @@ class Suggestion(commands.Cog):
                     rejected = predchan.result
                     await self.config.guild(ctx.guild).reject_id.set(rejected.id)
                 await msg.delete()
+
+        msg = await ctx.send(
+            "Do you want to automatically create threads for each suggestion to allow discussion of each suggestion to be seperated?"
+        )
+        start_adding_reactions(msg, ReactionPredicate.YES_OR_NO_EMOJIS)
+        pred = ReactionPredicate.yes_or_no(msg, ctx.author)
+        try:
+            await self.bot.wait_for("reaction_add", timeout=30, check=pred)
+        except asyncio.TimeoutError:
+            await msg.delete()
+            return await ctx.send("You took too long. Try again, please.")
+        if pred.result:
+            await self.config.guild(ctx.guild).create_threads.set(True)
+
         await ctx.send("You have finished the setup! Please, move your channels to the category you want them in.")
 
     @checks.bot_has_permissions(add_reactions=True)
@@ -596,7 +629,9 @@ class Suggestion(commands.Cog):
     @checks.bot_has_permissions(manage_messages=True)
     @setsuggest.command(name="autodelete")
     async def setsuggest_autodelete(self, ctx: commands.Context, on_off: bool = None):
-        """Toggle whether after `[p]suggest`, the bot deletes the message."""
+        """
+        Toggle whether after `[p]suggest`, the bot deletes the message.
+        """
         target_state = on_off if on_off else not (await self.config.guild(ctx.guild).delete_suggest())
         await self.config.guild(ctx.guild).delete_suggest.set(target_state)
         if target_state:

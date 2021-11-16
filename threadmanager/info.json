@@ -1,0 +1,8 @@
+{
+    "author" : ["brandons209"],
+    "install_msg" : "Thank you for installing my cog!",
+    "name" : "Thread Manager",
+    "short" : "Manage access to threads for users.",
+    "description" : "Allows a more finer management of users and threads.",
+    "tags" : ["Threads"]
+}

@@ -173,7 +173,7 @@ class ScriptGen(commands.Cog):
         """
         ### make sure model is load
         if not self.model:
-            await ctx.send(error("Model not loaded! Contact bot owner!"))
+            await ctx.send(error("Model not loaded! Contact bot owner!"), delete_after=30)
             return
 
         # make sure we are not on cooldown
@@ -181,18 +181,24 @@ class ScriptGen(commands.Cog):
         last_ran = await self.config.guild(ctx.guild).last_ran()
         now = time.time()
         if now - last_ran < cooldown:
-            await ctx.send(f"Sorry, this command is on cooldown for {int((last_ran + cooldown) - now)} seconds")
+            await ctx.send(
+                f"Sorry, this command is on cooldown for {int((last_ran + cooldown) - now)} seconds",
+                delete_after=((last_ran + cooldown) - now),
+            )
             return
 
         # make sure max length isnt exceeded
         max_len = await self.config.max_len()
         if num_words > max_len:
-            await ctx.send(error(f"Maximum number of words that can be generated is: {max_len}"))
+            await ctx.send(error(f"Maximum number of words that can be generated is: {max_len}"), delete_after=30)
             return
 
         # check for current lock:
         if self.lock:
-            await ctx.send(error("Sorry, I am currently busy generating for someone else! Please wait a few moments."))
+            await ctx.send(
+                error("Sorry, I am currently busy generating for someone else! Please wait a few moments."),
+                delete_after=30,
+            )
             return
 
         ### lock if enabled

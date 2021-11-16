@@ -60,7 +60,7 @@ class Birthday(commands.Cog):
             await self.check_bdays()
             await asyncio.sleep((tomorrow - now).total_seconds())
             ### TESTING:
-            # await asyncio.sleep(30)
+            # await asyncio.sleep(5)
 
     async def check_bdays(self):
         for guild in self.bot.guilds:
@@ -101,7 +101,8 @@ class Birthday(commands.Cog):
                         embed.description = f"Happy Birthday to {member.mention}!"
                     # embed.set_footer("Add your birthday using the `bday` command!")
                     try:
-                        await channel.send(embed=embed, allowed_mentions=discord.AllowedMentions.all())
+                        content = f"Congratulations {member.mention}!"
+                        await channel.send(content=content, embed=embed, allowed_mentions=discord.AllowedMentions.all())
                     except:
                         pass
 
@@ -130,7 +131,8 @@ class Birthday(commands.Cog):
 
     # @commands.command()
     # async def test(self, ctx, *, member: discord.Member):
-    #    await self.check_bdays()
+    # await self.check_bdays()
+    #    await self.check_member_bday(member)
 
     @commands.group(name="bdayset")
     @commands.guild_only()
@@ -246,30 +248,32 @@ class Birthday(commands.Cog):
     @bday.command(name="list")
     async def bday_list(self, ctx):
         """List birthdays in the server"""
-        embeds = []
+        msg = ""
         for member in ctx.guild.members:
             bday = await self.config.member(member).birthday()
             if bday:
-                embed = discord.Embed(title=f"{member.display_name}", colour=ctx.guild.me.colour)
                 bday_datetime = self.parse_date(bday)
                 bday, age = self.get_date_and_age(bday_datetime)
-                embed.add_field(name="Birthday", value=bday)
+                msg += f"{member.display_name}: {bday}"
                 if age:
                     now = datetime.datetime.utcnow()
                     bday_datetime = bday_datetime.replace(year=now.year)
                     if now > bday_datetime:
-                        embed.add_field(name="Turned", value=age)
+                        msg += f", Turned {age}\n"
                     else:
-                        embed.add_field(name="Turning", value=age)
-                embeds.append(embed)
+                        msg += f", Turning {age}\n"
+                else:
+                    msg += "\n"
 
-        for i, embed in enumerate(embeds):
-            embed.set_footer(text=f"Page {i+1} of {len(embeds)}")
+        pages = []
+        raw = list(pagify(msg, page_length=1700, delims=["\n"], priority=True))
+        for i, page in enumerate(raw):
+            pages.append(box(f"{page}-----------------\nPage {i+1} of {len(raw)}"))
 
-        if not embeds:
+        if not pages:
             await ctx.send("No one has their birthday set in your server!")
         else:
-            await menu(ctx, embeds, DEFAULT_CONTROLS)
+            await menu(ctx, pages, DEFAULT_CONTROLS)
 
     async def red_delete_data_for_user(
         self,

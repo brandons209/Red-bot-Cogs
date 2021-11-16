@@ -60,12 +60,26 @@ Twitter style following system that is guild-agnostic. Allows users to follow so
 - Works from DMs as well as in guilds, use user and channel IDs for easiest use.
 
 
+### Image Magic
+Image transformation commands to create funny or interesting photos.
+**Features**
+- Barrel effect
+- Implode effect
+- Zoom
+- Black and white
+- Sketch transformation
+
+
 #### Isolate
 Carbon copy of punish cog, except this one will remove all roles from a user and by default sets permissions so they cannot see or talk in any channel except the channel set for isolation.
 
 
 #### Leveler
 Based off of [Malarne's](https://github.com/Malarne/discord_cogs) cog. Has some bug fixes and reduces the starting EXP by 50. Also cleaned up the code a bit, and have features planned.
+
+
+### Markov
+Markov chains! This cog builds markov chain models per channel and optionally per user, allowing for funny and interesting text generation!
 
 
 #### MoreAdmin
@@ -102,6 +116,7 @@ Modified from Fixator10, added functionality of automatically creating/deleting 
 - Users can customize their role name and color through the bot.
 - Blacklist words that aren't allowed in role names.
 - Automatically create/manage personal roles.
+- Users can add and remove role icons if the guild has the feature
 
 #### Pony
 Search derpibooru for pony images. Ported from [Alzarath](https://github.com/Alzarath/Booru-Cogs).    
@@ -189,10 +204,16 @@ Modifed from @saurichable. Adds a few features we needed.
 - Listing the final vote count when a suggestion is approved or denied
 - Added reasons for approved suggestions, since sometimes we accept a suggestion but we may modify it
 - Approved reasons are marked green, denied are marked red
+- Optionally create threads for each suggestion for easier discussion
 
 
 #### Smart React
 Auto react to messages based on keywords. Based off of [FlapJack's](https://github.com/flapjax/FlapJack-Cogs/) cog. Minor bug fixes and planned features, like using regex to parse messages.
+
+
+### Thread Manager
+A simple thread manager that allows guild staff to set certain roles to create a customable number of threads per channel. Manual archive by users is not supported right now. 
+
 
 #### Warnings Custom
 Adds a few features that are needed for my server, modified from the built in warning cog.
