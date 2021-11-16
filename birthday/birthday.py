@@ -4,6 +4,7 @@ from redbot.core.utils.chat_formatting import *
 from redbot.core.utils.predicates import MessagePredicate
 from redbot.core.utils.menus import menu, DEFAULT_CONTROLS
 
+from tabulate import tabulate
 from dateutil import parser
 import asyncio
 import datetime
@@ -248,27 +249,34 @@ class Birthday(commands.Cog):
     @bday.command(name="list")
     async def bday_list(self, ctx):
         """List birthdays in the server"""
-        msg = ""
+        members = []
+        birthdays = []
         for member in ctx.guild.members:
             bday = await self.config.member(member).birthday()
             if bday:
                 bday_datetime = self.parse_date(bday)
                 bday, age = self.get_date_and_age(bday_datetime)
-                msg += f"{member.display_name}: {bday}"
+                members.append(member.display_name)
+                birthdays.append(bday)
                 if age:
                     now = datetime.datetime.utcnow()
                     bday_datetime = bday_datetime.replace(year=now.year)
                     if now > bday_datetime:
-                        msg += f", Turned {age}\n"
+                        birthdays[-1] += f", Turned {age}"
                     else:
-                        msg += f", Turning {age}\n"
-                else:
-                    msg += "\n"
+                        birthdays[-1] += f", Turning {age}"
 
         pages = []
-        raw = list(pagify(msg, page_length=1700, delims=["\n"], priority=True))
+        raw = list(
+            pagify(
+                tabulate({"Member": members, "Birthday": birthdays}, tablefmt="github", headers="keys"),
+                page_length=1700,
+                delims=["\n"],
+                priority=True,
+            )
+        )
         for i, page in enumerate(raw):
-            pages.append(box(f"{page}-----------------\nPage {i+1} of {len(raw)}"))
+            pages.append(box(f"{page}\n\n-----------------\nPage {i+1} of {len(raw)}"))
 
         if not pages:
             await ctx.send("No one has their birthday set in your server!")
