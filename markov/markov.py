@@ -41,15 +41,11 @@ class Markov(commands.Cog):
         await self.bot.wait_until_ready()
         # caches all the models, uses more ram but bot
         # slows down once file gets big otherwise
-        for guild in self.bot.guilds:
-            self.cache[guild.id] = await self.config.guild(guild).all()
-            self.mem_cache[guild.id] = {}
-            if self.cache[guild.id]["member_model"]:
-                for member in guild.members:
-                    self.mem_cache[guild.id][member.id] = await self.config.member(member).all()
+        self.cache = await self.config.all_guilds()
+        self.mem_cache = await self.config.all_members()
 
-        while True:  # save model every 5 minutes
-            await asyncio.sleep(300)
+        while True:  # save model every 10 minutes
+            await asyncio.sleep(600)
             for guild in self.bot.guilds:
                 await self.config.guild(guild).model.set(self.cache[guild.id]["model"])
                 if self.cache[guild.id]["member_model"]:
@@ -112,9 +108,11 @@ class Markov(commands.Cog):
 
             if pred.result:
                 await self.config.guild(ctx.guild).blacklist.clear()
+                self.cache[ctx.guild.id]["blacklist"] = []
                 await ctx.tick()
             return
 
+        self.cache[ctx.guild.id]["blacklist"] = [c.id for c in channels]
         await self.config.guild(ctx.guild).blacklist.set([c.id for c in channels])
         await ctx.tick()
 
@@ -363,7 +361,7 @@ class Markov(commands.Cog):
         model = self.cache[guild.id]["model"]
 
         if self.cache[guild.id]["member_model"]:
-            blacklist = await self.config.guild(guild).blacklist()
+            blacklist = self.cache[guild.id]["blacklist"]
             if message.author.id not in self.mem_cache[guild.id]:
                 self.mem_cache[guild.id][message.author.id] = {}
                 self.mem_cache[guild.id][message.author.id]["model"] = {}
