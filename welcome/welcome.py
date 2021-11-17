@@ -406,6 +406,7 @@ class Welcome(commands.Cog):
           `{plural}` is an 's' if `count` is not 1, and nothing if it is
           `{stats}` to include user stats (if using activitylog cog)
           `{roles}` to show member roles at time of event
+          `{joined_on}` is the Discord formated time the user joined the server
 
         For example:
           {member.name}... Why did you leave???
@@ -807,7 +808,14 @@ class Welcome(commands.Cog):
         try:
             return await channel.send(
                 format_str.format(
-                    member=user, server=guild, bot=user, count=count or "", plural=plural, roles=roles, stats=stats
+                    member=user,
+                    server=guild,
+                    bot=user,
+                    count=count or "",
+                    plural=plural,
+                    roles=roles,
+                    stats=stats,
+                    joined_on=f"<t:{int(user.joined_at.timestamp())}>",
                 ),
                 allowed_mentions=discord.AllowedMentions.all(),
             )

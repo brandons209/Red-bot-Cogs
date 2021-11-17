@@ -27,7 +27,7 @@ class Markov(commands.Cog):
         for guild in self.bot.guilds:
             asyncio.create_task(self.config.guild(guild).model.set(self.cache[guild.id]["model"]))
             for member in guild.members:
-                asyncio.create_task(self.config.member(member).model.set(self.mem_cache[member.id]["model"]))
+                asyncio.create_task(self.config.member(member).model.set(self.mem_cache[guild.id][member.id]["model"]))
 
     async def init(self):
         await self.bot.wait_until_ready()
@@ -35,9 +35,10 @@ class Markov(commands.Cog):
         # slows down once file gets big otherwise
         for guild in self.bot.guilds:
             self.cache[guild.id] = await self.config.guild(guild).all()
+            self.mem_cache[guild.id] = {}
             if self.cache[guild.id]["member_model"]:
                 for member in guild.members:
-                    self.mem_cache[member.id] = await self.config.member(member).all()
+                    self.mem_cache[guild.id][member.id] = await self.config.member(member).all()
 
         while True:  # save model every 5 minutes
             await asyncio.sleep(300)
@@ -45,7 +46,7 @@ class Markov(commands.Cog):
                 await self.config.guild(guild).model.set(self.cache[guild.id]["model"])
                 if self.cache[guild.id]["member_model"]:
                     for member in guild.members:
-                        await self.config.member(member).model.set(self.mem_cache[member.id]["model"])
+                        await self.config.member(member).model.set(self.mem_cache[guild.id][member.id]["model"])
 
     @commands.group()
     @checks.admin_or_permissions(administrator=True)
@@ -68,17 +69,45 @@ class Markov(commands.Cog):
 
         self.cache[ctx.guild.id]["member_model"] = toggle
         await self.config.guild(ctx.guild).member_model.set(toggle)
+
+        if toggle:
+            for member in ctx.guild.members:
+                self.mem_cache[ctx.guild.id] = {}
+                self.mem_cache[ctx.guild.id][member.id] = await self.config.member(member).all()
+
         await ctx.tick()
 
     @markovset.command(name="clear")
-    async def markovset_clear(self, ctx, *, channel: discord.TextChannel):
-        """Clear data for a specific channel"""
-        async with self.config.guild(ctx.guild).model() as model:
-            del self.cache[ctx.guild.id]["model"][str(channel.id)]
-            try:  # possible that channel is cached but not saved yet
-                del model[str(channel.id)]
-            except:
-                pass
+    async def markovset_clear(self, ctx, *, clear: Union[discord.TextChannel, discord.Member]):
+        """Clear data for a specific channel or member"""
+        if isinstance(clear, discord.TextChannel):
+            async with self.config.guild(ctx.guild).model() as model:
+                del self.cache[ctx.guild.id]["model"][str(clear.id)]
+                try:  # possible that channel is cached but not saved yet
+                    del model[str(clear.id)]
+                except:
+                    pass
+        elif isinstance(clear, discord.Member):
+            async with self.config.member(clear).model() as model:
+                try:
+                    self.mem_cache[ctx.guild.id][clear.id]["model"].clear()
+                except:
+                    # memember models may not be used, other issues, just ignore
+                    pass
+                model.clear()
+
+        await ctx.tick()
+
+    @markovset.command(name="mem-clear")
+    async def markovset_memclear(self, ctx, yesno: bool):
+        """Clear data for **all** members in a guild"""
+
+        if yesno:
+            await self.config.clear_all_members(guild=ctx.guild)
+            del self.mem_cache[ctx.guild.id]
+        else:
+            return await ctx.send("Please type `yes` after the command to clear all data.", delete_after=15)
+
         await ctx.tick()
 
     @markovset.command(name="prefix")
@@ -124,6 +153,26 @@ class Markov(commands.Cog):
         await self.config.guild(ctx.guild).max_len.set(length)
         await ctx.tick()
 
+    @commands.command(name="mclear")
+    @commands.guild_only()
+    @commands.cooldown(rate=1, per=10, type=commands.BucketType.user)
+    async def markov_clear(self, ctx, *, yesno: bool):
+        """
+        Clear your model data from the guild
+        """
+        if yesno:
+            async with self.config.member(ctx.author).model() as model:
+                try:
+                    self.mem_cache[ctx.guild.id][ctx.author.id]["model"].clear()
+                except:
+                    # memember models may not be used, other issues, just ignore
+                    pass
+                model.clear()
+        else:
+            return await ctx.send("Please type `yes` after the command to clear all your data.", delete_after=15)
+
+        await ctx.tick()
+
     @commands.command(name="markov")
     @commands.guild_only()
     @commands.cooldown(rate=1, per=10, type=commands.BucketType.user)
@@ -145,17 +194,17 @@ class Markov(commands.Cog):
         member_model = self.cache[ctx.guild.id]["member_model"]
         if member_model:
             if isinstance(member, discord.Member):
-                if member.id not in self.mem_cache:
-                    self.mem_cache[member.id] = {}
-                    self.mem_cache[member.id]["model"] = {}
-                model = self.mem_cache[member.id]["model"]
+                if member.id not in self.mem_cache[ctx.guild.id]:
+                    self.mem_cache[ctx.guild.id][member.id] = {}
+                    self.mem_cache[ctx.guild.id][member.id]["model"] = {}
+                model = self.mem_cache[ctx.guild.id][member.id]["model"]
             elif isinstance(num_text, discord.Member):
                 member = num_text
                 num_text = None
-                if member.id not in self.mem_cache:
-                    self.mem_cache[member.id] = {}
-                    self.mem_cache[member.id]["model"] = {}
-                model = self.mem_cache[member.id]["model"]
+                if member.id not in self.mem_cache[ctx.guild.id]:
+                    self.mem_cache[ctx.guild.id][member.id] = {}
+                    self.mem_cache[ctx.guild.id][member.id]["model"] = {}
+                model = self.mem_cache[ctx.guild.id][member.id]["model"]
             else:
                 member_model = False
                 model = self.cache[ctx.guild.id]["model"]
@@ -266,10 +315,10 @@ class Markov(commands.Cog):
         model = self.cache[guild.id]["model"]
 
         if self.cache[guild.id]["member_model"]:
-            if message.author.id not in self.mem_cache:
-                self.mem_cache[message.author.id] = {}
-                self.mem_cache[message.author.id]["model"] = {}
-            mem_model = self.mem_cache[message.author.id]["model"]
+            if message.author.id not in self.mem_cache[guild.id]:
+                self.mem_cache[guild.id][message.author.id] = {}
+                self.mem_cache[guild.id][message.author.id]["model"] = {}
+            mem_model = self.mem_cache[guild.id][message.author.id]["model"]
 
         try:
             model[str(message.channel.id)]
@@ -287,7 +336,7 @@ class Markov(commands.Cog):
             model[str(message.channel.id)][content[i]].append(content[i + 1])
 
         self.cache[guild.id]["model"] = model
-        self.mem_cache[message.author.id]["model"] = mem_model
+        self.mem_cache[ctx.guild.id][message.author.id]["model"] = mem_model
 
     async def red_delete_data_for_user(
         self,
