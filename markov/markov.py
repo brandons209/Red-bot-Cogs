@@ -75,9 +75,7 @@ class Markov(commands.Cog):
         await self.config.guild(ctx.guild).member_model.set(toggle)
 
         if toggle:
-            for member in ctx.guild.members:
-                self.mem_cache[ctx.guild.id] = {}
-                self.mem_cache[ctx.guild.id][member.id] = await self.config.member(member).all()
+            self.mem_cache = await self.config.all_members()
 
         await ctx.tick()
 
