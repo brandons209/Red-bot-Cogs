@@ -240,6 +240,13 @@ class Markov(commands.Cog):
                     self.mem_cache[ctx.guild.id][member.id]["model"] = {}
                 model = self.mem_cache[ctx.guild.id][member.id]["model"]
             elif isinstance(num_text, discord.Member):
+                # move member over to starting text first, if its exists
+                if member is not None:
+                    if starting_text is not None:
+                        starting_text = f"{member} {starting_text}"
+                    else:
+                        starting_text = member
+
                 member = num_text
                 num_text = None
                 if member.id not in self.mem_cache[ctx.guild.id]:
