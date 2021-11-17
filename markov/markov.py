@@ -1,6 +1,8 @@
 from redbot.core.utils.chat_formatting import *
 from redbot.core import Config, checks, commands
-from typing import Literal
+from redbot.core.utils.menus import start_adding_reactions
+from redbot.core.utils.predicates import ReactionPredicate
+from typing import Literal, List
 import discord
 import random
 import asyncio
@@ -13,7 +15,13 @@ class Markov(commands.Cog):
         self.bot = bot
         self.config = Config.get_conf(self, identifier=5989735216541313, force_registration=True)
 
-        default_guild = {"model": {}, "prefixes": [], "max_len": 200, "member_model": False}
+        default_guild = {
+            "model": {},
+            "prefixes": [],
+            "max_len": 200,
+            "member_model": False,
+            "blacklist": [],
+        }
         default_member = {"model": {}}
         self.config.register_guild(**default_guild)
         self.config.register_member(**default_member)
@@ -56,7 +64,7 @@ class Markov(commands.Cog):
         pass
 
     @markovset.command(name="mem-model")
-    async def memmodel(self, ctx, toggle: bool = None):
+    async def markovset_memmodel(self, ctx, toggle: bool = None):
         """
         Enable/disable models for each guild member
 
@@ -75,6 +83,39 @@ class Markov(commands.Cog):
                 self.mem_cache[ctx.guild.id] = {}
                 self.mem_cache[ctx.guild.id][member.id] = await self.config.member(member).all()
 
+        await ctx.tick()
+
+    @markovset.command(name="blacklist")
+    async def markovset_blacklist(self, ctx, *channels: discord.TextChannel):
+        """
+        Set channels that markov won't track for member models
+
+        **Does not affect channel markov models**
+        """
+        if not channels:
+            curr = await self.config.guild(ctx.guild).blacklist()
+            curr = [ctx.guild.get_channel(c) for c in curr]
+            # filter out channels that are deleted
+            curr = [c.mention for c in curr if c is not None]
+            if not curr:
+                return await ctx.send("No channels are currently blacklisted.")
+
+            await ctx.send(f"Current blacklist:\n{humanize_list(curr)}")
+            msg = await ctx.send("React with yes to this message to clear the blacklist.", delete_after=32)
+            start_adding_reactions(msg, ReactionPredicate.YES_OR_NO_EMOJIS)
+            pred = ReactionPredicate.yes_or_no(msg, ctx.author)
+
+            try:
+                await self.bot.wait_for("reaction_add", check=pred, timeout=30)
+            except asyncio.TimeoutError:
+                return
+
+            if pred.result:
+                await self.config.guild(ctx.guild).blacklist.clear()
+                await ctx.tick()
+            return
+
+        await self.config.guild(ctx.guild).blacklist.set([c.id for c in channels])
         await ctx.tick()
 
     @markovset.command(name="clear")
@@ -315,6 +356,7 @@ class Markov(commands.Cog):
         model = self.cache[guild.id]["model"]
 
         if self.cache[guild.id]["member_model"]:
+            blacklist = await self.config.guild(guild).blacklist()
             if message.author.id not in self.mem_cache[guild.id]:
                 self.mem_cache[guild.id][message.author.id] = {}
                 self.mem_cache[guild.id][message.author.id]["model"] = {}
@@ -328,7 +370,7 @@ class Markov(commands.Cog):
         for i in range(len(content) - 1):
             if content[i] not in model[str(message.channel.id)]:
                 model[str(message.channel.id)][content[i]] = list()
-            if self.cache[guild.id]["member_model"]:
+            if self.cache[guild.id]["member_model"] and message.channel.id not in blacklist:
                 if content[i] not in mem_model:
                     mem_model[content[i]] = list()
                 mem_model[content[i]].append(content[i + 1])
@@ -336,7 +378,7 @@ class Markov(commands.Cog):
             model[str(message.channel.id)][content[i]].append(content[i + 1])
 
         self.cache[guild.id]["model"] = model
-        self.mem_cache[ctx.guild.id][message.author.id]["model"] = mem_model
+        self.mem_cache[guild.id][message.author.id]["model"] = mem_model
 
     async def red_delete_data_for_user(
         self,
