@@ -16,6 +16,11 @@ from typing import Literal
 import asyncio
 import aiohttp
 
+try:
+    from redbot import json  # support of Draper's branch
+except ImportError:
+    import json
+
 from .discord_new_features import edit_role_icon
 
 _ = Translator("PersonalRoles", __file__)
@@ -48,6 +53,11 @@ class PersonalRoles(commands.Cog):
         default_guild = {"blacklist": [], "auto_roles": [], "position_role": None}
         self.config.register_member(**default_member)
         self.config.register_guild(**default_guild)
+
+        self.session = aiohttp.ClientSession(json_serialize=json.dumps)
+
+    def cog_unload(self):
+        self.bot.loop.create_task(self.session.close())
 
     @commands.group()
     @commands.guild_only()
