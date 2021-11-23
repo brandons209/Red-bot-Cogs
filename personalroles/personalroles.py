@@ -14,6 +14,7 @@ from redbot.core.utils.predicates import ReactionPredicate
 from tabulate import tabulate
 from typing import Literal
 import asyncio
+import aiohttp
 
 from .discord_new_features import edit_role_icon
 
