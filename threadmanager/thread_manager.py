@@ -3,6 +3,8 @@ import discord
 
 from typing import Optional, Literal
 from redbot.core import Config, checks, commands
+from redbot.core.utils.chat_formatting import *
+from redbot.core.utils.menus import menu, DEFAULT_CONTROLS
 
 from .discord_thread_feature import create_thread, add_user_thread, get_active_threads
 
@@ -31,6 +33,35 @@ class ThreadManager(commands.Cog):
         Manage threads
         """
         pass
+
+    @threadset.command(name="list")
+    async def threadset_list(self, ctx):
+        """
+        List all channels and their thread roles
+        """
+        channel_data = await self.config.all_channels()
+
+        msg = ""
+        for id, data in channel_data.items():
+            channel = ctx.guild.get_channel(id)
+            if not channel:
+                continue
+
+            msg += f"#{channel.name}\n"
+            for role_id, num_threads in data["allowed_roles"].items():
+                role = ctx.guild.get_role(int(role_id))
+                if not role:
+                    continue
+                msg += f"\t- @{role.name}: {num_threads}\n"
+            msg += "\n"
+
+        pages = list(pagify(msg, page_length=1700, delims=["\n"], priority=True))
+        pages = [box(f"{page}\n\n-----------------\nPage {i+1} of {len(pages)}") for i, page in enumerate(pages)]
+
+        if not pages:
+            await ctx.send("No channels setup to use thread manager.", delete_after=30)
+        else:
+            await menu(ctx, pages, DEFAULT_CONTROLS)
 
     @threadset.command(name="archive")
     async def threadset_archive(self, ctx, archive: int):
