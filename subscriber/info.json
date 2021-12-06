@@ -11,7 +11,7 @@
     "hidden": false,
     "requirements": ["python-dateutil"],
     "tags": [
-      "subscription",
+      "subscription"
     ],
     "end_user_data_statement": "This cog will store when a user's role will be removed in a guild"
   }
