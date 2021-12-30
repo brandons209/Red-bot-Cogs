@@ -2,7 +2,7 @@ import aiohttp, discord
 from redbot.core import Config, commands
 from wand.image import Image
 from io import BytesIO
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Literal
 import asyncio, functools, urllib
 
 MAX_SIZE = 8 * 1024 * 1024
