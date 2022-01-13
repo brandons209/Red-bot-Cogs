@@ -43,13 +43,13 @@ class Pony(commands.Cog):
 
     @commands.command()
     @commands.guild_only()
-    async def pony(self, ctx, *text):
+    async def pony(self, ctx, *, text: str = ""):
         """Retrieves the latest result from Derpibooru"""
         await self.fetch_image(ctx, randomize=False, tags=text)
 
     @commands.command()
     @commands.guild_only()
-    async def ponyr(self, ctx, *text):
+    async def ponyr(self, ctx, *, text: str = ""):
         """Retrieves a random result from Derpibooru"""
         await self.fetch_image(ctx, randomize=True, tags=text)
 
@@ -60,7 +60,7 @@ class Pony(commands.Cog):
         """
         Gives a random picture of our mascot!
         """
-        await self.fetch_image(ctx, randomize=True, mascot=True, tags=["safe,", "coe"])
+        await self.fetch_image(ctx, randomize=True, mascot=True, tags="safe, coe OR oc:aurelia coe")
 
     @commands.group()
     @commands.guild_only()
@@ -254,7 +254,7 @@ class Pony(commands.Cog):
         except json.decoder.JSONDecodeError:
             await ctx.send("Invalid or malformed json files.")
 
-    async def fetch_image(self, ctx, randomize: bool = False, tags: list = [], mascot=False):
+    async def fetch_image(self, ctx, randomize: bool = False, tags: str = "", mascot=False):
         guild = ctx.guild
 
         # check cooldown
@@ -267,6 +267,7 @@ class Pony(commands.Cog):
             cooldown = await self.config.guild(guild).cooldown()
             self.cooldowns[guild.id][ctx.author.id] = time.time() + cooldown
 
+        tags = [t for t in tags.split(",") if t != ""]
         filters = await self.config.guild(guild).filters()
         verbose = await self.config.guild(guild).verbose()
         display_artist = await self.config.guild(guild).display_artist()
@@ -288,13 +289,10 @@ class Pony(commands.Cog):
 
         # Assign tags to URL
         if tags:
-            tagSearch += "{} ".format(" ".join(tags)).strip().strip(",")
-        if filters and not mascot:
+            # parentheses resolves user's search before filters so that OR operator doesnt break search
+            tagSearch += "({})".format(", ".join(tags)).strip().strip(",")
+        if not mascot:
             if filters != [] and tags:
-                tagSearch += ", "
-            tagSearch += ", ".join(filters)
-        elif not mascot:
-            if tags:
                 tagSearch += ", "
             tagSearch += ", ".join(filters)
 
