@@ -69,7 +69,14 @@ class ActivityLogger(commands.Cog):
         self.bot = bot
         self.config = Config.get_conf(self, identifier=9584736583, force_registration=True)
         default_global = {
-            "attrs": {"attachments": False, "default": False, "direct": False, "everything": False, "rotation": "m"}
+            "attrs": {
+                "attachments": False,
+                "default": False,
+                "direct": False,
+                "everything": False,
+                "rotation": "m",
+                "check_audit": True,
+            }
         }
         self.default_guild = {"all_s": False, "voice": False, "events": False, "prefixes": []}
         self.default_channel = {"enabled": False}
@@ -598,6 +605,10 @@ class ActivityLogger(commands.Cog):
             messages[i * MAX_LINES : (i + 1) * MAX_LINES] for i in range((len(messages) + MAX_LINES - 1) // MAX_LINES)
         ]
 
+        if not message_chunks:
+            await ctx.send(error("No logs found for the specified location and time period!"))
+            return
+
         for msgs in message_chunks:
             temp_file = os.path.join(log_path, datetime.utcnow().strftime("%Y%m%d%X").replace(":", "") + ".txt")
             with open(temp_file, encoding="utf-8", mode="w") as f:
@@ -1002,6 +1013,25 @@ class ActivityLogger(commands.Cog):
         Change activity logging settings
         """
         pass
+
+    @logset.command(name="check-audit")
+    async def set_audit_check(self, ctx, on_off: bool = None):
+        """
+        Set whether to access audit logs to get who does what audit action
+
+        Turning this off means audit actions are saved but who did those actions are not saved.
+        This should be turned off for bots in large amount of servers since you will hit global ratelimits very quickly.
+        """
+        if on_off is not None:
+            async with self.config.attrs() as attrs:
+                attrs["check_audit"] = on_off
+            self.cache["check_audit"] = on_off
+
+        status = self.cache["check_audit"]
+        if status:
+            await ctx.send("Checking audit logs is enabled.")
+        else:
+            await ctx.send("Checking audit logs is disabled.")
 
     @logset.command(name="everything", aliases=["global"])
     async def set_everything(self, ctx, on_off: bool = None):
@@ -1471,22 +1501,25 @@ class ActivityLogger(commands.Cog):
     async def on_message_delete(self, message):
         if await self.bot.cog_disabled_in_guild(self, message.guild):
             return
+        if not self.should_log(message.channel):
+            return
         entry_s = None
         timestamp = message.created_at.strftime(TIMESTAMP_FORMAT)
-        try:
-            async for entry in message.guild.audit_logs(limit=2):
-                # target is user who had message deleted
-                if entry.action is discord.AuditLogAction.message_delete:
-                    if (
-                        entry.target.id == message.author.id
-                        and entry.extra.channel.id == message.channel.id
-                        and entry.created_at.timestamp() > time.time() - 3000
-                        and entry.extra.count >= 1
-                    ):
-                        entry_s = DELETE_AUDIT_TEMPLATE.format(entry.user, message, message.author, timestamp)
-                        break
-        except:
-            pass
+        if self.cache["check_audit"]:
+            try:
+                async for entry in message.guild.audit_logs(limit=2):
+                    # target is user who had message deleted
+                    if entry.action is discord.AuditLogAction.message_delete:
+                        if (
+                            entry.target.id == message.author.id
+                            and entry.extra.channel.id == message.channel.id
+                            and entry.created_at.timestamp() > time.time() - 3000
+                            and entry.extra.count >= 1
+                        ):
+                            entry_s = DELETE_AUDIT_TEMPLATE.format(entry.user, message, message.author, timestamp)
+                            break
+            except:
+                pass
 
         if not entry_s:
             entry_s = DELETE_TEMPLATE.format(message, timestamp)
@@ -1511,14 +1544,18 @@ class ActivityLogger(commands.Cog):
     async def on_guild_update(self, before, after):
         if await self.bot.cog_disabled_in_guild(self, after):
             return
+        if not self.should_log(before):
+            return
+
         entries = []
         user = None
-        try:
-            async for entry in after.audit_logs(limit=1):
-                if entry.action is discord.AuditLogAction.guild_update:
-                    user = entry.user
-        except:
-            pass
+        if self.cache["check_audit"]:
+            try:
+                async for entry in after.audit_logs(limit=1):
+                    if entry.action is discord.AuditLogAction.guild_update:
+                        user = entry.user
+            except:
+                pass
 
         if before.owner != after.owner:
             if user:
@@ -1570,14 +1607,18 @@ class ActivityLogger(commands.Cog):
     async def on_guild_role_create(self, role):
         if await self.bot.cog_disabled_in_guild(self, role.guild):
             return
+        if not self.should_log(role.guild):
+            return
+
         user = None
-        try:
-            async for entry in role.guild.audit_logs(limit=2):
-                if entry.action is discord.AuditLogAction.role_create:
-                    if entry.target.id == role.id:
-                        user = entry.user
-        except:
-            pass
+        if self.cache["check_audit"]:
+            try:
+                async for entry in role.guild.audit_logs(limit=2):
+                    if entry.action is discord.AuditLogAction.role_create:
+                        if entry.target.id == role.id:
+                            user = entry.user
+            except:
+                pass
 
         if user:
             entry = "Role created by @{1.name}#{1.discriminator}(id:{1.id}): '{0}' (id {0.id})".format(role, user)
@@ -1590,14 +1631,18 @@ class ActivityLogger(commands.Cog):
     async def on_guild_role_delete(self, role):
         if await self.bot.cog_disabled_in_guild(self, role.guild):
             return
+        if not self.should_log(role.guild):
+            return
+
         user = None
-        try:
-            async for entry in role.guild.audit_logs(limit=2):
-                if entry.action is discord.AuditLogAction.role_delete:
-                    if entry.target.id == role.id:
-                        user = entry.user
-        except:
-            pass
+        if self.cache["check_audit"]:
+            try:
+                async for entry in role.guild.audit_logs(limit=2):
+                    if entry.action is discord.AuditLogAction.role_delete:
+                        if entry.target.id == role.id:
+                            user = entry.user
+            except:
+                pass
 
         if user:
             entry = "Role deleted by @{1.name}#{1.discriminator}(id:{1.id}): '{0}' (id {0.id})".format(role, user)
@@ -1610,15 +1655,19 @@ class ActivityLogger(commands.Cog):
     async def on_guild_role_update(self, before, after):
         if await self.bot.cog_disabled_in_guild(self, after.guild):
             return
+        if not self.should_log(before.guild):
+            return
+
         entries = []
         user = None
-        try:
-            async for entry in after.guild.audit_logs(limit=2):
-                if entry.action is discord.AuditLogAction.role_update:
-                    if entry.target.id == after.id:
-                        user = entry.user
-        except:
-            pass
+        if self.cache["check_audit"]:
+            try:
+                async for entry in after.guild.audit_logs(limit=2):
+                    if entry.action is discord.AuditLogAction.role_update:
+                        if entry.target.id == after.id:
+                            user = entry.user
+            except:
+                pass
 
         if before.name != after.name:
             if user:
@@ -1708,14 +1757,19 @@ class ActivityLogger(commands.Cog):
     async def on_member_remove(self, member):
         if await self.bot.cog_disabled_in_guild(self, member.guild):
             return
+        if not self.should_log(member.guild):
+            await self.config.member(member).clear()
+            return
+
         user = None
-        try:
-            async for entry in member.guild.audit_logs(limit=2):
-                if entry.action is discord.AuditLogAction.kick:
-                    if entry.target.id == member.id:
-                        user = entry.user
-        except:
-            pass
+        if self.cache["check_audit"]:
+            try:
+                async for entry in member.guild.audit_logs(limit=2):
+                    if entry.action is discord.AuditLogAction.kick:
+                        if entry.target.id == member.id:
+                            user = entry.user
+            except:
+                pass
 
         if user:
             entry = "Member kicked by @{1.name}#{1.discriminator}(id:{1.id}): @{0} (id {0.id})".format(member, user)
@@ -1733,14 +1787,18 @@ class ActivityLogger(commands.Cog):
     async def on_member_ban(self, guild, member):
         if await self.bot.cog_disabled_in_guild(self, guild):
             return
+        if not self.should_log(guild):
+            return
+
         user = None
-        try:
-            async for entry in guild.audit_logs(limit=2):
-                if entry.action is discord.AuditLogAction.ban:
-                    if entry.target.id == member.id:
-                        user = entry.user
-        except:
-            pass
+        if self.cache["check_audit"]:
+            try:
+                async for entry in guild.audit_logs(limit=2):
+                    if entry.action is discord.AuditLogAction.ban:
+                        if entry.target.id == member.id:
+                            user = entry.user
+            except:
+                pass
 
         if user:
             entry = "Member banned by @{1.name}#{1.discriminator}(id:{1.id}): @{0} (id {0.id})".format(member, user)
@@ -1753,14 +1811,18 @@ class ActivityLogger(commands.Cog):
     async def on_member_unban(self, guild, member):
         if await self.bot.cog_disabled_in_guild(self, guild):
             return
+        if not self.should_log(guild):
+            return
+
         user = None
-        try:
-            async for entry in guild.audit_logs(limit=2):
-                if entry.action is discord.AuditLogAction.unban:
-                    if entry.target.id == member.id:
-                        user = entry.user
-        except:
-            pass
+        if self.cache["check_audit"]:
+            try:
+                async for entry in guild.audit_logs(limit=2):
+                    if entry.action is discord.AuditLogAction.unban:
+                        if entry.target.id == member.id:
+                            user = entry.user
+            except:
+                pass
 
         if user:
             entry = "Member unbanned by @{1.name}#{1.discriminator}(id:{1.id}): @{0} (id {0.id})".format(member, user)
@@ -1773,18 +1835,22 @@ class ActivityLogger(commands.Cog):
     async def on_member_update(self, before, after):
         if await self.bot.cog_disabled_in_guild(self, after.guild):
             return
+        if not self.should_log(before.guild):
+            return
+
         entries = []
         user = None
-        try:
-            async for entry in after.guild.audit_logs(limit=2):
-                if (
-                    entry.action is discord.AuditLogAction.member_update
-                    or entry.action is discord.AuditLogAction.member_role_update
-                ):
-                    if entry.target.id == after.id:
-                        user = entry.user
-        except:
-            pass
+        if self.cache["check_audit"]:
+            try:
+                async for entry in after.guild.audit_logs(limit=2):
+                    if (
+                        entry.action is discord.AuditLogAction.member_update
+                        or entry.action is discord.AuditLogAction.member_role_update
+                    ):
+                        if entry.target.id == after.id:
+                            user = entry.user
+            except:
+                pass
 
         if before.nick != after.nick:
             if user:
@@ -1850,14 +1916,18 @@ class ActivityLogger(commands.Cog):
     async def on_guild_channel_create(self, channel):
         if await self.bot.cog_disabled_in_guild(self, channel.guild):
             return
+        if not self.should_log(channel.guild):
+            return
+
         user = None
-        try:
-            async for entry in channel.guild.audit_logs(limit=2):
-                if entry.action is discord.AuditLogAction.channel_create:
-                    if entry.target.id == after.id:
-                        user = entry.user
-        except:
-            pass
+        if self.cache["check_audit"]:
+            try:
+                async for entry in channel.guild.audit_logs(limit=2):
+                    if entry.action is discord.AuditLogAction.channel_create:
+                        if entry.target.id == after.id:
+                            user = entry.user
+            except:
+                pass
 
         if user:
             entry = 'Channel created by @{1.name}#{1.discriminator}(id:{1.id}): "{0.name}" (id {0.id})'.format(
@@ -1872,14 +1942,18 @@ class ActivityLogger(commands.Cog):
     async def on_guild_channel_delete(self, channel):
         if await self.bot.cog_disabled_in_guild(self, channel.guild):
             return
+        if not self.should_log(channel.guild):
+            return
+
         user = None
-        try:
-            async for entry in channel.guild.audit_logs(limit=2):
-                if entry.action is discord.AuditLogAction.channel_delete:
-                    if entry.target.id == after.id:
-                        user = entry.user
-        except:
-            pass
+        if self.cache["check_audit"]:
+            try:
+                async for entry in channel.guild.audit_logs(limit=2):
+                    if entry.action is discord.AuditLogAction.channel_delete:
+                        if entry.target.id == after.id:
+                            user = entry.user
+            except:
+                pass
 
         if user:
             entry = 'Channel deleted by @{1.name}#{1.discriminator}(id:{1.id}): "{0.name}" (id {0.id})'.format(
@@ -1894,14 +1968,18 @@ class ActivityLogger(commands.Cog):
     async def on_guild_channel_update(self, before, after):
         if await self.bot.cog_disabled_in_guild(self, after.guild):
             return
+        if not self.should_log(before.guild):
+            return
+
         user = None
-        try:
-            async for entry in after.guild.audit_logs(limit=2):
-                if entry.action is discord.AuditLogAction.channel_update:
-                    if entry.target.id == after.id:
-                        user = entry.user
-        except:
-            pass
+        if self.cache["check_audit"]:
+            try:
+                async for entry in after.guild.audit_logs(limit=2):
+                    if entry.action is discord.AuditLogAction.channel_update:
+                        if entry.target.id == after.id:
+                            user = entry.user
+            except:
+                pass
 
         entries = []
 

@@ -28,7 +28,7 @@ TIME_RE = re.compile(TIME_RE_STRING, re.I)
 
 class Subscriber(commands.Cog):
     """
-    Automates subscriptions to roles to make donators and over roles easier to manage.
+    Automates subscriptions to roles to make donators and other roles easier to manage.
     """
 
     def __init__(self, bot):
