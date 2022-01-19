@@ -240,7 +240,11 @@ class ActivityLogger(commands.Cog):
             data = discord.Embed(title=title, description=f"{statusemoji} {activity}", colour=user.colour)
             data.add_field(name="Joined Discord on", value=created_on)
             data.add_field(name="Joined this server on", value=joined_on)
-            data.add_field(name="Roles", value=roles, inline=False)
+            if roles != "None":
+                roles = pagify(roles, page_length=1000, delims=[" "])
+                for r in roles:
+                    data.add_field(name="Roles", value=r, inline=False)
+
             data.add_field(name="Stats", value=stats)
             if names:
                 names = pagify(names, page_length=1000)
