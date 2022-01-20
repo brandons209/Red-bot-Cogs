@@ -1,0 +1,16 @@
+{
+  "author": [
+    "Brandons209",
+  ],
+  "description": "Timehelper provides commands for users to easily get discord formatted timestamps for a specific date or interval, and also compare timezone's times easily.",
+  "hidden": false,
+  "install_msg": "Thanks for using my cog! Use [p]time to get started.",
+  "requirements": ["dateparser", "tzdata"],
+  "tags": [
+    "brandons209",
+    "timestamp",
+    "timezone",
+    "time"
+  ],
+  "end_user_data_statement": "This cog stores a user's timezone, if set by the user."
+}
