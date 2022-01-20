@@ -1,6 +1,7 @@
 from redbot.core import commands, Config, checks
 from redbot.core.commands import Context, Cog
 from redbot.core.utils.chat_formatting import *
+from redbot.core.utils.menus import menu, DEFAULT_CONTROLS
 
 import discord
 
@@ -126,10 +127,10 @@ class Subscriber(commands.Cog):
                             del roles[role]
                         await self.config.member(member).roles.set(roles)
 
-            if rm_members:
-                for mem in rm_members:
-                    members.remove(mem)
-                await self.config.guild(guild).members.set(members)
+                if rm_members:
+                    for mem in rm_members:
+                        members.remove(mem)
+                    await self.config.guild(guild).subscribers.set(members)
 
             # sleep for 30 minutes
             await asyncio.sleep(1800)
@@ -307,6 +308,47 @@ class Subscriber(commands.Cog):
                 return
 
         await ctx.tick()
+
+    @commands.command(name="subviewall")
+    @checks.admin_or_permissions(administrator=True)
+    @commands.guild_only()
+    async def subview_all(self, ctx):
+        """
+        View all subscriptions in the server
+        """
+        members = await self.config.guild(ctx.guild).subscribers()
+        if not members:
+            await ctx.send(error("No users have subscriptions in your server."), delete_after=60)
+            return
+
+        msg = ""
+        for member in members:
+            member = ctx.guild.get_member(member)
+            if not member:
+                continue
+
+            msg += f"{member.mention}:\n"
+            roles = await self.config.member(member).roles()
+            for role, end_date in roles.items():
+                role = ctx.guild.get_role(int(role))
+                if not role:
+                    continue
+                msg += f"\t- `@{role.name}`: <t:{int(end_date)}>\n"
+
+            msg += "\n"
+
+        pages = list(pagify(msg, page_length=1700, delims=["\n"], priority=True))
+        pages = [f"{page}\n\n-----------------\n**Page {i+1} of {len(pages)}**" for i, page in enumerate(pages)]
+
+        if not pages:  # should never happen
+            await ctx.send(
+                error(
+                    "There are subscribed users, but I couldn't get any of their information. Please contact the bot developer for help."
+                ),
+                delete_after=60,
+            )
+        else:
+            await menu(ctx, pages, DEFAULT_CONTROLS)
 
     @commands.command(name="subview")
     @commands.guild_only()
