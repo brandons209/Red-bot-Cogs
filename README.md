@@ -212,7 +212,11 @@ Auto react to messages based on keywords. Based off of [FlapJack's](https://gith
 
 
 ### Thread Manager
-A simple thread manager that allows guild staff to set certain roles to create a customable number of threads per channel. Manual archive by users is not supported right now. 
+A simple thread manager that allows guild staff to set certain roles to create a customable number of threads per channel. Manual archive by users is not supported right now.
+
+
+### Time Helper
+Time helper makes it easy to format specific dates, times, and relative times into discord timestamps, or convert them into multiple other timezones. You can also set your own timezone so that you don't need to specify your timezone when using the cog!
 
 
 #### Warnings Custom
