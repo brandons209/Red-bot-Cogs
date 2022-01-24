@@ -1335,6 +1335,10 @@ class ActivityLogger(commands.Cog):
             return handle
 
     def should_log(self, location):
+        if not self.cache:
+            # cache is empty, still booting
+            return False
+
         if self.cache.get("everything", False):
             return True
 

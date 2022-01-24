@@ -35,7 +35,13 @@ class ScriptGen(commands.Cog):
         config_path = os.path.join(cog_data_path(cog_instance=self), "config.json")
         if os.path.isfile(model_path) and os.path.isfile(config_path):
             use_gpu = await self.config.use_gpu()
-            self.model = aitextgen(model=model_path, config=config_path, use_gpu=use_gpu)
+            self.model = aitextgen(model_folder=cog_data_path(cog_instance=self), use_gpu=use_gpu)
+        else:
+            await self.bot.send_to_owners(
+                error(
+                    "Your model for cog `scriptgen` could not be found. Make sure to have two files, `pytorch_model.bin` and `config.json` in the cog's data directory."
+                )
+            )
 
         if await self.config.use_lock():
             self.lock = False
