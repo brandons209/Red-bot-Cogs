@@ -126,6 +126,9 @@ class PersonalRoles(commands.Cog):
                 ),
             }
             assigned_roles.append(dic)
+        if not assigned_roles:
+            await ctx.send(chat.info(_("There is no assigned personal roles on this server")))
+            return
         pages = list(chat.pagify(tabulate(assigned_roles, headers="keys", tablefmt="orgtbl")))
         pages = [chat.box(page) for page in pages]
         await menu(ctx, pages, DEFAULT_CONTROLS)
