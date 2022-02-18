@@ -12,7 +12,7 @@ from redbot.core.utils.menus import menu, DEFAULT_CONTROLS
 from redbot.core.utils.mod import get_audit_reason
 from redbot.core.utils.predicates import ReactionPredicate
 from tabulate import tabulate
-from typing import Literal
+from typing import Literal, List
 import asyncio
 import aiohttp
 
@@ -141,8 +141,27 @@ class PersonalRoles(commands.Cog):
         """
         pass
 
+    @myrole_auto.command(name="list")
+    async def myrole_auto_list(self, ctx):
+        """
+        List the roles that allow auto creation of assigned roles
+        """
+        guild = ctx.guild
+        curr = await self.config.guild(guild).auto_roles()
+        roles = [guild.get_role(r) for r in curr]
+        names = [r.name for r in roles if r is not None]
+        msg = ""
+        if None in curr:
+            msg += chat.warning("Some auto roles cannot be found, they have been removed from the list.\n")
+            for i, role in enumerate(roles):
+                if role is None:
+                    del curr[i]
+            await self.config.guild(guild).auto_roles.set(curr)
+
+        await ctx.send(f"Current auto roles: {chat.humanize_list(names) if names else chat.bold('None')}")
+
     @myrole_auto.command(name="roles")
-    async def myrole_auto_autoroles(self, ctx, *, role_list: str = None):
+    async def myrole_auto_autoroles(self, ctx, *role_list: discord.Role):
         """
         Set roles that a user must have to allow auto creation of assigned roles
         by the bot.
@@ -150,52 +169,16 @@ class PersonalRoles(commands.Cog):
         If user has any one of the roles in the list, an assigned role will
         be automatically created for them and assigned.
 
-        Role list should be comma seperate list of role names and/or IDs.
+        Role list should be a list of role ids, mentions, and/or names (must use quotes for names, i.e "My Role").
         Roles in role list already set for autorole will be removed, and roles
         not set for autrole will be added.
         """
         guild = ctx.guild
 
-        if not role_list:
-            curr = await self.config.guild(guild).auto_roles()
-            roles = [guild.get_role(r) for r in curr]
-            names = [r.name for r in roles if r is not None]
-            msg = ""
-            if None in curr:
-                msg += chat.warning("Some auto roles cannot be found, they have been removed from the list.\n")
-                for i, role in enumerate(roles):
-                    if role is None:
-                        del curr[i]
-                await self.config.guild(guild).auto_roles.set(curr)
-
-            await ctx.send(f"Current auto roles: {chat.humanize_list(names) if names else chat.bold('None')}")
-            return
-
-        role_list = role_list.strip().split(",")
-        role_list = [r.strip() for r in role_list]
-        not_found = set()
-        found = set()
         added = set()
         removed = set()
-        for role_name in role_list:
-            role = self.role_from_string(guild, role_name)
-
-            if role is None:
-                not_found.add(role_name)
-                continue
-
-            found.add(role)
-
-        if not_found:
-            await ctx.send(
-                chat.warning(
-                    "These roles weren't found, please try again: {}".format(chat.humanize_list(list(not_found)))
-                )
-            )
-            return
-
         async with self.config.guild(guild).auto_roles() as auto_roles:
-            for role in found:
+            for role in role_list:
                 if role.id in auto_roles:
                     auto_roles.remove(role.id)
                     removed.add(role.name)
@@ -523,17 +506,6 @@ class PersonalRoles(commands.Cog):
         except discord.HTTPException as e:
             ctx.command.reset_cooldown(ctx)
             await ctx.send(chat.error(_("Unable to edit role: {}").format(e)))
-
-    ### Helper methods
-    @staticmethod
-    def role_from_string(guild: discord.Guild, role_name: str):
-
-        role = discord.utils.find(lambda r: r.name == role_name, guild.roles)
-        # if couldnt find by role name, try to find by role id
-        if role is None:
-            role = discord.utils.find(lambda r: r.id == role_name, guild.roles)
-
-        return role
 
     ### Listeners
     @commands.Cog.listener("on_member_join")
