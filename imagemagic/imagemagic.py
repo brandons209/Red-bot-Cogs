@@ -29,13 +29,25 @@ class ImageMagic(commands.Cog):
 
         # original by Flame442, edited for Wand by ScriptPony
         if not ctx.message.attachments and not link:
-            async for msg in ctx.channel.history(limit=10):
-                for a in msg.attachments:
-                    path = urllib.parse.urlparse(a.url).path
-                    link = a.url
-                    break
-                if link:
-                    break
+            # first check for reply message
+            if ctx.message.reference:
+                msg = ctx.message.reference.resolved
+                if msg is None:
+                    msg = await ctx.channel.fetch_message(ctx.message.reference.message_id)
+                if msg and msg.attachments:
+                    for a in msg.attachments:
+                        path = urllib.parse.urlparse(a.url).path
+                        link = a.url
+                        break
+
+            if not link:
+                async for msg in ctx.channel.history(limit=10):
+                    for a in msg.attachments:
+                        path = urllib.parse.urlparse(a.url).path
+                        link = a.url
+                        break
+                    if link:
+                        break
             if not link:
                 raise ImageFindError("Please provide an attachment.")
         if link:  # linked image
@@ -94,13 +106,13 @@ class ImageMagic(commands.Cog):
         try:
             img, name = await asyncio.wait_for(task, timeout=60)
         except asyncio.TimeoutError:
-            await ctx.send("The image took too long to process.")
+            await ctx.reply("The image took too long to process.", mention_author=False)
             return
 
         try:
-            await ctx.send(file=discord.File(BytesIO(img.make_blob()), name))
+            await ctx.reply(file=discord.File(BytesIO(img.make_blob()), name), mention_author=False)
         except discord.errors.HTTPException:
-            await ctx.send("That image is too large.")
+            await ctx.reply("That image is too large.", mention_author=False)
             return
 
     @commands.group()
@@ -125,7 +137,7 @@ class ImageMagic(commands.Cog):
             try:
                 img = await self._get_image(ctx, link)
             except ImageFindError as e:
-                return await ctx.send(e)
+                return await ctx.reply(e, mention_author=False)
 
             await self._command_body(
                 ctx,
@@ -148,7 +160,7 @@ class ImageMagic(commands.Cog):
             try:
                 img = await self._get_image(ctx, link)
             except ImageFindError as e:
-                return await ctx.send(e)
+                return await ctx.reply(e, mention_author=False)
 
             await self._command_body(ctx, args=(self._distortion, img, "implode", (amount * intensity,)))
 
@@ -165,7 +177,7 @@ class ImageMagic(commands.Cog):
             try:
                 img = await self._get_image(ctx, link)
             except ImageFindError as e:
-                return await ctx.send(e)
+                return await ctx.reply(e, mention_author=False)
 
             await self._command_body(ctx, args=(self._distortion, img, "swirl", (intensity,)))
 
@@ -179,7 +191,7 @@ class ImageMagic(commands.Cog):
             try:
                 img = await self._get_image(ctx, link)
             except ImageFindError as e:
-                return await ctx.send(e)
+                return await ctx.reply(e, mention_author=False)
 
             await self._command_body(ctx, args=(self._distortion, img, "charcoal", (1.5, 0.5)))
 
@@ -193,7 +205,7 @@ class ImageMagic(commands.Cog):
             try:
                 img = await self._get_image(ctx, link)
             except ImageFindError as e:
-                return await ctx.send(e)
+                return await ctx.reply(e, mention_author=False)
 
             await self._command_body(ctx, args=(self._distortion, img, "sketch", (0.5, 0.0, 98.0)))
 
@@ -207,7 +219,7 @@ class ImageMagic(commands.Cog):
             try:
                 img = await self._get_image(ctx, link)
             except ImageFindError as e:
-                return await ctx.send(e)
+                return await ctx.reply(e, mention_author=False)
 
             h = img.height
             w = img.width

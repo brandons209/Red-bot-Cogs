@@ -1,6 +1,5 @@
 from redbot.core import bank, commands, checks, Config
 from redbot.core.utils.chat_formatting import *
-from redbot.core.utils.predicates import MessagePredicate
 from redbot.core.data_manager import cog_data_path
 
 from aitextgen import aitextgen

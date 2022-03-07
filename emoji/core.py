@@ -100,7 +100,7 @@ class EveryoneEmoji(commands.Cog):
                         name = name[1]
                         img = await resp_2.read()
         else:
-            async with self.session.get(url) as resp:
+            async with self.session.get(str(url)) as resp:
                 if resp.status != 200:
                     await ctx.send("Emoji not found.")
                     return

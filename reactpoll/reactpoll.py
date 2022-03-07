@@ -25,9 +25,14 @@ class ReactPoll(commands.Cog):
         self.config = Config.get_conf(self, identifier=9675846083, force_registration=True)
         self.config.register_global(poll_sessions={})
 
-        self.loop = bot.loop
-        self.loop.create_task(self.load_polls())
-        self.poll_task = self.loop.create_task(self.poll_closer())
+        self.load_task = asyncio.create_task(self.load_polls())
+        self.poll_task = asyncio.create_task(self.poll_closer())
+
+    def cog_unload(self):
+        if self.load_task:
+            self.load_task.cancel()
+        if self.poll_task:
+            self.poll_task.cancel()
 
     async def poll_closer(self):
         await self.bot.wait_until_ready()
