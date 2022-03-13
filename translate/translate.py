@@ -139,7 +139,8 @@ class Translate(GoogleTranslateAPI, commands.Cog):
         original_lang = detected_lang[0][0]["language"]
         embeds = None
         msg_trans = f"**{original_lang}:** {message}\n"
-        for to_lang in to_language:
+        # can only do up to 25 sections for embed
+        for to_lang in to_language[:24]:
             if to_lang == original_lang:
                 if len(to_language) == 1:
                     return await ctx.send(
@@ -160,10 +161,11 @@ class Translate(GoogleTranslateAPI, commands.Cog):
                     embeds = discord.Embed(colour=author.colour, description=f"**FROM:** {original_lang}")
                     embeds.set_author(name=author.display_name + _(" said:"), icon_url=str(author.avatar_url))
                     embeds.set_footer(text=f"Requested by {author}")
-                    embeds.add_field(name=original_lang, value=message)
-                    embeds.add_field(name=to_lang, value=translated_text)
+                    embeds.add_field(name=original_lang, value=message, inline=False)
+                    # inline is false for horizontal spacing instead 3 at once in a line
+                    embeds.add_field(name=to_lang, value=translated_text, inline=False)
                 else:
-                    embeds.add_field(name=to_lang, value=translated_text)
+                    embeds.add_field(name=to_lang, value=translated_text, inline=False)
             else:
                 msg_trans += f"**{to_lang}**: {translated_text}\n"
 
