@@ -36,23 +36,32 @@ class FlagTranslation(Converter):
 
     async def convert(self, ctx: commands.Context, argument: str) -> List[str]:
         result = []
-        if argument in FLAGS:
-            result = FLAGS[argument]["code"].upper()
-        else:
-            for lang in FLAGS:
-                if FLAGS[lang]["name"].lower() in argument.lower():
-                    result = FLAGS[lang]["code"]
-                    break
-                if FLAGS[lang]["country"].lower() in argument.lower():
-                    result = FLAGS[lang]["code"]
-                    break
-                if not FLAGS[lang]["code"]:
-                    continue
-                if FLAGS[lang]["code"] in argument.lower() and len(argument) == 2:
-                    result = FLAGS[lang]["code"]
-                    break
+        args = [s.strip() for s in argument.split(",")]
+        for arg in args:
+            r = None
+            if arg in FLAGS:
+                r = FLAGS[arg]["code"].upper()
+            else:
+                for lang in FLAGS:
+                    if FLAGS[lang]["name"].lower() in arg.lower():
+                        r = FLAGS[lang]["code"]
+                        break
+                    if FLAGS[lang]["country"].lower() in arg.lower():
+                        r = FLAGS[lang]["code"]
+                        break
+                    if not FLAGS[lang]["code"]:
+                        continue
+                    if FLAGS[lang]["code"] in arg.lower() and len(arg) == 2:
+                        r = FLAGS[lang]["code"]
+                        break
+            if r is None:
+                raise BadArgument('Language "{}" not found'.format(arg))
+            result.append(r)
+
+        # filter out repeated languages
+        result = list(set(result))
         if not result:
-            raise BadArgument('Language "{}" not found'.format(argument))
+            raise BadArgument('Language(s) "{}" not found'.format(argument))
 
         return result
 
@@ -140,10 +149,7 @@ class GoogleTranslateAPI:
         self.cache["guild_whitelist"][guild.id] = await self.config.guild(guild).whitelist()
 
     async def check_bw_list(
-        self,
-        guild: discord.Guild,
-        channel: discord.TextChannel,
-        member: Union[discord.Member, discord.User],
+        self, guild: discord.Guild, channel: discord.TextChannel, member: Union[discord.Member, discord.User],
     ) -> bool:
         can_run = True
         if guild.id not in self.cache["guild_blacklist"]:
@@ -416,10 +422,7 @@ class GoogleTranslateAPI:
                 translated_msg = await ch.send(msg, files=files)
 
     async def translate_message(
-        self,
-        message: discord.Message,
-        flag: str,
-        reacted_user: Optional[discord.Member] = None,
+        self, message: discord.Message, flag: str, reacted_user: Optional[discord.Member] = None,
     ) -> None:
         guild = cast(discord.Guild, message.guild)
         channel = cast(discord.TextChannel, message.channel)
