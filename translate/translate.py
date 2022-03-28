@@ -108,11 +108,7 @@ class Translate(GoogleTranslateAPI, commands.Cog):
 
     @commands.command()
     async def translate(
-        self,
-        ctx: commands.Context,
-        to_language: FlagTranslation,
-        *,
-        message: Union[discord.Message, str],
+        self, ctx: commands.Context, to_language: FlagTranslation, *, message: Union[discord.Message, str],
     ) -> None:
         """
         Translate messages with Google Translate
@@ -139,31 +135,50 @@ class Translate(GoogleTranslateAPI, commands.Cog):
         except GoogleTranslateAPIError as e:
             await ctx.send(str(e))
             return
-        from_lang = detected_lang[0][0]["language"]
-        original_lang = detected_lang[0][0]["language"]
-        if to_language == original_lang:
-            return await ctx.send(
-                _("I cannot translate `{from_lang}` to `{to}`").format(from_lang=from_lang, to=to_language)
-            )
-        try:
-            translated_text = await self.translate_text(original_lang, to_language, message)
-            await self.add_requests(ctx.guild, message)
-        except GoogleTranslateAPIError as e:
-            await ctx.send(str(e))
-            return
 
-        if ctx.channel.permissions_for(ctx.me).embed_links:
-            translation = (translated_text, from_lang, to_language)
-            em = await self.translation_embed(author, translation, requestor)
-            if version_info >= VersionInfo.from_str("3.4.6") and msg.channel.id == ctx.channel.id:
-                await ctx.send(embed=em, reference=msg, mention_author=False)
+        original_lang = detected_lang[0][0]["language"]
+        embeds = None
+        msg_trans = f"**{original_lang}:** {message}\n"
+        # can only do up to 25 sections for embed
+        for to_lang in to_language[:24]:
+            if to_lang == original_lang:
+                if len(to_language) == 1:
+                    return await ctx.send(
+                        _("I cannot translate `{from_lang}` to `{to}`").format(from_lang=original_lang, to=to_lang)
+                    )
+                else:
+                    continue
+            try:
+                translated_text = await self.translate_text(original_lang, to_lang, message)
+                await self.add_requests(ctx.guild, message)
+            except GoogleTranslateAPIError as e:
+                await ctx.send(str(e))
+                return
+
+            if ctx.channel.permissions_for(ctx.me).embed_links:
+                translation = (translated_text, original_lang, to_lang)
+                if embeds is None:
+                    embeds = discord.Embed(colour=author.colour, description=f"**FROM:** {original_lang}")
+                    embeds.set_author(name=author.display_name + _(" said:"), icon_url=str(author.avatar_url))
+                    embeds.set_footer(text=f"Requested by {author}")
+                    embeds.add_field(name=original_lang, value=message, inline=False)
+                    # inline is false for horizontal spacing instead 3 at once in a line
+                    embeds.add_field(name=to_lang, value=translated_text, inline=False)
+                else:
+                    embeds.add_field(name=to_lang, value=translated_text, inline=False)
             else:
-                await ctx.send(embed=em)
+                msg_trans += f"**{to_lang}**: {translated_text}\n"
+
+        if embeds is not None:
+            if version_info >= VersionInfo.from_str("3.4.6") and msg.channel.id == ctx.channel.id:
+                await ctx.send(embed=embeds, reference=msg, mention_author=False)
+            else:
+                await ctx.send(embed=embeds)
         else:
             if version_info >= VersionInfo.from_str("3.4.6") and msg.channel.id == ctx.channel.id:
-                await ctx.send(translated_text, reference=msg, mention_author=False)
+                await ctx.send(msg_trans, reference=msg, mention_author=False)
             else:
-                await ctx.send(translated_text)
+                await ctx.send(msg_trans)
 
     @commands.group()
     async def translateset(self, ctx: commands.Context) -> None:
