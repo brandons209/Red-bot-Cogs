@@ -66,6 +66,7 @@ class MoreAdmin(commands.Cog):
             "user_count_channel": None,
             "sus_user_channel": None,
             "sus_user_threshold": None,
+            "sus_user_kick_threshold": None,
             "ignore_bot_commands": False,
             "last_msg_num": 5,
             "prefixes": [],
@@ -309,6 +310,20 @@ class MoreAdmin(commands.Cog):
             return
 
         await self.config.guild(ctx.guild).sus_user_threshold.set(int(threshold.total_seconds()))
+        await ctx.tick()
+
+    @adminset.command(name="sus-kick")
+    @checks.bot_has_permissions(kick_members=True)
+    async def adminset_sus_kick(self, ctx, *, threshold: str):
+        """
+        Set threshold for kicking new accounts with DM
+        """
+        threshold = parse_timedelta(threshold)
+        if not threshold:
+            await ctx.send("Invalid threshold!")
+            return
+
+        await self.config.guild(ctx.guild).sus_user_kick_threshold.set(int(threshold.total_seconds()))
         await ctx.tick()
 
     @adminset.command(name="addable")
@@ -1144,34 +1159,101 @@ class MoreAdmin(commands.Cog):
     async def on_member_join(self, member):
         if await self.bot.cog_disabled_in_guild(self, member.guild):
             return
-        if await self.bot.cog_disabled_in_guild(self, member.guild):
-            return
         sus_threshold = await self.config.guild(member.guild).sus_user_threshold()
-        if not sus_threshold:
+        sus_kick_threshold = await self.config.guild(member.guild).sus_user_kick_threshold()
+        if not (sus_threshold or sus_kick_threshold):
             return
+
         channel = await self.config.guild(member.guild).sus_user_channel()
         channel = member.guild.get_channel(channel)
-        if not channel:
+        if not (channel or sus_kick_threshold):
             return
 
         age = (datetime.utcnow() - member.created_at).total_seconds()
 
-        if age < sus_threshold:
-            data = discord.Embed(title="NEW ACCOUNT DETECTED", colour=member.colour)
-            data.add_field(name="Account Age", value=parse_seconds(age))
-            data.add_field(name="Threshold", value=parse_seconds(sus_threshold))
-            data.set_footer(text=f"User ID:{member.id}")
+        if channel:
+            if sus_threshold and age < sus_threshold:
+                if sus_kick_threshold and age < sus_kick_threshold:
+                    data = discord.Embed(title="NEW ACCOUNT KICKED", colour=member.colour)
+                else:
+                    data = discord.Embed(title="NEW ACCOUNT DETECTED", colour=member.colour)
 
-            name = str(member)
-            name = " ~ ".join((name, member.nick)) if member.nick else name
+                data.add_field(name="Account Age", value=parse_seconds(age))
+                data.add_field(name="Threshold", value=parse_seconds(sus_threshold))
 
-            if member.avatar_url:
-                data.set_author(name=name, url=member.avatar_url)
-                data.set_thumbnail(url=member.avatar_url)
-            else:
-                data.set_author(name=name)
+                data.set_footer(text=f"User ID:{member.id}")
 
-            await channel.send(embed=data)
+                name = str(member)
+                name = " ~ ".join((name, member.nick)) if member.nick else name
+
+                if member.avatar_url:
+                    data.set_author(name=name, url=member.avatar_url)
+                    data.set_thumbnail(url=member.avatar_url)
+                else:
+                    data.set_author(name=name)
+
+                if sus_kick_threshold and age < sus_kick_threshold:
+                    data.add_field(name="Kick Threshold", value=parse_seconds(sus_kick_threshold))
+                    try:
+                        await member.send(
+                            f"Hello, you have been kicked from `{member.guild}` because your account is too new. Please try again later."
+                        )
+                    except:
+                        pass
+
+                    try:
+                        await member.guild.kick(
+                            member, reason=f"Account age too new, threshold: {parse_seconds(sus_kick_threshold)}"
+                        )
+                    except:
+                        data.add_field(name="KICK FAILED!", value="Please check bot permissions!")
+
+                await channel.send(embed=data)
+            elif sus_kick_threshold and age < sus_kick_threshold:
+
+                data = discord.Embed(title="NEW ACCOUNT KICKED", colour=member.colour)
+                data.add_field(name="Account Age", value=parse_seconds(age))
+                data.add_field(name="Kick Threshold", value=parse_seconds(sus_kick_threshold))
+                data.set_footer(text=f"User ID:{member.id}")
+
+                name = str(member)
+                name = " ~ ".join((name, member.nick)) if member.nick else name
+
+                if member.avatar_url:
+                    data.set_author(name=name, url=member.avatar_url)
+                    data.set_thumbnail(url=member.avatar_url)
+                else:
+                    data.set_author(name=name)
+
+                try:
+                    await member.send(
+                        f"Hello, you have been kicked from `{member.guild}` because your account is too new. Please try again later."
+                    )
+                except:
+                    pass
+
+                try:
+                    await member.guild.kick(
+                        member, reason=f"Account age too new, threshold: {parse_seconds(sus_kick_threshold)}"
+                    )
+                except:
+                    data.add_field(name="KICK FAILED!", value="Please check bot permissions!")
+
+                await channel.send(embed=data)
+        elif sus_kick_threshold and age < sus_kick_threshold:
+            try:
+                await member.send(
+                    f"Hello, you have been kicked from `{member.guild}` because your account is too new. Please try again later."
+                )
+            except:
+                pass
+
+            try:
+                await member.guild.kick(
+                    member, reason=f"Account age too new, threshold: {parse_seconds(sus_kick_threshold)}"
+                )
+            except:
+                pass
 
     @commands.Cog.listener()
     async def on_message(self, message):
