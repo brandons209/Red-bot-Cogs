@@ -149,7 +149,10 @@ class GoogleTranslateAPI:
         self.cache["guild_whitelist"][guild.id] = await self.config.guild(guild).whitelist()
 
     async def check_bw_list(
-        self, guild: discord.Guild, channel: discord.TextChannel, member: Union[discord.Member, discord.User],
+        self,
+        guild: discord.Guild,
+        channel: discord.TextChannel,
+        member: Union[discord.Member, discord.User],
     ) -> bool:
         can_run = True
         if guild.id not in self.cache["guild_blacklist"]:
@@ -422,7 +425,10 @@ class GoogleTranslateAPI:
                 translated_msg = await ch.send(msg, files=files)
 
     async def translate_message(
-        self, message: discord.Message, flag: str, reacted_user: Optional[discord.Member] = None,
+        self,
+        message: discord.Message,
+        flag: str,
+        reacted_user: Optional[discord.Member] = None,
     ) -> None:
         guild = cast(discord.Guild, message.guild)
         channel = cast(discord.TextChannel, message.channel)
