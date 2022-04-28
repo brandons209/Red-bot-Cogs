@@ -317,6 +317,15 @@ class MoreAdmin(commands.Cog):
     async def adminset_sus_kick(self, ctx, *, threshold: str):
         """
         Set threshold for kicking new accounts with DM
+
+        Intervals look like:
+           5 minutes
+           1 minute 30 seconds
+           1 hour
+           2 days
+           30 days
+           5h30m
+           (etc)
         """
         threshold = parse_timedelta(threshold)
         if not threshold:

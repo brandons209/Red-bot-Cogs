@@ -1,0 +1,10 @@
+{
+    "author": [
+        "brandons209"
+    ],
+    "name": "Chatbot",
+    "description": "Chating using OpenAI's GPT2 and aitextgen. To start, put an aitextgen model in the cog's data directory and run `[p]ai boot`",
+    "hidden": false,
+    "end_user_data_statement": "This cog does not store user data.",
+    "requirements": ["aitextgen"]
+}
