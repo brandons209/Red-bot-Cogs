@@ -13,6 +13,7 @@ import os
 import asyncio
 import glob
 import io
+import functools
 
 from typing import Literal
 
@@ -111,6 +112,7 @@ class ActivityLogger(commands.Cog):
         }
         self.bot.remove_command("userinfo")
         self.load_task = asyncio.create_task(self.initialize())
+        self.loop = asyncio.get_event_loop()
 
     def cog_unload(self):
         self.lock = True
@@ -412,7 +414,15 @@ class ActivityLogger(commands.Cog):
             end_time = date
 
         # get messages split by channel
-        messages = self.log_handler(log_files, end_time, split_channels=True)
+        messages = await self.loop.run_in_executor(
+            None,
+            functools.partial(
+                self.log_handler,
+                log_files,
+                end_time,
+                split_channels=True,
+            ),
+        )
 
         ### set up data dictionary
         num_messages = {}
@@ -600,7 +610,15 @@ class ActivityLogger(commands.Cog):
 
         await ctx.send(warning("**__Generating logs, please wait...__**"))
         # runs in descending order, with most recent log file first
-        messages = self.log_handler(log_files, end_time, start=start)
+        messages = await self.loop.run_in_executor(
+            None,
+            functools.partial(
+                self.log_handler,
+                log_files,
+                end_time,
+                start=start,
+            ),
+        )
 
         if user:
             messages = [message for message in messages if str(user.id) in message]
