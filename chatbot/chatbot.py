@@ -92,10 +92,14 @@ class Chatbot(commands.Cog):
                     async for msg in channel.history(limit=1):
                         last_msg = msg
 
+                    if last_msg is None:
+                        continue
+
                     now = datetime.utcnow()
                     if (now - last_msg.created_at).total_seconds() < dead_time:
                         continue
 
+                    start = time.time()
                     max_len = await self.config.guild(guild).max_len()
                     temp = await self.config.guild(guild).temp()
                     context = ""
@@ -104,7 +108,12 @@ class Chatbot(commands.Cog):
                             context += msg.clean_content.strip() + "\n"
 
                     output = self.get_ai_response(context, max_len, temp)
-                    await channel.send(output)
+                    self.stats["total_response_time"] += time.time() - start
+                    self.stats["num_responses"] += 1
+                    try:
+                        await channel.send(output)
+                    except:
+                        pass
 
             # save stats off
             await self.config.total_response_time.set(self.stats["total_response_time"])
@@ -527,10 +536,7 @@ class Chatbot(commands.Cog):
         i = 0  # in case of inf loop, two tries to generate a non-empty messages TODO: make configurable
         while output == "" and i < 2:
             text = self.model.generate(
-                max_length=numtokens + 70 + 5 * max_len,
-                prompt=message + "\n",
-                temperature=temp,
-                return_as_list=True,
+                max_length=numtokens + 70 + 5 * max_len, prompt=message + "\n", temperature=temp, return_as_list=True,
             )[0]
             text = (
                 text[len(message) :]
@@ -654,9 +660,6 @@ class Chatbot(commands.Cog):
             return await message.reply(response, mention_author=False)
 
     async def red_delete_data_for_user(
-        self,
-        *,
-        requester: Literal["discord_deleted_user", "owner", "user", "user_strict"],
-        user_id: int,
+        self, *, requester: Literal["discord_deleted_user", "owner", "user", "user_strict"], user_id: int,
     ):
         pass
