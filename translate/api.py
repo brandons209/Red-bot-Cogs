@@ -149,10 +149,7 @@ class GoogleTranslateAPI:
         self.cache["guild_whitelist"][guild.id] = await self.config.guild(guild).whitelist()
 
     async def check_bw_list(
-        self,
-        guild: discord.Guild,
-        channel: discord.TextChannel,
-        member: Union[discord.Member, discord.User],
+        self, guild: discord.Guild, channel: discord.TextChannel, member: Union[discord.Member, discord.User],
     ) -> bool:
         can_run = True
         if guild.id not in self.cache["guild_blacklist"]:
@@ -266,7 +263,9 @@ class GoogleTranslateAPI:
         author = cast(discord.Member, message.author)
         channel = cast(discord.TextChannel, message.channel)
         links = await self.config.guild(channel.guild).autosend()
-        link_channels = [int(r) for r in links.keys()]
+        link_channels = []
+        for l in links:
+            link_channels += [int(r) for r in l.keys()]  # for checks
         guild = message.guild
         if version_info >= VersionInfo.from_str("3.4.0"):
             if await self.bot.cog_disabled_in_guild(self, guild):
@@ -345,90 +344,90 @@ class GoogleTranslateAPI:
             return
         await self.translate_message(message, str(payload.emoji), reacted_user)
 
-    async def translate_automessage(self, message: discord.Message, links: dict) -> None:
+    async def translate_automessage(self, message: discord.Message, all_links: list) -> None:
         guild = cast(discord.Guild, message.guild)
         channel = cast(discord.TextChannel, message.channel)
-        # remove sent channel from Links
-        try:
-            del links[str(channel.id)]
-        except:
-            pass
+        for links in all_links:
+            if str(channel.id) not in links:
+                continue
+            # remove sent channel from Links
+            try:
+                del links[str(channel.id)]
+            except:
+                pass
 
-        if message.embeds != []:
-            if message.embeds[0].description:
-                to_translate = cast(str, message.embeds[0].description)
+            if message.embeds != []:
+                if message.embeds[0].description:
+                    to_translate = cast(str, message.embeds[0].description)
+                else:
+                    to_translate = None
             else:
-                to_translate = None
-        else:
-            to_translate = message.clean_content
+                to_translate = message.clean_content
 
-        if not to_translate:
-            for l_id, l_lang in links.items():
+            if not to_translate:
+                for l_id, l_lang in links.items():
+                    ch = guild.get_channel(int(l_id))
+                    if not ch:
+                        continue
+
+                    if message.attachments:
+                        files = [await a.to_file() for a in message.attachments]
+                    else:
+                        files = None
+
+                    if message.embeds:
+                        links = "\n".join([e.url for e in message.embeds])
+                    else:
+                        links = ""
+
+                    await ch.send(f"**{message.author.display_name} sent:**\n{links}", files=files)
+                return
+            try:
+                detected_lang = await self.detect_language(to_translate)
+                await self.add_detect(guild)
+            except GoogleTranslateAPIError:
+                return
+            except Exception:
+                log.exception("Error detecting language")
+                return
+
+            original_lang = detected_lang[0][0]["language"]
+            for l_id, target in links.items():
                 ch = guild.get_channel(int(l_id))
                 if not ch:
                     continue
+                try:
+                    if target == original_lang:
+                        translated_text = to_translate
+                    else:
+                        translated_text = await self.translate_text(original_lang, target, to_translate)
+                        await self.add_requests(guild, to_translate)
+                except Exception:
+                    log.exception(f"Error translating message {guild=} {channel=}")
+                    return
+                if not translated_text:
+                    log.exception(f"Message not translated to {l_lang} {guild=} {channel=}")
+                    return
+                author = message.author
+                from_lang = original_lang.upper()
+                to_lang = target.upper()
+
+                translation = (translated_text, from_lang, to_lang)
 
                 if message.attachments:
                     files = [await a.to_file() for a in message.attachments]
                 else:
                     files = None
 
-                if message.embeds:
-                    links = "\n".join([e.url for e in message.embeds])
+                if ch.permissions_for(guild.me).embed_links:
+                    em = await self.translation_embed(author, translation)
+                    translated_msg = await ch.send(embed=em, files=files)
                 else:
-                    links = ""
-
-                await ch.send(f"**{message.author.display_name} sent:**\n{links}", files=files)
-            return
-        try:
-            detected_lang = await self.detect_language(to_translate)
-            await self.add_detect(guild)
-        except GoogleTranslateAPIError:
-            return
-        except Exception:
-            log.exception("Error detecting language")
-            return
-
-        original_lang = detected_lang[0][0]["language"]
-        for l_id, target in links.items():
-            ch = guild.get_channel(int(l_id))
-            if not ch:
-                continue
-            try:
-                if target == original_lang:
-                    translated_text = to_translate
-                else:
-                    translated_text = await self.translate_text(original_lang, target, to_translate)
-                    await self.add_requests(guild, to_translate)
-            except Exception:
-                log.exception(f"Error translating message {guild=} {channel=}")
-                return
-            if not translated_text:
-                log.exception(f"Message not translated to {l_lang} {guild=} {channel=}")
-                return
-            author = message.author
-            from_lang = original_lang.upper()
-            to_lang = target.upper()
-
-            translation = (translated_text, from_lang, to_lang)
-
-            if message.attachments:
-                files = [await a.to_file() for a in message.attachments]
-            else:
-                files = None
-
-            if ch.permissions_for(guild.me).embed_links:
-                em = await self.translation_embed(author, translation)
-                translated_msg = await ch.send(embed=em, files=files)
-            else:
-                msg = _("{author} said:\n{translated_text}").format(author=author, translated_text=translated_text)
-                translated_msg = await ch.send(msg, files=files)
+                    msg = _("{author} said:\n{translated_text}").format(author=author, translated_text=translated_text)
+                    translated_msg = await ch.send(msg, files=files)
 
     async def translate_message(
-        self,
-        message: discord.Message,
-        flag: str,
-        reacted_user: Optional[discord.Member] = None,
+        self, message: discord.Message, flag: str, reacted_user: Optional[discord.Member] = None,
     ) -> None:
         guild = cast(discord.Guild, message.guild)
         channel = cast(discord.TextChannel, message.channel)
