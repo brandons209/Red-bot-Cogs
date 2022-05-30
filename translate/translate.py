@@ -108,7 +108,11 @@ class Translate(GoogleTranslateAPI, commands.Cog):
 
     @commands.command()
     async def translate(
-        self, ctx: commands.Context, to_language: FlagTranslation, *, message: Union[discord.Message, str],
+        self,
+        ctx: commands.Context,
+        to_language: FlagTranslation,
+        *,
+        message: Union[discord.Message, str],
     ) -> None:
         """
         Translate messages with Google Translate
