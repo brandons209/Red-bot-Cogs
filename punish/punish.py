@@ -7,6 +7,7 @@ import discord
 
 from .utils import *
 from .memoizer import Memoizer
+from .discord_thread_feature import add_user_thread, create_thread
 
 # general
 import asyncio
@@ -16,6 +17,7 @@ import inspect
 import logging
 import time
 import textwrap
+from typing import Union
 
 log = logging.getLogger("red.punish")
 
@@ -59,6 +61,7 @@ class Punish(commands.Cog):
             "ROLE_ID": None,
             "NITRO_ID": None,
             "CHANNEL_ID": None,
+            "use_threads": False,
         }
         self.config.register_guild(**default_guild)
 
@@ -377,29 +380,41 @@ class Punish(commands.Cog):
     async def punishset(self, ctx):
         pass
 
+    @punishset.command(name="threads")
+    async def punishset_threads(self, ctx, use_threads: bool):
+        """
+        Have punished users put into their own threads when punished
+
+        These threads are private and will be seen by moderators with the Manage Threads permission and the punished user.
+        """
+        if "PRIVATE_THREADS" not in ctx.guild.features and use_threads:
+            await ctx.send(
+                error("Your guild must be boosted to Level 2 to use private threads, which this feature requires.")
+            )
+            return
+
+        await self.config.guild(ctx.guild).use_threads.set(use_threads)
+        await ctx.tick()
+
     @punishset.command(name="remove-roles")
-    async def punishset_remove_role_list(self, ctx, *, rolelist=None):
+    async def punishset_remove_role_list(self, ctx, *rolelist: Union[discord.Role, str]):
         """Set what roles to remove when punishing.
 
-        COMMA SEPARATED LIST (e.g. Admin,Staff,Mod), Can also use role IDs as well.
-
-        To get current remove role list, run command with no roles.
-
-        Add role_list_clear as the role to clear the guild's remove role list.
+        List of roles can be mentions, names, or role IDs. Role name with spaces must be put in quotes
         """
         guild = ctx.guild
         role_list = await self.config.guild(guild).REMOVE_ROLE_LIST()
         punished = await self.config.guild(guild).PUNISHED()
         current_roles = resolve_role_list(guild, role_list)
 
-        if rolelist is None:
+        if not rolelist:
             if current_roles:
                 names_list = format_list(*(r.name for r in current_roles))
-                await ctx.send(f"Current list of roles removed when a user is punished: {names_list}")
+                await ctx.send(f"Current list of roles removed when a user is punished: `{names_list}`")
             else:
                 await ctx.send("No roles defined for removal.")
             return
-        elif "role_list_clear" in rolelist.lower():
+        elif "role_list_clear" in rolelist:
             await ctx.send("Remove role list cleared.")
             await self.config.guild(guild).REMOVE_ROLE_LIST.set([])
             return
@@ -408,7 +423,10 @@ class Punish(commands.Cog):
         notfound_names = set()
         punish_role = await self.get_role(guild, quiet=True)
 
-        for lookup in rolelist.split(","):
+        for lookup in rolelist:
+            if not isinstance(lookup, str):
+                found_roles.add(lookup)
+                continue
             lookup = lookup.strip()
             role = role_from_string(guild, lookup)
 
@@ -444,10 +462,10 @@ class Punish(commands.Cog):
             await self.config.guild(guild).REMOVE_ROLE_LIST.set([r.id for r in found_roles])
 
             fmt_list = format_list(*(r.name for r in found_roles))
-            await ctx.send(f"Will remove these roles when a user is punished: {fmt_list}.{extra}")
+            await ctx.send(f"Will remove these roles when a user is punished: `{fmt_list}.{extra}`")
 
     @punishset.command(name="nitro-role")
-    async def punishset_nitro_role(self, ctx, *, role: str = None):
+    async def punishset_nitro_role(self, ctx, *, role: Union[discord.Role, str] = None):
         """
         Set nitro booster role so its not removed when punishing.
         If your server doesn't have a nitro role, run this command with the role string `no_nitro_role`
@@ -456,7 +474,7 @@ class Punish(commands.Cog):
         current = await self.config.guild(guild).NITRO_ID()
         current = role_from_string(guild, current)
 
-        if role and role.lower() == "no_nitro_role":
+        if role and isinstance(role, str) and role.lower() == "no_nitro_role":
             await self.config.guild(guild).NITRO_ID.set(role)
             await ctx.send("No nitro role set.")
             return
@@ -468,7 +486,8 @@ class Punish(commands.Cog):
             await ctx.send("No nitro role defined.")
             return
 
-        role = role_from_string(guild, role)
+        if isinstance(role, str):
+            role = role_from_string(guild, role)
         if not role:
             await ctx.send("Role not found!")
             return
@@ -1066,6 +1085,7 @@ class Punish(commands.Cog):
         hierarchy_allowed = ctx.author.top_role > member.top_role
         case_min_length = await self.config.guild(guild).CASE_MIN_LENGTH()
         nitro_role = await self.config.guild(guild).NITRO_ID()
+        use_threads = await self.config.guild(guild).use_threads()
 
         if nitro_role is None:
             await ctx.send(f"Please set the nitro role using `{ctx.prefix}punishset nitro-role`")
@@ -1088,7 +1108,7 @@ class Punish(commands.Cog):
             # double check it actually worked
             isolated = await isolate.config.guild(guild).ISOLATED()
             if str(member.id) in isolated:
-                await ctx.send(error("Couldn't remove isolation from user, please do it manually."))
+                await ctx.send(error("Couldn't remove isolation from user, please do so manually."))
                 return
 
         if duration and duration.lower() in ["forever", "inf", "infinite"]:
@@ -1274,6 +1294,38 @@ class Punish(commands.Cog):
 
         if not quiet:
             await ctx.send(msg)
+
+        # create thread for user to talk in, if this is a new case
+        if use_threads and not current:
+            if case_number is None:
+                thread_name = f"{reason[:50]} - {str(member)[:50]}"
+            else:
+                thread_name = f"Case {case_number} - {member.name}"
+                thread_name = thread_name[:101]  # 100 character name limit
+
+            channel = await self.config.guild(guild).CHANNEL_ID()
+            channel = guild.get_channel(channel)
+            if channel is None:
+                await ctx.send(error("Punish channel not found!"))
+            else:
+                try:
+                    thread_id = await create_thread(self.bot, channel, thread_name, archive=10080)
+                    # add punished user to thread
+                    await add_user_thread(self.bot, thread_id, member)
+                    # add moderator who sanctioned the action to the thread
+                    await add_user_thread(self.bot, thread_id, ctx.author)
+                except AttributeError:
+                    await ctx.send(
+                        error(
+                            "Your guild no longer has Level 2 boost, private threads and punish threads will not function."
+                        )
+                    )
+                except Exception as e:
+                    await ctx.send(
+                        error(
+                            f"I could not create the thread for the user, please make sure I have the `Manage Threads` permission on the punish channel and the punish role is setup correctly (punished user can view the punish channel)!"
+                        )
+                    )
 
         return True
 

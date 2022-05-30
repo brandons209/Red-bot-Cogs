@@ -182,6 +182,7 @@ def permissions_for_roles(channel, *roles):
     for target, overwrite in channel.overwrites.items():
         # Handle default role first, if present
         allow, deny = overwrite.pair()
+        allow, deny = allow.value, deny.value
         if overwrite == default:
             base.handle_overwrite(allow=allow, deny=deny)
 
