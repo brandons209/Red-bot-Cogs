@@ -48,7 +48,7 @@ class Translate(GoogleTranslateAPI, commands.Cog):
             "whitelist": [],
             "blacklist": [],
             "count": {"characters": 0, "requests": 0, "detect": 0},
-            "autosend": {},
+            "autosend": [],
         }
         default = {
             "cooldown": {"past_flags": [], "timeout": 0, "multiple": False},
@@ -108,11 +108,7 @@ class Translate(GoogleTranslateAPI, commands.Cog):
 
     @commands.command()
     async def translate(
-        self,
-        ctx: commands.Context,
-        to_language: FlagTranslation,
-        *,
-        message: Union[discord.Message, str],
+        self, ctx: commands.Context, to_language: FlagTranslation, *, message: Union[discord.Message, str],
     ) -> None:
         """
         Translate messages with Google Translate
@@ -191,8 +187,15 @@ class Translate(GoogleTranslateAPI, commands.Cog):
         """
         pass
 
-    @translateset.command(name="auto")
-    async def translate_auto(self, ctx: commands.Context, languages: str, *links: discord.TextChannel) -> None:
+    @translateset.group(name="auto")
+    async def translate_auto(self, ctx):
+        """
+        Set channels to auto translate messages from and to
+        """
+        pass
+
+    @translate_auto.command(name="add")
+    async def translate_auto_add(self, ctx: commands.Context, languages: str, *links: discord.TextChannel) -> None:
         """
         Set channels to auto translate messages from and to
 
@@ -206,7 +209,31 @@ class Translate(GoogleTranslateAPI, commands.Cog):
         if len(langs) != len(links):
             return await ctx.send(error("The number of lanuages and link channels don't match!"), delete_after=30)
 
-        await self.config.guild(ctx.guild).autosend.set({l.id: lang for l, lang in zip(links, langs)})
+        async with self.config.guild(ctx.guild).autosend() as autosend:
+            autosend.append({l.id: lang for l, lang in zip(links, langs)})
+
+        await ctx.tick()
+
+    @translate_auto.command(name="del")
+    async def translate_auto_del(self, ctx: commands.Context, *links: discord.TextChannel) -> None:
+        """
+        Delete linked channels
+        """
+        if not links:
+            await ctx.send("Please specify the channel links.")
+            return
+
+        links = {r.id for r in links}
+        async with self.config.guild(ctx.guild).autosend() as autosend:
+            to_delete_i = -1
+            for i, channels in enumerate(autosend):
+                ch = {int(k) for k in channels.keys()}
+                if ch == links:
+                    to_delete_i = i
+                    break
+
+            del autosend[to_delete_i]
+
         await ctx.tick()
 
     @translateset.command(name="stats")
