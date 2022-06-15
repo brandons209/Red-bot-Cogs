@@ -1,4 +1,5 @@
 # redbot/discord
+from concurrent.futures import thread
 from redbot.core.utils.chat_formatting import *
 from redbot.core.utils import mod
 from redbot.core.utils.menus import menu, DEFAULT_CONTROLS
@@ -288,6 +289,9 @@ class Punish(commands.Cog):
 
             if data.get("reason"):
                 msg += "\n\nOriginal reason was: " + data["reason"]
+
+            if data.get("thread", None) is not None:
+                msg += f"\n\n <#{data['thread']}>"
 
             updated_reason = str(msg)  # copy string
 
@@ -958,6 +962,9 @@ class Punish(commands.Cog):
                         if data["reason"]:
                             reason += data["reason"]
 
+                        if data.get("thread", None) is not None:
+                            reason += f"\n\n <#{data['thread']}>"
+
                         await self._unpunish(member, reason=reason)
                     else:  # member disappeared
                         del punished[str(member_id)]
@@ -1076,6 +1083,7 @@ class Punish(commands.Cog):
         using_default = False
         updating_case = False
         case_error = None
+        case = None
 
         remove_role_set = await self.config.guild(guild).REMOVE_ROLE_LIST()
         remove_role_set = set(resolve_role_list(guild, remove_role_set))
@@ -1185,43 +1193,6 @@ class Punish(commands.Cog):
                         until=mod_until,
                     )
                     case_number = case.case_number
-                    if use_threads:
-                        # create thread for user to talk in, if this is a new case
-                        thread_name = f"Case {case_number} - {member.name}"
-                        thread_name = thread_name[:101]  # 100 character name limit
-
-                        channel = await self.config.guild(guild).CHANNEL_ID()
-                        channel = guild.get_channel(channel)
-                        thread_id = None
-                        if channel is None:
-                            await ctx.send(error("Punish channel not found!"))
-                        else:
-                            try:
-                                thread_id = await create_thread(self.bot, channel, thread_name, archive=10080)
-                                # add punished user to thread
-                                await add_user_thread(self.bot, thread_id, member)
-                                # add moderator who sanctioned the action to the thread
-                                await add_user_thread(self.bot, thread_id, ctx.author)
-                            except AttributeError:
-                                await ctx.send(
-                                    error(
-                                        "Your guild no longer has Level 2 boost, private threads and punish threads will not function."
-                                    )
-                                )
-                            except Exception as e:
-                                await ctx.send(
-                                    error(
-                                        f"I could not create the thread for the user, please make sure I have the `Manage Threads` permission on the punish channel and the punish role is setup correctly (punished user can view the punish channel)!\n\n{e}"
-                                    )
-                                )
-
-                        # modify case to include mention to thread channel for easy access
-                        if thread_id is not None:
-                            try:
-                                edits = {"reason": reason + f"\n\n<#{thread_id}>"}
-                                await case.edit(edits)
-                            except Exception as e:
-                                await ctx.send(warning(f"Couldn't edit case to add thread mention: {e}"))
 
             except Exception as e:
                 case_error = e
@@ -1252,16 +1223,8 @@ class Punish(commands.Cog):
             msg += " I will remove %s in %s." % (subject, timespec)
 
         if case_error:
-            if isinstance(case_error, CaseMessageNotFound):
-                case_error = "the case message could not be found"
-            elif isinstance(case_error, NoModLogAccess):
-                case_error = "I do not have access to the modlog channel"
-            else:
-                case_error = None
-
-            if case_error:
-                verb = "updating" if updating_case else "creating"
-                msg += "\n\n" + warning("There was an error %s the modlog case: %s." % (verb, case_error))
+            verb = "updating" if updating_case else "creating"
+            msg += "\n\n" + warning("There was an error %s the modlog case: %s." % (verb, case_error))
         elif case_number:
             verb = "updated" if updating_case else "created"
             msg += " I also %s case #%i in the modlog." % (verb, case_number)
@@ -1310,6 +1273,44 @@ class Punish(commands.Cog):
         else:
             muted = False
 
+        if use_threads:
+            # create thread for user to talk in, if this is a new case
+            thread_name = f"Case {case_number} - {member.name}"
+            thread_name = thread_name[:101]  # 100 character name limit
+
+            channel = await self.config.guild(guild).CHANNEL_ID()
+            channel = guild.get_channel(channel)
+            thread_id = None
+            if channel is None:
+                await ctx.send(error("Punish channel not found!"))
+            else:
+                try:
+                    thread_id = await create_thread(self.bot, channel, thread_name, archive=10080)
+                    # add punished user to thread
+                    await add_user_thread(self.bot, thread_id, member)
+                    # add moderator who sanctioned the action to the thread
+                    await add_user_thread(self.bot, thread_id, ctx.author)
+                except AttributeError:
+                    await ctx.send(
+                        error(
+                            "Your guild no longer has Level 2 boost, private threads and punish threads will not function."
+                        )
+                    )
+                except Exception as e:
+                    await ctx.send(
+                        error(
+                            f"I could not create the thread for the user, please make sure I have the `Manage Threads` permission on the punish channel and the punish role is setup correctly (punished user can view the punish channel)!\n\n{e}"
+                        )
+                    )
+
+            # modify case to include mention to thread channel for easy access
+            if thread_id is not None:
+                try:
+                    edits = {"reason": reason + f"\n\n<#{thread_id}>"}
+                    await case.edit(edits)
+                except Exception as e:
+                    await ctx.send(warning(f"Couldn't edit case to add thread mention: {e}"))
+
         async with self.config.guild(guild).PUNISHED() as punished:
             punished[str(member.id)] = {
                 "start": current.get("start") or now,  # don't override start time if updating
@@ -1320,6 +1321,8 @@ class Punish(commands.Cog):
                 "caseno": case_number,
                 "removed_roles": [r.id for r in removed_roles],
             }
+            if use_threads and thread_id is not None:
+                punished[str(member.id)]["thread"] = thread_id
 
         if member.voice and overwrite_denies_speak:
             if member.voice.channel:
