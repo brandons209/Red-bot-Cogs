@@ -1185,6 +1185,43 @@ class Punish(commands.Cog):
                         until=mod_until,
                     )
                     case_number = case.case_number
+                    if use_threads:
+                        # create thread for user to talk in, if this is a new case
+                        thread_name = f"Case {case_number} - {member.name}"
+                        thread_name = thread_name[:101]  # 100 character name limit
+
+                        channel = await self.config.guild(guild).CHANNEL_ID()
+                        channel = guild.get_channel(channel)
+                        thread_id = None
+                        if channel is None:
+                            await ctx.send(error("Punish channel not found!"))
+                        else:
+                            try:
+                                thread_id = await create_thread(self.bot, channel, thread_name, archive=10080)
+                                # add punished user to thread
+                                await add_user_thread(self.bot, thread_id, member)
+                                # add moderator who sanctioned the action to the thread
+                                await add_user_thread(self.bot, thread_id, ctx.author)
+                            except AttributeError:
+                                await ctx.send(
+                                    error(
+                                        "Your guild no longer has Level 2 boost, private threads and punish threads will not function."
+                                    )
+                                )
+                            except Exception as e:
+                                await ctx.send(
+                                    error(
+                                        f"I could not create the thread for the user, please make sure I have the `Manage Threads` permission on the punish channel and the punish role is setup correctly (punished user can view the punish channel)!\n\n{e}"
+                                    )
+                                )
+
+                        # modify case to include mention to thread channel for easy access
+                        if thread_id is not None:
+                            try:
+                                edits = {"reason": reason + f"\n\n<#{thread_id}>"}
+                                await case.edit(edits)
+                            except Exception as e:
+                                await ctx.send(warning(f"Couldn't edit case to add thread mention: {e}"))
 
             except Exception as e:
                 case_error = e
@@ -1294,38 +1331,6 @@ class Punish(commands.Cog):
 
         if not quiet:
             await ctx.send(msg)
-
-        # create thread for user to talk in, if this is a new case
-        if use_threads and not current:
-            if case_number is None:
-                thread_name = f"{reason[:50]} - {str(member)[:50]}"
-            else:
-                thread_name = f"Case {case_number} - {member.name}"
-                thread_name = thread_name[:101]  # 100 character name limit
-
-            channel = await self.config.guild(guild).CHANNEL_ID()
-            channel = guild.get_channel(channel)
-            if channel is None:
-                await ctx.send(error("Punish channel not found!"))
-            else:
-                try:
-                    thread_id = await create_thread(self.bot, channel, thread_name, archive=10080)
-                    # add punished user to thread
-                    await add_user_thread(self.bot, thread_id, member)
-                    # add moderator who sanctioned the action to the thread
-                    await add_user_thread(self.bot, thread_id, ctx.author)
-                except AttributeError:
-                    await ctx.send(
-                        error(
-                            "Your guild no longer has Level 2 boost, private threads and punish threads will not function."
-                        )
-                    )
-                except Exception as e:
-                    await ctx.send(
-                        error(
-                            f"I could not create the thread for the user, please make sure I have the `Manage Threads` permission on the punish channel and the punish role is setup correctly (punished user can view the punish channel)!"
-                        )
-                    )
 
         return True
 
