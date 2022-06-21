@@ -1,0 +1,12 @@
+{
+    "author": [
+        "brandons209"
+    ],
+    "install_msg": "Thank you for installing my cog!",
+    "name": "Watchlist",
+    "short": "Watch for user's joining your guild and get notified when they join/leave.",
+    "description": "Allows guild staff to better keep track of persons of interest in their guild.",
+    "tags": [
+        "watchlist"
+    ]
+}

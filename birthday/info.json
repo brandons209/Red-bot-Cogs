@@ -1,22 +1,25 @@
 {
-    "author": [
-      "PancakeSparkle",
-      "shroomdog26",
-      "brandons209"
-    ],
-    "bot_version": [
-      3,
-      4,
-      0
-    ],
-    "description": "Cog used for setting birthdays and announcing them and giving people roles on their birthday",
-    "hidden": false,
-    "install_msg": "Use [p]bday to bring up the help menu",
-    "requirements": ["python-dateutil", "tabulate"],
-    "short": "Cog used for setting birthdays and announcing them and giving people roles on their birthday",
-    "tags": [
-      "brandons209",
-      "pancakesparkle"
-    ],
-    "end_user_data_statement": "This cog will store a user's birthday."
-  }
+  "author": [
+    "PancakeSparkle",
+    "shroomdog26",
+    "brandons209"
+  ],
+  "bot_version": [
+    3,
+    4,
+    0
+  ],
+  "description": "Cog used for setting birthdays and announcing them and giving people roles on their birthday. Also can announce server anniversaries.",
+  "hidden": false,
+  "install_msg": "Use [p]bday to bring up the help menu",
+  "requirements": [
+    "python-dateutil",
+    "tabulate"
+  ],
+  "short": "Cog used for setting birthdays and announcing them and giving people roles on their birthday, also does the same for anniversaries in the server.",
+  "tags": [
+    "brandons209",
+    "pancakesparkle"
+  ],
+  "end_user_data_statement": "This cog will store a user's birthday."
+}

@@ -24,9 +24,11 @@ class Birthday(commands.Cog):
             "channel": None,
             "role": None,
             "dm_message": ":tada: Aurelia wishes you a very happy birthday! :tada:",
+            "anni_role": None,
+            "anni_message": ":tada: Aurelia is excited to wish you for {years} year{s} in CoE! :tada:",
         }
 
-        default_member = {"birthday": None, "birthday_handeled": False}
+        default_member = {"birthday": None, "birthday_handeled": False, "anniversary": False, "anni_handled": False}
 
         self.config.register_guild(**default_guild)
         self.config.register_member(**default_member)
@@ -49,6 +51,13 @@ class Birthday(commands.Cog):
 
         return date, age
 
+    @staticmethod
+    def get_years_in_guild(member: discord.Member):
+        joined = member.joined_at.date()
+        now = datetime.datetime.utcnow()
+
+        return now.year - joined.year
+
     def cog_unload(self):
         self.bday_task.cancel()
 
@@ -69,6 +78,64 @@ class Birthday(commands.Cog):
                 continue
             for member in guild.members:
                 await self.check_member_bday(member)
+                await self.check_member_anni(member)
+
+    async def check_member_anni(self, member: discord.Member):
+        today = datetime.datetime.utcnow().date()
+        anni = member.joined_at.date()
+
+        if not (await self.config.member(member).anniversary()):
+            return
+
+        anni = anni.replace(year=today.year)
+
+        handled = await self.config.member(member).anni_handled()
+        if anni == today:
+            if not handled:
+                # dm user
+                dm = await self.config.guild(member.guild).anni_message()
+                y = self.get_years_in_guild(member)
+                s = "s" if y > 1 else ""
+                dm = dm.format(years=y, s=s)
+                try:
+                    await member.send(dm)
+                except:
+                    pass
+                # send anni in channel
+                channel = await self.config.guild(member.guild).channel()
+                channel = self.bot.get_channel(channel)
+                if channel:
+                    embed = discord.Embed(color=discord.Colour.gold())
+                    embed.description = f"{member.mention} has been in {member.guild} for **{y} year{s}!**"
+                    # embed.set_footer("Add your birthday using the `bday` command!")
+                    try:
+                        content = f"Congratulations {member.mention}!"
+                        await channel.send(content=content, embed=embed, allowed_mentions=discord.AllowedMentions.all())
+                    except:
+                        pass
+
+                # add role, if available
+                role = await self.config.guild(member.guild).anni_role()
+                role = member.guild.get_role(role)
+                if role:
+                    try:
+                        await member.add_roles(role, reason="Birthday cog")
+                    except:
+                        pass
+
+                await self.config.member(member).anni_handled.set(True)
+        else:
+            if handled:
+                # remove anni role
+                role = await self.config.guild(member.guild).anni_role()
+                role = member.guild.get_role(role)
+                if role:
+                    try:
+                        await member.remove_roles(role, reason="Birthday cog")
+                    except:
+                        pass
+                # unhandled their anniversary, cya next year!
+                await self.config.member(member).anni_handled.set(False)
 
     async def check_member_bday(self, member: discord.Member):
         today = datetime.datetime.utcnow().date()
@@ -135,6 +202,53 @@ class Birthday(commands.Cog):
     # await self.check_bdays()
     #    await self.check_member_bday(member)
 
+    @commands.group(name="anniset")
+    @commands.guild_only()
+    @checks.admin_or_permissions(administrator=True)
+    async def anniset(self, ctx):
+        """
+        Manage anniversary settings
+        """
+        pass
+
+    @anniset.command(name="dmmessage")
+    async def anniset_dmmessage(self, ctx, *, message: str = None):
+        """Set message DMed to users when its their anniversary!
+        Leave empty to get/clear current message
+
+        In your message, you can use `{years}` which will be replaced with the number of years in the server,
+        With this, to make it grammatically correct use {s} which will be a `s` if years > 1
+        """
+        if not message:
+            current = await self.config.guild(ctx.guild).anni_message()
+            await ctx.send(f"Current message is `{current}`\nDo you want to reset it to default?")
+            pred = MessagePredicate.yes_or_no(ctx)
+            try:
+                await self.bot.wait_for("message", check=pred, timeout=30)
+            except asyncio.TimeoutError:
+                await ctx.send("Took too long.")
+                return
+            if pred.result:
+                await self.config.guild(ctx.guild).anni_message.clear()
+                await ctx.send("DM message reset to default.")
+            else:
+                await ctx.send("Nothing changed.")
+            return
+
+        await self.config.guild(ctx.guild).anni_message.set(message)
+        await ctx.tick()
+
+    @anniset.command(name="role")
+    @checks.bot_has_permissions(manage_roles=True)
+    async def anniset_role(self, ctx, *, role: discord.Role = None):
+        """Set role to give users on their anniversary"""
+        if not role:
+            await self.config.guild(ctx.guild).anni_role.clear()
+        else:
+            await self.config.guild(ctx.guild).anni_role.set(role.id)
+
+        await ctx.tick()
+
     @commands.group(name="bdayset")
     @commands.guild_only()
     @checks.admin_or_permissions(administrator=True)
@@ -186,6 +300,60 @@ class Birthday(commands.Cog):
             await self.config.guild(ctx.guild).role.set(role.id)
 
         await ctx.tick()
+
+    @commands.group(name="anni")
+    @commands.guild_only()
+    async def anni(self, ctx):
+        """Manage your server anniversary"""
+        pass
+
+    @anni.command(name="set")
+    async def anni_set(self, ctx, toggle: bool = None):
+        """
+        Opt in to anniversary announcements
+        """
+        current = await self.config.member(ctx.author).anniversary()
+
+        if toggle is None:
+            if current:
+                await ctx.send("You are currently opted in for anniversary messages.")
+                return
+            else:
+                await ctx.send("You are currently NOT opted in for anniversary messages.")
+                return
+
+        await self.config.member(ctx.author).anniversary.set(toggle)
+
+        await ctx.tick()
+
+    @anni.command(name="list")
+    async def anni_list(self, ctx):
+        """List anniversaries in the server"""
+        members = []
+        anniversaries = []
+        for member in ctx.guild.members:
+            if not (await self.config.member(member).anniversary()):
+                continue
+            anni = member.joined_at.date()
+            members.append(member.display_name)
+            anniversaries.append(anni.strftime("%b %d, %Y"))
+
+        pages = []
+        raw = list(
+            pagify(
+                tabulate({"Member": members, "Anniversary": anniversaries}, tablefmt="github", headers="keys"),
+                page_length=1700,
+                delims=["\n"],
+                priority=True,
+            )
+        )
+        for i, page in enumerate(raw):
+            pages.append(box(f"{page}\n\n-----------------\nPage {i+1} of {len(raw)}"))
+
+        if not pages:
+            await ctx.send("No one has their anniversary set in your server!")
+        else:
+            await menu(ctx, pages, DEFAULT_CONTROLS)
 
     @commands.group(name="bday")
     @commands.guild_only()

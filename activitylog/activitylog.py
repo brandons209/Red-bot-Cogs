@@ -8,6 +8,7 @@ import discord
 from .utils import *
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
+from dateutil.tz import tzlocal
 import time
 import os
 import asyncio
@@ -179,12 +180,12 @@ class ActivityLogger(commands.Cog):
             since_created = (ctx.message.created_at - user.created_at).days
             if joined_at is not None:
                 since_joined = (ctx.message.created_at - joined_at).days
-                user_joined = f"<t:{int(joined_at.timestamp())}>"
+                user_joined = f"<t:{int(joined_at.astimezone(tzlocal()).timestamp())}>"
             else:
                 since_joined = "?"
                 user_joined = "Unknown"
 
-            user_created = f"<t:{int(user.created_at.timestamp())}>"
+            user_created = f"<t:{int(user.created_at.astimezone(tzlocal()).timestamp())}>"
             member_number = sorted(guild.members, key=lambda m: m.joined_at or ctx.message.created_at).index(user) + 1
 
             created_on = "{}\n({} days ago)".format(user_created, since_created)

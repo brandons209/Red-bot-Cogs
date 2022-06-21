@@ -7,7 +7,9 @@
     "name": "Welcome",
     "short": "Announces membership events.",
     "description": "Announces members joining, leaving, getting banned, and getting unbanned, in a customizable text channel and with customizable messages.",
-    "requirements": [],
+    "requirements": [
+        "python-dateutil"
+    ],
     "tags": [
         "welcome",
         "greetings",

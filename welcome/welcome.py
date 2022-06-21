@@ -7,6 +7,7 @@ from typing import Optional, Union, Literal
 
 from redbot.core import Config, checks, commands
 from redbot.core.utils.chat_formatting import box, pagify, humanize_list
+from dateutil.tz import tzlocal
 
 from .enums import WhisperType
 from .errors import WhisperError
@@ -815,7 +816,7 @@ class Welcome(commands.Cog):
                     plural=plural,
                     roles=roles,
                     stats=stats,
-                    joined_on=f"<t:{int(user.joined_at.timestamp())}>",
+                    joined_on=f"<t:{int(user.joined_at.astimezone(tzlocal()).timestamp())}>",
                 ),
                 allowed_mentions=discord.AllowedMentions.all(),
             )
