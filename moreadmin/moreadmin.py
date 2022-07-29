@@ -73,6 +73,7 @@ class MoreAdmin(commands.Cog):
             "purge_dm_msg": PURGE_DM_WARN_MESSAGE_MSG,
             "purge_dm": PURGE_DM_WARN_MESSAGE,
             "ban_dm": BAN_DM_MESSAGE,
+            "purge_action": "kick",
         }
 
         default_role = {"addable": []}  # role ids who can add this role
@@ -523,6 +524,31 @@ class MoreAdmin(commands.Cog):
             await ctx.send("Better grab some coffee then.")
             await self.last_message_sync(ctx)
 
+    @purgeset.command(name="action")
+    @checks.bot_has_permissions(manage_roles=True)
+    async def purgeset_action(self, ctx, action: str, *, role: discord.Role = None):
+        """
+        Set the action of purge commands
+
+        Available options:
+            - kick: kick users who meet purge criteria
+            - role: remove a role from users who meet purge criteria (specify in command which role)
+        """
+        action = action.lower()
+
+        if action == "kick":
+            await self.config.guild(ctx.guild).purge_action.set("kick")
+            await ctx.tick()
+        elif action == "role":
+            if role is None:
+                await ctx.send(error("No role specified! Please rerun command with role to remove"))
+                return
+            await self.config.guild(ctx.guild).purge_action.set(role.id)
+            await ctx.send(info("Make sure to update purge DM messages to reflect this action!"))
+            await ctx.tick()
+        else:
+            await ctx.send(error("Unknown action! Available actions are: `kick` and `role`"))
+
     async def note_menu(self, ctx, member: discord.Member, message: Optional[discord.Message] = None) -> list:
         color = await ctx.embed_color()
 
@@ -793,6 +819,15 @@ class MoreAdmin(commands.Cog):
             await ctx.send("Okay, here we go.")
             progress_message = await ctx.send(f"Processed 0/{num} users...")
             invite = await guild.invites()
+            purge_action = await self.config.guild(guild).purge_action()
+
+            if str(purge_action) != "kick":
+                role = guild.get_role(int(purge_action))
+                if role is None:
+                    await progress_message.edit(
+                        content=error("Purge role not found! Cannot continue with purge. Please update purge action!")
+                    )
+                    return
 
             if not invite:
                 invite = (await ctx.channel.create_invite()).url
@@ -823,7 +858,14 @@ class MoreAdmin(commands.Cog):
                 _purge = parse_seconds(_purge.total_seconds())
                 reason = f"Purged by moreadmins cog. {msg}: {_purge}, Threshold: {_threshold}"
 
-                await user.kick(reason=reason)
+                if str(purge_action) == "kick":
+                    await user.kick(reason=reason)
+                else:
+                    try:
+                        await user.remove_roles(role, reason=reason)
+                    except:
+                        pass
+
                 # await modlog.create_case(
                 #    self.bot, guild, ctx.message.created_at, "Purge", user, moderator=ctx.author, reason=reason
                 # )
