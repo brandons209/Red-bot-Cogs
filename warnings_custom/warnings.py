@@ -34,6 +34,7 @@ class Warnings_Custom(commands.Cog):
         "reasons": {},
         "allow_custom_reasons": False,
         "allow_context": False,
+        "allow_context_dm": False,
         "toggle_dm": True,
         "show_mod": False,
         "warn_channel": None,
@@ -135,6 +136,20 @@ class Warnings_Custom(commands.Cog):
             await ctx.send(_("Context has been enabled."))
         else:
             await ctx.send(_("Context has been disabled."))
+
+    @warningset.command()
+    @commands.guild_only()
+    async def allowcontextdm(self, ctx: commands.Context, allowed: bool):
+        """Enable or disable sending context of warnings to warned user.
+
+        Send DM and Allow Context must also be enabled for this to take effect.
+        """
+        guild = ctx.guild
+        await self.config.guild(guild).allow_context_dm.set(allowed)
+        if allowed:
+            await ctx.send(_("DMing context has been enabled."))
+        else:
+            await ctx.send(_("DMing context has been disabled."))
 
     @warningset.command()
     @commands.guild_only()
@@ -481,6 +496,10 @@ class Warnings_Custom(commands.Cog):
                 description=reason_type["description"],
             )
             em.add_field(name=_("Points"), value=str(reason_type["points"]))
+
+            if await self.config.guild(guild).allow_context_dm() and context != "":
+                em.add_field(name="Context", value=context)
+
             try:
                 await user.send(
                     _("You have received a warning in {guild_name}.").format(guild_name=ctx.guild.name),
