@@ -64,7 +64,6 @@ class NameChange(commands.Cog):
 
         while True:
             await self.update_namechanges()
-            print("big update")
             await asyncio.sleep(60)
 
     def cog_unload(self):
