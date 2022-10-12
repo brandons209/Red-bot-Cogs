@@ -416,13 +416,7 @@ class ActivityLogger(commands.Cog):
 
         # get messages split by channel
         messages = await self.loop.run_in_executor(
-            None,
-            functools.partial(
-                self.log_handler,
-                log_files,
-                end_time,
-                split_channels=True,
-            ),
+            None, functools.partial(self.log_handler, log_files, end_time, split_channels=True,),
         )
 
         ### set up data dictionary
@@ -490,7 +484,7 @@ class ActivityLogger(commands.Cog):
         # calculate number of messages for the user for every split
         for ch_id, msgs in messages.items():
             for message in msgs:
-                if str(user.id) not in message:
+                if f"(id:{str(user.id)})" not in message:
                     continue
                 # grab time of the message
                 current_time = parse_time_naive(message[:19])
@@ -612,13 +606,7 @@ class ActivityLogger(commands.Cog):
         await ctx.send(warning("**__Generating logs, please wait...__**"))
         # runs in descending order, with most recent log file first
         messages = await self.loop.run_in_executor(
-            None,
-            functools.partial(
-                self.log_handler,
-                log_files,
-                end_time,
-                start=start,
-            ),
+            None, functools.partial(self.log_handler, log_files, end_time, start=start,),
         )
 
         if user:
@@ -2135,9 +2123,6 @@ class ActivityLogger(commands.Cog):
     #        data[guild.name] = await self.config.member(member).stats()
 
     async def red_delete_data_for_user(
-        self,
-        *,
-        requester: Literal["discord_deleted_user", "owner", "user", "user_strict"],
-        user_id: int,
+        self, *, requester: Literal["discord_deleted_user", "owner", "user", "user_strict"], user_id: int,
     ):
         pass
