@@ -1,0 +1,15 @@
+{
+  "author": [
+    "Brandons209"
+  ],
+  "description": "Allow people to change the server nickname of other people for bot currency. Supports admin commands to manually remove and see who changed who's nickname.",
+  "hidden": false,
+  "install_msg": "Thanks for installing my cog!",
+  "requirements": [
+    "python-dateutil"
+  ],
+  "tags": [
+    "brandons209"
+  ],
+  "end_user_data_statement": "This cog does not store any user data."
+}
