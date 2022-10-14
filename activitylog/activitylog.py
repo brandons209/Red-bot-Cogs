@@ -437,19 +437,27 @@ class ActivityLogger(commands.Cog):
         for ch_id in to_delete:
             del messages[ch_id]
 
-        # calculate number of messages for the user for every split
-        for ch_id, msgs in messages.items():
-            join_at = None
-            for message in msgs:
-                if f"(id {str(user.id)})" not in message:
-                    continue
+        def process_messages():
+            # calculate number of messages for the user for every split
+            for ch_id, msgs in messages.items():
+                join_at = None
+                for message in msgs:
+                    if f"(id {str(user.id)})" not in message:
+                        continue
 
-                if "Voice channel join:" in message:
-                    join_at = parse_time_naive(message[:19])
-                elif "Voice channel leave:" in message and join_at is not None:
-                    leave = parse_time_naive(message[:19])
-                    voice_minutes[ch_id] += int((leave - join_at).total_seconds() / 60)
+                    if "Voice channel join:" in message:
+                        join_at = parse_time_naive(message[:19])
+                    elif "Voice channel leave:" in message and join_at is not None:
+                        leave = parse_time_naive(message[:19])
+                        voice_minutes[ch_id] += int((leave - join_at).total_seconds() / 60)
                     join_at = None
+
+        await self.loop.run_in_executor(
+            None,
+            functools.partial(
+                process_messages,
+            ),
+        )
 
         # voice channels and minutes spent in channel per channel
         df = pd.DataFrame(index=voice_minutes.keys(), data=voice_minutes.values(), columns=["voice_minutes"])
@@ -634,17 +642,25 @@ class ActivityLogger(commands.Cog):
 
         data["times"].reverse()
 
-        # calculate number of messages for the user for every split
-        for ch_id, msgs in messages.items():
-            for message in msgs:
-                if f"(id:{str(user.id)})" not in message:
-                    continue
-                # grab time of the message
-                current_time = parse_time_naive(message[:19])
-                # find what time to put it in using binary search
-                index = bisect_left(data["times"], current_time) - 1
-                # add message to channel
-                data["num_messages"][index][ch_id] += 1
+        def process_messages():
+            # calculate number of messages for the user for every split
+            for ch_id, msgs in messages.items():
+                for message in msgs:
+                    if f"(id:{str(user.id)})" not in message:
+                        continue
+                    # grab time of the message
+                    current_time = parse_time_naive(message[:19])
+                    # find what time to put it in using binary search
+                    index = bisect_left(data["times"], current_time) - 1
+                    # add message to channel
+                    data["num_messages"][index][ch_id] += 1
+
+        await self.loop.run_in_executor(
+            None,
+            functools.partial(
+                process_messages,
+            ),
+        )
 
         df = pd.DataFrame(data)
         # make dict of num_messages into columns for every channel
@@ -872,17 +888,25 @@ class ActivityLogger(commands.Cog):
 
         data["times"].reverse()
 
-        # calculate number of messages for the user for every split
-        for message in audit_messages:
-            # grab time of the message
-            current_time = parse_time_naive(message[:19])
-            # find what time to put it in using binary search
-            index = bisect_left(data["times"], current_time) - 1
+        def process_messages():
+            # calculate number of messages for the user for every split
+            for message in audit_messages:
+                # grab time of the message
+                current_time = parse_time_naive(message[:19])
+                # find what time to put it in using binary search
+                index = bisect_left(data["times"], current_time) - 1
 
-            if "Member leave:" in message:
-                data["leaves"][index] += 1
-            else:
-                data["joins"][index] += 1
+                if "Member leave:" in message:
+                    data["leaves"][index] += 1
+                else:
+                    data["joins"][index] += 1
+
+        await self.loop.run_in_executor(
+            None,
+            functools.partial(
+                process_messages,
+            ),
+        )
 
         df = pd.DataFrame(data)
 
@@ -1094,18 +1118,26 @@ class ActivityLogger(commands.Cog):
 
         data["times"].reverse()
 
-        # calculate number of messages for the user for every split
-        for ch_id, msgs in messages.items():
-            for message in msgs:
-                # grab time of the message
-                try:
-                    current_time = parse_time_naive(message[:19])
-                except:
-                    continue
-                # find what time to put it in using binary search
-                index = bisect_left(data["times"], current_time) - 1
-                # add message to channel
-                data["num_messages"][index][ch_id] += 1
+        def process_messages():
+            # calculate number of messages for the user for every split
+            for ch_id, msgs in messages.items():
+                for message in msgs:
+                    # grab time of the message
+                    try:
+                        current_time = parse_time_naive(message[:19])
+                    except:
+                        continue
+                    # find what time to put it in using binary search
+                    index = bisect_left(data["times"], current_time) - 1
+                    # add message to channel
+                    data["num_messages"][index][ch_id] += 1
+
+        await self.loop.run_in_executor(
+            None,
+            functools.partial(
+                process_messages,
+            ),
+        )
 
         df = pd.DataFrame(data)
         # make dict of num_messages into columns for every channel
@@ -1225,16 +1257,25 @@ class ActivityLogger(commands.Cog):
         )
 
         data = {}
-        for message in messages:
-            # get user id:
-            user_id = int(message.split("(id:")[1].split(")")[0].strip())
-            user = self.bot.get_user(user_id)
-            user = user if user is not None else user_id
 
-            if str(user) not in data:
-                data[str(user)] = 0
+        def process_messages():
+            for message in messages:
+                # get user id:
+                user_id = int(message.split("(id:")[1].split(")")[0].strip())
+                user = self.bot.get_user(user_id)
+                user = user if user is not None else user_id
 
-            data[str(user)] += 1
+                if str(user) not in data:
+                    data[str(user)] = 0
+
+                data[str(user)] += 1
+
+        await self.loop.run_in_executor(
+            None,
+            functools.partial(
+                process_messages,
+            ),
+        )
 
         df = pd.DataFrame(index=data.keys(), data=data.values(), columns=["num_messages"])
         df.index.name = "user"
@@ -1347,16 +1388,25 @@ class ActivityLogger(commands.Cog):
         )
 
         data = {}
-        for message in messages:
-            # get user id:
-            user_id = int(message.split("(id:")[1].split(")")[0].strip())
-            user = self.bot.get_user(user_id)
-            user = user if user is not None else user_id
 
-            if str(user) not in data:
-                data[str(user)] = 0
+        def process_messages():
+            for message in messages:
+                # get user id:
+                user_id = int(message.split("(id:")[1].split(")")[0].strip())
+                user = self.bot.get_user(user_id)
+                user = user if user is not None else user_id
 
-            data[str(user)] += 1
+                if str(user) not in data:
+                    data[str(user)] = 0
+
+                data[str(user)] += 1
+
+        await self.loop.run_in_executor(
+            None,
+            functools.partial(
+                process_messages,
+            ),
+        )
 
         df = pd.DataFrame(index=data.keys(), data=data.values(), columns=["num_messages"])
         df.index.name = "user"
@@ -1463,13 +1513,21 @@ class ActivityLogger(commands.Cog):
         # 24 hours, calculate # of messages for each hour of the day
         data = {"times": [i for i in range(0, 24)], "num_messages": [0 for _ in range(0, 24)]}
 
-        for message in messages:
-            # get hour:
-            try:
-                hour = int(message[11:13])
-            except:
-                continue
-            data["num_messages"][hour] += 1
+        def process_messages():
+            for message in messages:
+                # get hour:
+                try:
+                    hour = int(message[11:13])
+                except:
+                    continue
+                data["num_messages"][hour] += 1
+
+        await self.loop.run_in_executor(
+            None,
+            functools.partial(
+                process_messages,
+            ),
+        )
 
         # voice channels and minutes spent in channel per channel
         df = pd.DataFrame(data)
@@ -1585,13 +1643,21 @@ class ActivityLogger(commands.Cog):
         # 24 hours, calculate # of messages for each hour of the day
         data = {"times": [i for i in range(0, 24)], "num_messages": [0 for _ in range(0, 24)]}
 
-        for message in messages:
-            # get hour:
-            try:
-                hour = int(message[11:13])
-            except:
-                continue
-            data["num_messages"][hour] += 1
+        def process_messages():
+            for message in messages:
+                # get hour:
+                try:
+                    hour = int(message[11:13])
+                except:
+                    continue
+                data["num_messages"][hour] += 1
+
+        await self.loop.run_in_executor(
+            None,
+            functools.partial(
+                process_messages,
+            ),
+        )
 
         df = pd.DataFrame(data)
         df = df.set_index("times")
@@ -1719,37 +1785,45 @@ class ActivityLogger(commands.Cog):
             ),
         )
 
-        for ch_id, data in messages.items():
-            channel = guild.get_channel(ch_id)
-            # channel may be deleted, but still want to include message data
-            if isinstance(channel, discord.VoiceChannel):
-                # ignore for now, need to figure out how to filter out when the bot fails to log a user leaving
-                pass
-            else:
-                for message in data:
-                    try:
-                        message.split("(id:")[1].split("):")[0]
-                    except:
-                        continue
-                    if "replied to" in message.split("(id:")[1].split("):")[0]:
-
-                        # add correlation to matrix
-                        user1_id = int(message.split("(id:")[1].split(")")[0])
-                        user2_id = int(message.split("(id:")[2].split("):")[0])
-
-                        user1 = guild.get_member(user1_id)
-                        user2 = guild.get_member(user2_id)
-
-                        # don't care about people who arent in the server
-                        if user1 is None or user2 is None:
+        def process_messages():
+            for ch_id, data in messages.items():
+                channel = guild.get_channel(ch_id)
+                # channel may be deleted, but still want to include message data
+                if isinstance(channel, discord.VoiceChannel):
+                    # ignore for now, need to figure out how to filter out when the bot fails to log a user leaving
+                    pass
+                else:
+                    for message in data:
+                        try:
+                            message.split("(id:")[1].split("):")[0]
+                        except:
                             continue
+                        if "replied to" in message.split("(id:")[1].split("):")[0]:
 
-                        if user1 == user2:
-                            continue
+                            # add correlation to matrix
+                            user1_id = int(message.split("(id:")[1].split(")")[0])
+                            user2_id = int(message.split("(id:")[2].split("):")[0])
 
-                        # add 1 to weight between the two users
-                        adj_matrix.loc[str(user1.name), str(user2.name)] += 1
-                        adj_matrix.loc[str(user2.name), str(user1.name)] += 1
+                            user1 = guild.get_member(user1_id)
+                            user2 = guild.get_member(user2_id)
+
+                            # don't care about people who arent in the server
+                            if user1 is None or user2 is None:
+                                continue
+
+                            if user1 == user2:
+                                continue
+
+                            # add 1 to weight between the two users
+                            adj_matrix.loc[str(user1.name), str(user2.name)] += 1
+                            adj_matrix.loc[str(user2.name), str(user1.name)] += 1
+
+        await self.loop.run_in_executor(
+            None,
+            functools.partial(
+                process_messages,
+            ),
+        )
 
         # drop users who do not correlate to anyone else
         for column in adj_matrix.columns:
