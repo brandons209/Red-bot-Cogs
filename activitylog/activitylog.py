@@ -1290,7 +1290,7 @@ class ActivityLogger(commands.Cog):
         save_path = str(PATH / f"plot_{ctx.message.id}.png")
         table_save_path = str(PATH / f"plot_data_{ctx.message.id}.txt")
 
-        plt.bar(df.index[:10], df["num_messages"][:10], width=0.5)
+        plt.bar(df.iloc[:10].index, df.iloc[:10, "num_messages"], width=0.5)
 
         # make graph look nice
         plt.title(
@@ -1421,7 +1421,7 @@ class ActivityLogger(commands.Cog):
         save_path = str(PATH / f"plot_{ctx.message.id}.png")
         table_save_path = str(PATH / f"plot_data_{ctx.message.id}.txt")
 
-        plt.bar(df.index[:10], df["num_messages"][:10], width=0.5)
+        plt.bar(df.iloc[:10].index, df.iloc[:10, "num_messages"], width=0.5)
 
         # make graph look nice
         plt.title(
@@ -1795,28 +1795,27 @@ class ActivityLogger(commands.Cog):
                 else:
                     for message in data:
                         try:
-                            message.split("(id:")[1].split("):")[0]
-                        except:
+                            if "replied to" in message.split("(id:")[1].split("):")[0]:
+
+                                # add correlation to matrix
+                                user1_id = int(message.split("(id:")[1].split(")")[0])
+                                user2_id = int(message.split("(id:")[2].split("):")[0])
+
+                                user1 = guild.get_member(user1_id)
+                                user2 = guild.get_member(user2_id)
+
+                                # don't care about people who arent in the server
+                                if user1 is None or user2 is None:
+                                    continue
+
+                                if user1 == user2:
+                                    continue
+
+                                # add 1 to weight between the two users
+                                adj_matrix.loc[str(user1.name), str(user2.name)] += 1
+                                adj_matrix.loc[str(user2.name), str(user1.name)] += 1
+                        except IndexError:
                             continue
-                        if "replied to" in message.split("(id:")[1].split("):")[0]:
-
-                            # add correlation to matrix
-                            user1_id = int(message.split("(id:")[1].split(")")[0])
-                            user2_id = int(message.split("(id:")[2].split("):")[0])
-
-                            user1 = guild.get_member(user1_id)
-                            user2 = guild.get_member(user2_id)
-
-                            # don't care about people who arent in the server
-                            if user1 is None or user2 is None:
-                                continue
-
-                            if user1 == user2:
-                                continue
-
-                            # add 1 to weight between the two users
-                            adj_matrix.loc[str(user1.name), str(user2.name)] += 1
-                            adj_matrix.loc[str(user2.name), str(user1.name)] += 1
 
         await self.loop.run_in_executor(
             None,
