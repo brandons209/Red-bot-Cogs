@@ -1290,7 +1290,8 @@ class ActivityLogger(commands.Cog):
         save_path = str(PATH / f"plot_{ctx.message.id}.png")
         table_save_path = str(PATH / f"plot_data_{ctx.message.id}.txt")
 
-        plt.bar(df.head(10).index, df.head(10)["num_messages"], width=0.5)
+        graph_data = df.head(10)
+        plt.bar(graph_data.index, graph_data["num_messages"], width=0.5)
 
         # make graph look nice
         plt.title(
@@ -1299,7 +1300,7 @@ class ActivityLogger(commands.Cog):
         )
         plt.xlabel("user", fontsize=fontsize)
         plt.ylabel("# messages", fontsize=fontsize)
-        plt.xticks(df.index, fontsize=fontsize)
+        plt.xticks(graph_data.index, fontsize=fontsize)
         plt.yticks(fontsize=fontsize)
         plt.grid(True)
 
@@ -1421,7 +1422,8 @@ class ActivityLogger(commands.Cog):
         save_path = str(PATH / f"plot_{ctx.message.id}.png")
         table_save_path = str(PATH / f"plot_data_{ctx.message.id}.txt")
 
-        plt.bar(df.head(10).index, df.head(10)["num_messages"], width=0.5)
+        graph_data = df.head(10)
+        plt.bar(graph_data.index, graph_data["num_messages"], width=0.5)
 
         # make graph look nice
         plt.title(
@@ -1430,7 +1432,7 @@ class ActivityLogger(commands.Cog):
         )
         plt.xlabel("user", fontsize=fontsize)
         plt.ylabel("# messages", fontsize=fontsize)
-        plt.xticks(df.index, fontsize=fontsize)
+        plt.xticks(graph_data.index, fontsize=fontsize)
         plt.yticks(fontsize=fontsize)
         plt.grid(True)
 
