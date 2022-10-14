@@ -486,7 +486,7 @@ class ActivityLogger(commands.Cog):
         )
         plt.xlabel("Channel", fontsize=fontsize)
         plt.ylabel("Time spent in voice chat (minutes)", fontsize=fontsize)
-        plt.xticks(fontsize=fontsize)
+        plt.xticks(["\n".join(str(s).split(" ")) for s in df.index], fontsize=fontsize)
         plt.yticks(fontsize=fontsize)
         plt.grid(True)
 
@@ -1098,7 +1098,10 @@ class ActivityLogger(commands.Cog):
         for ch_id, msgs in messages.items():
             for message in msgs:
                 # grab time of the message
-                current_time = parse_time_naive(message[:19])
+                try:
+                    current_time = parse_time_naive(message[:19])
+                except:
+                    continue
                 # find what time to put it in using binary search
                 index = bisect_left(data["times"], current_time) - 1
                 # add message to channel
@@ -1276,7 +1279,7 @@ class ActivityLogger(commands.Cog):
     @graphstats_users.command(name="guild")
     async def graphstats_users_guild(self, ctx, *, till: str):
         """
-        Create a pie chart of most active users in the guild
+        Create a bar graph of most active users in the guild
 
         `till` can be a date or interval
 
@@ -1462,7 +1465,10 @@ class ActivityLogger(commands.Cog):
 
         for message in messages:
             # get hour:
-            hour = int(message[11:13])
+            try:
+                hour = int(message[11:13])
+            except:
+                continue
             data["num_messages"][hour] += 1
 
         # voice channels and minutes spent in channel per channel
@@ -1581,7 +1587,10 @@ class ActivityLogger(commands.Cog):
 
         for message in messages:
             # get hour:
-            hour = int(message[11:13])
+            try:
+                hour = int(message[11:13])
+            except:
+                continue
             data["num_messages"][hour] += 1
 
         df = pd.DataFrame(data)
@@ -1718,6 +1727,10 @@ class ActivityLogger(commands.Cog):
                 pass
             else:
                 for message in data:
+                    try:
+                        message.split("(id:")[1].split("):")[0]
+                    except:
+                        continue
                     if "replied to" in message.split("(id:")[1].split("):")[0]:
 
                         # add correlation to matrix
