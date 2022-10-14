@@ -3,6 +3,7 @@ from redbot.core.utils.chat_formatting import *
 from redbot.core import Config, checks, commands, modlog, bank
 from redbot.core.data_manager import cog_data_path
 from redbot.core.utils.mod import is_mod_or_superior
+from redbot.core.utils.predicates import MessagePredicate
 import discord
 
 from .utils import *
@@ -23,6 +24,8 @@ from bisect import bisect_left
 import matplotlib.pyplot as plt
 from matplotlib.dates import AutoDateLocator, AutoDateFormatter
 import pandas as pd
+import numpy as np
+import networkx as nx
 
 __version__ = "3.1.0"
 
@@ -355,12 +358,156 @@ class ActivityLogger(commands.Cog):
 
         return msg, None
 
-    @commands.command(name="graphstats")
+    @commands.group(name="graphstats")
     @checks.mod()
     @commands.guild_only()
+    async def graphstats(self, ctx):
+        """
+        Generate graphs for users and guild.
+        """
+        pass
+
+    @graphstats.command(name="voice")
+    async def graphstats_voice(self, ctx, user: discord.Member, *, till: str):
+        """
+        Create a graph of user activity in voice channels.
+
+        `till` can be a date or interval
+
+        **Times in graph are all in UTC**
+
+        Dates/times look like:
+            February 14 at 6pm EDT
+            2019-04-13 06:43:00 PST
+            01/20/18 at 21:00:43
+
+        times default to UTC if no timezone provided
+
+         Intervals look like:
+            5 minutes
+            1 minute 30 seconds
+            1 hour
+            2 days
+            30 days
+            5h30m
+            (etc)
+        """
+        interval = parse_timedelta(till)
+        date = None
+        if not interval:
+            try:
+                date = parse_time(till).replace(tzinfo=None)
+            except:
+                await ctx.send("Invalid date or interval! Try again.")
+                return
+
+        guild = ctx.guild
+        log_files = glob.glob(os.path.join(PATH, str(guild.id), "*.log"))
+        # remove audit log entries
+        log_files = [log for log in log_files if "guild" not in log]
+
+        if interval:
+            end_time = datetime.utcnow() - interval
+        else:
+            end_time = date
+
+        # get messages split by channel
+        messages = await self.loop.run_in_executor(
+            None,
+            functools.partial(
+                self.log_handler,
+                log_files,
+                end_time,
+                split_channels=True,
+            ),
+        )
+
+        ### set up data dictionary
+        voice_minutes = {}
+        to_delete = []
+        # make sure to include only voice channels
+        for ch_id in messages.keys():
+            channel = guild.get_channel(ch_id)
+            # channel may be deleted, but still want to include message data
+            if isinstance(channel, discord.TextChannel):
+                to_delete.append(ch_id)
+                continue
+            voice_minutes[ch_id] = 0
+        # delete text channels
+        for ch_id in to_delete:
+            del messages[ch_id]
+
+        # calculate number of messages for the user for every split
+        for ch_id, msgs in messages.items():
+            join_at = None
+            for message in msgs:
+                if f"(id {str(user.id)})" not in message:
+                    continue
+
+                if "Voice channel join:" in message:
+                    join_at = parse_time_naive(message[:19])
+                elif "Voice channel leave:" in message and join_at is not None:
+                    leave = parse_time_naive(message[:19])
+                    voice_minutes[ch_id] += int((leave - join_at).total_seconds() / 60)
+                    join_at = None
+
+        # voice channels and minutes spent in channel per channel
+        df = pd.DataFrame(index=voice_minutes.keys(), data=voice_minutes.values(), columns=["voice_minutes"])
+
+        # change channel ids to real names, or leave as delete channel
+        names = {}
+        for i, ch_id in enumerate(voice_minutes.keys()):
+            channel = guild.get_channel(ch_id)
+            names[ch_id] = channel.name if channel else f"Deleted Channel {i+1}"
+        df = df.rename(index=names)
+        df.index.name = "channel"
+
+        # drop channels with no data (all zeros) and check if theres still data
+        df = df.loc[df["voice_minutes"] != 0]
+        if len(df) < 1:
+            await ctx.send(warning("There is no messages from that user in the time period you specified."))
+            return
+
+        # make graph and send it
+        fontsize = 30
+        fig = plt.figure(figsize=(50, 30))
+        ax = plt.axes()
+
+        # define graph and table save paths
+        save_path = str(PATH / f"plot_{ctx.message.id}.png")
+        table_save_path = str(PATH / f"plot_data_{ctx.message.id}.txt")
+
+        plt.bar(df.index, df["voice_minutes"], width=0.5)
+
+        # make graph look nice
+        plt.title(
+            f"{user} voice history from {end_time} to now, Total: {int(df['voice_minutes'].sum())} minutes",
+            fontsize=fontsize,
+        )
+        plt.xlabel("Channel", fontsize=fontsize)
+        plt.ylabel("Time spent in voice chat (minutes)", fontsize=fontsize)
+        plt.xticks(fontsize=fontsize)
+        plt.yticks(fontsize=fontsize)
+        plt.grid(True)
+
+        fig.tight_layout()
+
+        fig.savefig(save_path, dpi=fig.dpi)
+        plt.close()
+
+        df.to_csv(table_save_path, index=True)
+
+        with open(save_path, "rb") as f, open(table_save_path, "r") as t:
+            files = (discord.File(f, filename="graph.png"), discord.File(t, filename="graph_data.csv"))
+            await ctx.send(files=files)
+
+        os.remove(save_path)
+        os.remove(table_save_path)
+
+    @graphstats.command(name="text")
     async def user_stats_graph(self, ctx, user: discord.Member, split: str, *, till: str):
         """
-        Create a graph of a users activity over time.
+        Create a graph of a users activity over time for text channels.
 
         `split` is how to split the data on the graph, like per hour, per day, etc.
         Possible values are:
@@ -416,7 +563,13 @@ class ActivityLogger(commands.Cog):
 
         # get messages split by channel
         messages = await self.loop.run_in_executor(
-            None, functools.partial(self.log_handler, log_files, end_time, split_channels=True,),
+            None,
+            functools.partial(
+                self.log_handler,
+                log_files,
+                end_time,
+                split_channels=True,
+            ),
         )
 
         ### set up data dictionary
@@ -506,11 +659,464 @@ class ActivityLogger(commands.Cog):
             names[ch_id] = channel.name if channel else f"Deleted Channel {i+1}"
         df = df.rename(columns=names)
 
+        # set index
+        df = df.set_index("times")
+
         # drop channels with no data (all zeros) and check if theres still data
         df = df.loc[:, (df != 0).any(axis=0)]
-        if len(df.columns) <= 1:
+        if len(df.columns) < 2:
             await ctx.send(warning("There is no messages from that user in the time period you specified."))
             return
+
+        top_n = len(df.columns) - 1
+        if len(df.columns) > 2:
+            user_input = True
+            while user_input:
+                await ctx.send(
+                    info(
+                        f"There are {len(df.columns) - 1} channels, how many would you like displayed on the graph? (If there are alot of channels the graph may be harder to read).\n\nIf you want all channels to be displayed type `all`, else type the number of channels you want displayed. The channels with the highest number of messages will be chosen."
+                    ),
+                    delete_after=120,
+                )
+                pred = MessagePredicate.same_context(ctx)
+                try:
+                    msg = await self.bot.wait_for("message", check=pred, timeout=121)
+                except asyncio.TimeoutError:
+                    await ctx.send(error("Took too long, cancelling graph!"), delete_after=30)
+                    return
+
+                if msg.content.lower().strip() != "all":
+                    try:
+                        top_n = int(msg.content.strip())
+                        if top_n < 1 or top_n > len(df.columns) - 1:
+                            raise ValueError()
+                        user_input = False
+                    except:
+                        await ctx.send(
+                            error(
+                                f"Invalid number, please enter a positive number greater than or equal to 1 and less than or equal to {len(df.columns) - 1}!"
+                            ),
+                            delete_after=30,
+                        )
+                        continue
+                else:
+                    user_input = False
+
+        # make graph and send it
+        fontsize = 30
+        fig = plt.figure(figsize=(50, 30))
+        ax = plt.axes()
+
+        # set date formater for x axis
+        xtick_locator = AutoDateLocator()
+        ax.xaxis.set_major_locator(xtick_locator)
+        ax.xaxis.set_major_formatter(AutoDateFormatter(xtick_locator))
+
+        # define graph and table save paths
+        save_path = str(PATH / f"plot_{ctx.message.id}.png")
+        table_save_path = str(PATH / f"plot_data_{ctx.message.id}.txt")
+
+        # get columns to drop for graphing only
+        sums = df.sum().sort_values(ascending=False)
+        if top_n != len(df.columns) - 1:
+            graph_cols = sums[: top_n + 1]
+        else:
+            graph_cols = sums
+
+        # plot each column
+        for col_name, col_data in df.iteritems():
+            if col_name == "times" or col_name not in graph_cols.index:
+                continue
+            plt.plot(df.index, col_name, data=df, linewidth=3, marker="o", markersize=8)
+
+        # make graph look nice
+        plt.title(f"{user} message history from {end_time} to now", fontsize=fontsize)
+        plt.xlabel("dates (UTC)", fontsize=fontsize)
+        plt.ylabel("messages", fontsize=fontsize)
+        plt.xticks(fontsize=fontsize)
+        plt.yticks(fontsize=fontsize)
+        plt.grid(True)
+
+        plt.legend(bbox_to_anchor=(1.00, 1.0), loc="upper left", prop={"size": 30})
+        fig.tight_layout()
+
+        fig.savefig(save_path, dpi=fig.dpi)
+        plt.close()
+
+        df.to_csv(table_save_path, index=True)
+
+        with open(save_path, "rb") as f, open(table_save_path, "r") as t:
+            files = (discord.File(f, filename="graph.png"), discord.File(t, filename="graph_data.csv"))
+            await ctx.send(files=files)
+
+        os.remove(save_path)
+        os.remove(table_save_path)
+
+    @graphstats.command(name="leaves")
+    async def graphstats_leaves(self, ctx, split: str, *, till: str):
+        """
+        Plot server joins and leaves for time period.
+
+        `split` is how to split the data on the graph, like per hour, per day, etc.
+        Possible values are:
+            "h" for hourly
+            "d" for daily
+            "w" for weekly
+            "m" for monthly
+            "y" for yearly
+
+        `till` can be a date or interval
+
+        **Times in graph are all in UTC**
+
+        Dates/times look like:
+            February 14 at 6pm EDT
+            2019-04-13 06:43:00 PST
+            01/20/18 at 21:00:43
+
+        times default to UTC if no timezone provided
+
+         Intervals look like:
+            5 minutes
+            1 minute 30 seconds
+            1 hour
+            2 days
+            30 days
+            5h30m
+            (etc)
+        """
+        interval = parse_timedelta(till)
+        date = None
+        if not interval:
+            try:
+                date = parse_time(till).replace(tzinfo=None)
+            except:
+                await ctx.send("Invalid date or interval! Try again.")
+                return
+
+        split = split.lower()
+        if split not in ["h", "d", "w", "m", "y"]:
+            await ctx.send("Invalid split! Try again.")
+            return
+
+        guild = ctx.guild
+        log_files = glob.glob(os.path.join(PATH, str(guild.id), "*guild*.log"))
+
+        if interval:
+            end_time = datetime.utcnow() - interval
+        else:
+            end_time = date
+
+        # get messages split by channel
+        audit_messages = await self.loop.run_in_executor(
+            None,
+            functools.partial(
+                self.log_handler,
+                log_files,
+                end_time,
+            ),
+        )
+
+        # filter out unneeded messages
+        audit_messages = [m for m in audit_messages if "Member leave:" in m or "Member join:" in m]
+
+        data = {"times": [], "joins": [], "leaves": []}
+        # add all the possible times based on the split
+        # first for each one zero out now time to the minute, day, etc
+        # then go through and add all possible times to get data for
+        now = datetime.utcnow()
+        if split == "h":
+            now -= relativedelta(minute=0, second=0, microsecond=0)
+            end_time -= relativedelta(minute=0, second=0, microsecond=0)
+            while now >= end_time:
+                data["times"].append(now)
+                data["joins"].append(0)
+                data["leaves"].append(0)
+                now = now - relativedelta(hours=1)
+        elif split == "d":
+            now -= relativedelta(hour=0, minute=0, second=0, microsecond=0)
+            end_time -= relativedelta(hour=0, minute=0, second=0, microsecond=0)
+            while now >= end_time:
+                data["times"].append(now)
+                data["joins"].append(0)
+                data["leaves"].append(0)
+                now = now - relativedelta(days=1)
+        elif split == "w":
+            now -= relativedelta(days=now.weekday(), hour=0, minute=0, second=0, microsecond=0)
+            end_time -= relativedelta(days=end_time.weekday(), hour=0, minute=0, second=0, microsecond=0)
+            while now >= end_time:
+                data["times"].append(now)
+                data["joins"].append(0)
+                data["leaves"].append(0)
+                now = now - relativedelta(weeks=1)
+        elif split == "m":
+            now -= relativedelta(day=1, hour=0, minute=0, second=0, microsecond=0)
+            end_time -= relativedelta(day=1, hour=0, minute=0, second=0, microsecond=0)
+            while now >= end_time:
+                data["times"].append(now)
+                data["joins"].append(0)
+                data["leaves"].append(0)
+                now = now - relativedelta(months=1)
+        elif split == "y":
+            now -= relativedelta(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
+            end_time -= relativedelta(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
+            while now >= end_time:
+                data["times"].append(now)
+                data["joins"].append(0)
+                data["leaves"].append(0)
+                now = now - relativedelta(years=1)
+
+        if not data["times"]:
+            await ctx.send(error("Your split is too large for the time provided, try a smaller split or longer time."))
+            return
+
+        data["times"].reverse()
+
+        # calculate number of messages for the user for every split
+        for message in audit_messages:
+            # grab time of the message
+            current_time = parse_time_naive(message[:19])
+            # find what time to put it in using binary search
+            index = bisect_left(data["times"], current_time) - 1
+
+            if "Member leave:" in message:
+                data["leaves"][index] += 1
+            else:
+                data["joins"][index] += 1
+
+        df = pd.DataFrame(data)
+
+        # set index
+        df = df.set_index("times")
+
+        # make graph and send it
+        fontsize = 30
+        fig = plt.figure(figsize=(50, 30))
+        ax = plt.axes()
+
+        # set date formater for x axis
+        xtick_locator = AutoDateLocator()
+        ax.xaxis.set_major_locator(xtick_locator)
+        ax.xaxis.set_major_formatter(AutoDateFormatter(xtick_locator))
+
+        # define graph and table save paths
+        save_path = str(PATH / f"plot_{ctx.message.id}.png")
+        table_save_path = str(PATH / f"plot_data_{ctx.message.id}.txt")
+
+        # plot each column
+        for col_name, _ in df.iteritems():
+            plt.plot(df.index, col_name, data=df, linewidth=3, marker="o", markersize=8)
+
+        # make graph look nice
+        plt.title(f"{guild} leaves and joins from {end_time} to now", fontsize=fontsize)
+        plt.xlabel("dates (UTC)", fontsize=fontsize)
+        plt.ylabel("# of people", fontsize=fontsize)
+        plt.xticks(fontsize=fontsize)
+        plt.yticks(fontsize=fontsize)
+        plt.grid(True)
+
+        plt.legend(bbox_to_anchor=(1.00, 1.0), loc="upper left", prop={"size": 30})
+        fig.tight_layout()
+
+        fig.savefig(save_path, dpi=fig.dpi)
+        plt.close()
+
+        df.to_csv(table_save_path, index=True)
+
+        with open(save_path, "rb") as f, open(table_save_path, "r") as t:
+            files = (discord.File(f, filename="graph.png"), discord.File(t, filename="graph_data.csv"))
+            await ctx.send(files=files)
+
+        os.remove(save_path)
+        os.remove(table_save_path)
+
+    @graphstats.command(name="activity")
+    async def graphstats_activity(self, ctx, split: str, *, till: str):
+        """
+        Create a graph that shows per channel activity
+
+        `split` is how to split the data on the graph, like per hour, per day, etc.
+        Possible values are:
+            "h" for hourly
+            "d" for daily
+            "w" for weekly
+            "m" for monthly
+            "y" for yearly
+
+        `till` can be a date or interval
+
+        **Times in graph are all in UTC**
+
+        Dates/times look like:
+            February 14 at 6pm EDT
+            2019-04-13 06:43:00 PST
+            01/20/18 at 21:00:43
+
+        times default to UTC if no timezone provided
+
+         Intervals look like:
+            5 minutes
+            1 minute 30 seconds
+            1 hour
+            2 days
+            30 days
+            5h30m
+            (etc)
+        """
+        interval = parse_timedelta(till)
+        date = None
+        guild = ctx.guild
+        if not interval:
+            try:
+                date = parse_time(till).replace(tzinfo=None)
+            except:
+                await ctx.send("Invalid date or interval! Try again.")
+                return
+
+        split = split.lower()
+        if split not in ["h", "d", "w", "m", "y"]:
+            await ctx.send("Invalid split! Try again.")
+            return
+
+        # select channels to graph
+        await ctx.send(
+            info(
+                f"Please list all the channels you wish to graph activity for. They must be **text channels**. Seperate each channel with a `,` (comma). You can use channel mentions, channel IDs, or their name."
+            ),
+            delete_after=240,
+        )
+        pred = MessagePredicate.same_context(ctx)
+        try:
+            msg = await self.bot.wait_for("message", check=pred, timeout=241)
+        except asyncio.TimeoutError:
+            await ctx.send(error("Took too long, cancelling graph!"), delete_after=30)
+            return
+
+        channels = [m.strip().strip("<").strip(">").strip("#") for m in msg.content.split(",")]
+        channel_objs = []
+        for ch in channels:
+            try:
+                channel = guild.get_channel(int(ch))
+            except:
+                channel = discord.utils.find(lambda c: c.name == ch, guild.text_channels)
+                if channel is None:
+                    await ctx.send(error(f"Unknown channel: `{ch}`, please run the command again."))
+                    return
+
+            channel_objs.append(channel)
+
+        # get logs for specified channels
+        log_files = glob.glob(os.path.join(PATH, str(guild.id), "*.log"))
+        # remove audit log entries
+        log_files = [log for log in log_files if "guild" not in log]
+
+        # remove non-specified channels
+        to_remove = []
+        for l in log_files:
+            found = False
+            for ch in channel_objs:
+                if str(ch.id) not in l:
+                    continue
+                found = True
+                break
+
+            if not found:
+                to_remove.append(l)
+
+        log_files = [log for log in log_files if log not in to_remove]
+
+        if interval:
+            end_time = datetime.utcnow() - interval
+        else:
+            end_time = date
+
+        # get messages split by channel
+        messages = await self.loop.run_in_executor(
+            None,
+            functools.partial(
+                self.log_handler,
+                log_files,
+                end_time,
+                split_channels=True,
+            ),
+        )
+
+        ### set up data dictionary
+        num_messages = {}
+        # make sure to include only text channels
+        for ch_id in messages.keys():
+            num_messages[ch_id] = 0
+
+        data = {"times": [], "num_messages": []}
+        # add all the possible times based on the split
+        # first for each one zero out now time to the minute, day, etc
+        # then go through and add all possible times to get data for
+        now = datetime.utcnow()
+        if split == "h":
+            now -= relativedelta(minute=0, second=0, microsecond=0)
+            end_time -= relativedelta(minute=0, second=0, microsecond=0)
+            while now >= end_time:
+                data["times"].append(now)
+                data["num_messages"].append(num_messages.copy())
+                now = now - relativedelta(hours=1)
+        elif split == "d":
+            now -= relativedelta(hour=0, minute=0, second=0, microsecond=0)
+            end_time -= relativedelta(hour=0, minute=0, second=0, microsecond=0)
+            while now >= end_time:
+                data["times"].append(now)
+                data["num_messages"].append(num_messages.copy())
+                now = now - relativedelta(days=1)
+        elif split == "w":
+            now -= relativedelta(days=now.weekday(), hour=0, minute=0, second=0, microsecond=0)
+            end_time -= relativedelta(days=end_time.weekday(), hour=0, minute=0, second=0, microsecond=0)
+            while now >= end_time:
+                data["times"].append(now)
+                data["num_messages"].append(num_messages.copy())
+                now = now - relativedelta(weeks=1)
+        elif split == "m":
+            now -= relativedelta(day=1, hour=0, minute=0, second=0, microsecond=0)
+            end_time -= relativedelta(day=1, hour=0, minute=0, second=0, microsecond=0)
+            while now >= end_time:
+                data["times"].append(now)
+                data["num_messages"].append(num_messages.copy())
+                now = now - relativedelta(months=1)
+        elif split == "y":
+            now -= relativedelta(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
+            end_time -= relativedelta(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
+            while now >= end_time:
+                data["times"].append(now)
+                data["num_messages"].append(num_messages.copy())
+                now = now - relativedelta(years=1)
+
+        if not data["times"]:
+            await ctx.send(error("Your split is too large for the time provided, try a smaller split or longer time."))
+            return
+
+        data["times"].reverse()
+
+        # calculate number of messages for the user for every split
+        for ch_id, msgs in messages.items():
+            for message in msgs:
+                # grab time of the message
+                current_time = parse_time_naive(message[:19])
+                # find what time to put it in using binary search
+                index = bisect_left(data["times"], current_time) - 1
+                # add message to channel
+                data["num_messages"][index][ch_id] += 1
+
+        df = pd.DataFrame(data)
+        # make dict of num_messages into columns for every channel
+        df = pd.concat([df.drop("num_messages", axis=1), df["num_messages"].apply(pd.Series)], axis=1)
+
+        # change channel ids to real names, or leave as delete channel
+        names = {}
+        for i, ch_id in enumerate(data["num_messages"][0].keys()):
+            channel = guild.get_channel(ch_id)
+            names[ch_id] = channel.name if channel else f"Deleted Channel {i+1}"
+        df = df.rename(columns=names)
+
+        # set index
+        df = df.set_index("times")
 
         # make graph and send it
         fontsize = 30
@@ -528,12 +1134,10 @@ class ActivityLogger(commands.Cog):
 
         # plot each column
         for col_name, col_data in df.iteritems():
-            if col_name == "times":
-                continue
-            plt.plot("times", col_name, data=df, linewidth=3, marker="o", markersize=8)
+            plt.plot(df.index, col_name, data=df, linewidth=3, marker="o", markersize=8)
 
         # make graph look nice
-        plt.title(f"{user} message history from {end_time} to now", fontsize=fontsize)
+        plt.title(f"{guild} message history from {end_time} to now", fontsize=fontsize)
         plt.xlabel("dates (UTC)", fontsize=fontsize)
         plt.ylabel("messages", fontsize=fontsize)
         plt.xticks(fontsize=fontsize)
@@ -546,7 +1150,630 @@ class ActivityLogger(commands.Cog):
         fig.savefig(save_path, dpi=fig.dpi)
         plt.close()
 
-        df.to_csv(table_save_path, index=False)
+        df.to_csv(table_save_path, index=True)
+
+        with open(save_path, "rb") as f, open(table_save_path, "r") as t:
+            files = (discord.File(f, filename="graph.png"), discord.File(t, filename="graph_data.csv"))
+            await ctx.send(files=files)
+
+        os.remove(save_path)
+        os.remove(table_save_path)
+
+    @graphstats.group(name="users")
+    async def graphstats_users(self, ctx):
+        """
+        Graph most active users for channel and entire guild
+        """
+        pass
+
+    @graphstats_users.command(name="channel")
+    async def graphstats_users_channel(self, ctx, channel: discord.TextChannel, *, till: str):
+        """
+        Create a graph of the most active users in a channel
+
+        `till` can be a date or interval
+
+        **Times in graph are all in UTC**
+
+        Dates/times look like:
+            February 14 at 6pm EDT
+            2019-04-13 06:43:00 PST
+            01/20/18 at 21:00:43
+
+        times default to UTC if no timezone provided
+
+         Intervals look like:
+            5 minutes
+            1 minute 30 seconds
+            1 hour
+            2 days
+            30 days
+            5h30m
+            (etc)
+        """
+        interval = parse_timedelta(till)
+        date = None
+        guild = ctx.guild
+        if not interval:
+            try:
+                date = parse_time(till).replace(tzinfo=None)
+            except:
+                await ctx.send("Invalid date or interval! Try again.")
+                return
+
+        # get logs for specified channels
+        log_files = glob.glob(os.path.join(PATH, str(guild.id), "*.log"))
+        # remove audit log entries
+        log_files = [log for log in log_files if "guild" not in log and str(channel.id) in log]
+
+        if interval:
+            end_time = datetime.utcnow() - interval
+        else:
+            end_time = date
+
+        # get messages split by channel
+        messages = await self.loop.run_in_executor(
+            None,
+            functools.partial(
+                self.log_handler,
+                log_files,
+                end_time,
+            ),
+        )
+
+        data = {}
+        for message in messages:
+            # get user id:
+            user_id = int(message.split("(id:")[1].split(")")[0].strip())
+            user = self.bot.get_user(user_id)
+            user = user if user is not None else user_id
+
+            if str(user) not in data:
+                data[str(user)] = 0
+
+            data[str(user)] += 1
+
+        df = pd.DataFrame(index=data.keys(), data=data.values(), columns=["num_messages"])
+        df.index.name = "user"
+        df = df.sort_values("num_messages", ascending=False)
+
+        # make graph and send it
+        fontsize = 30
+        fig = plt.figure(figsize=(50, 30))
+        ax = plt.axes()
+
+        # define graph and table save paths
+        save_path = str(PATH / f"plot_{ctx.message.id}.png")
+        table_save_path = str(PATH / f"plot_data_{ctx.message.id}.txt")
+
+        plt.bar(df.index[:10], df["num_messages"][:10], width=0.5)
+
+        # make graph look nice
+        plt.title(
+            f"Top 10 active users in {channel} from {end_time} till now",
+            fontsize=fontsize,
+        )
+        plt.xlabel("user", fontsize=fontsize)
+        plt.ylabel("# messages", fontsize=fontsize)
+        plt.xticks(df.index, fontsize=fontsize)
+        plt.yticks(fontsize=fontsize)
+        plt.grid(True)
+
+        fig.tight_layout()
+
+        fig.savefig(save_path, dpi=fig.dpi)
+        plt.close()
+
+        df.to_csv(table_save_path, index=True)
+
+        with open(save_path, "rb") as f, open(table_save_path, "r") as t:
+            files = (discord.File(f, filename="graph.png"), discord.File(t, filename="graph_data.csv"))
+            await ctx.send(files=files)
+
+        os.remove(save_path)
+        os.remove(table_save_path)
+
+    @graphstats_users.command(name="guild")
+    async def graphstats_users_guild(self, ctx, *, till: str):
+        """
+        Create a pie chart of most active users in the guild
+
+        `till` can be a date or interval
+
+        **Times in graph are all in UTC**
+
+        Dates/times look like:
+            February 14 at 6pm EDT
+            2019-04-13 06:43:00 PST
+            01/20/18 at 21:00:43
+
+        times default to UTC if no timezone provided
+
+         Intervals look like:
+            5 minutes
+            1 minute 30 seconds
+            1 hour
+            2 days
+            30 days
+            5h30m
+            (etc)
+        """
+        interval = parse_timedelta(till)
+        date = None
+        guild = ctx.guild
+        if not interval:
+            try:
+                date = parse_time(till).replace(tzinfo=None)
+            except:
+                await ctx.send("Invalid date or interval! Try again.")
+                return
+
+        # get logs for specified channels
+        log_files = glob.glob(os.path.join(PATH, str(guild.id), "*.log"))
+        # remove audit log entries
+        log_files = [log for log in log_files if "guild" not in log]
+
+        # remove voice channels
+        text_channel_ids = [str(c.id) for c in guild.text_channels]
+        to_remove = []
+        for l in log_files:
+            found = False
+            for c in text_channel_ids:
+                if c not in l:
+                    continue
+                found = True
+                break
+            if not found:
+                to_remove.append(l)
+
+        log_files = [log for log in log_files if log not in to_remove]
+
+        if interval:
+            end_time = datetime.utcnow() - interval
+        else:
+            end_time = date
+
+        # get messages split by channel
+        messages = await self.loop.run_in_executor(
+            None,
+            functools.partial(
+                self.log_handler,
+                log_files,
+                end_time,
+            ),
+        )
+
+        data = {}
+        for message in messages:
+            # get user id:
+            user_id = int(message.split("(id:")[1].split(")")[0].strip())
+            user = self.bot.get_user(user_id)
+            user = user if user is not None else user_id
+
+            if str(user) not in data:
+                data[str(user)] = 0
+
+            data[str(user)] += 1
+
+        df = pd.DataFrame(index=data.keys(), data=data.values(), columns=["num_messages"])
+        df.index.name = "user"
+        df = df.sort_values("num_messages", ascending=False)
+
+        # make graph and send it
+        fontsize = 30
+        fig = plt.figure(figsize=(50, 30))
+        ax = plt.axes()
+
+        # define graph and table save paths
+        save_path = str(PATH / f"plot_{ctx.message.id}.png")
+        table_save_path = str(PATH / f"plot_data_{ctx.message.id}.txt")
+
+        plt.bar(df.index[:10], df["num_messages"][:10], width=0.5)
+
+        # make graph look nice
+        plt.title(
+            f"Top 10 active users in {guild} from {end_time} till now",
+            fontsize=fontsize,
+        )
+        plt.xlabel("user", fontsize=fontsize)
+        plt.ylabel("# messages", fontsize=fontsize)
+        plt.xticks(df.index, fontsize=fontsize)
+        plt.yticks(fontsize=fontsize)
+        plt.grid(True)
+
+        fig.tight_layout()
+
+        fig.savefig(save_path, dpi=fig.dpi)
+        plt.close()
+
+        df.to_csv(table_save_path, index=True)
+
+        with open(save_path, "rb") as f, open(table_save_path, "r") as t:
+            files = (discord.File(f, filename="graph.png"), discord.File(t, filename="graph_data.csv"))
+            await ctx.send(files=files)
+
+        os.remove(save_path)
+        os.remove(table_save_path)
+
+    @graphstats.group(name="hours")
+    async def graphstats_hours(self, ctx):
+        """
+        Show activate hours for a channel or entire guild.
+        """
+        pass
+
+    @graphstats_hours.command(name="channel")
+    async def graphstats_hours_channel(self, ctx, channel: discord.TextChannel, *, till: str):
+        """
+        Show activate hours for specific text channel.
+
+        `till` can be a date or interval
+
+        **Times in graph are all in UTC**
+
+        Dates/times look like:
+            February 14 at 6pm EDT
+            2019-04-13 06:43:00 PST
+            01/20/18 at 21:00:43
+
+        times default to UTC if no timezone provided
+
+         Intervals look like:
+            5 minutes
+            1 minute 30 seconds
+            1 hour
+            2 days
+            30 days
+            5h30m
+            (etc)
+        """
+        interval = parse_timedelta(till)
+        date = None
+        guild = ctx.guild
+        if not interval:
+            try:
+                date = parse_time(till).replace(tzinfo=None)
+            except:
+                await ctx.send("Invalid date or interval! Try again.")
+                return
+
+        # get logs for specified channels
+        log_files = glob.glob(os.path.join(PATH, str(guild.id), "*.log"))
+        # remove audit log entries
+        log_files = [log for log in log_files if "guild" not in log and str(channel.id) in log]
+
+        if interval:
+            end_time = datetime.utcnow() - interval
+        else:
+            end_time = date
+
+        # get messages split by channel
+        messages = await self.loop.run_in_executor(
+            None,
+            functools.partial(
+                self.log_handler,
+                log_files,
+                end_time,
+            ),
+        )
+
+        # 24 hours, calculate # of messages for each hour of the day
+        data = {"times": [i for i in range(0, 24)], "num_messages": [0 for _ in range(0, 24)]}
+
+        for message in messages:
+            # get hour:
+            hour = int(message[11:13])
+            data["num_messages"][hour] += 1
+
+        # voice channels and minutes spent in channel per channel
+        df = pd.DataFrame(data)
+        df = df.set_index("times")
+
+        # make graph and send it
+        fontsize = 30
+        fig = plt.figure(figsize=(50, 30))
+        ax = plt.axes()
+
+        # define graph and table save paths
+        save_path = str(PATH / f"plot_{ctx.message.id}.png")
+        table_save_path = str(PATH / f"plot_data_{ctx.message.id}.txt")
+
+        plt.bar(df.index, df["num_messages"], width=0.5)
+
+        # make graph look nice
+        plt.title(
+            f"Active hours for {channel} from {end_time} till now",
+            fontsize=fontsize,
+        )
+        plt.xlabel("hour", fontsize=fontsize)
+        plt.ylabel("# messages", fontsize=fontsize)
+        plt.xticks(df.index, fontsize=fontsize)
+        plt.yticks(fontsize=fontsize)
+        plt.grid(True)
+
+        fig.tight_layout()
+
+        fig.savefig(save_path, dpi=fig.dpi)
+        plt.close()
+
+        df.to_csv(table_save_path, index=True)
+
+        with open(save_path, "rb") as f, open(table_save_path, "r") as t:
+            files = (discord.File(f, filename="graph.png"), discord.File(t, filename="graph_data.csv"))
+            await ctx.send(files=files)
+
+        os.remove(save_path)
+        os.remove(table_save_path)
+
+    @graphstats_hours.command(name="guild")
+    async def graphstats_hours_guild(self, ctx, *, till: str):
+        """
+        Show activate hours for entire guild.
+
+        `till` can be a date or interval
+
+        **Times in graph are all in UTC**
+
+        Dates/times look like:
+            February 14 at 6pm EDT
+            2019-04-13 06:43:00 PST
+            01/20/18 at 21:00:43
+
+        times default to UTC if no timezone provided
+
+         Intervals look like:
+            5 minutes
+            1 minute 30 seconds
+            1 hour
+            2 days
+            30 days
+            5h30m
+            (etc)
+        """
+        interval = parse_timedelta(till)
+        date = None
+        guild = ctx.guild
+        if not interval:
+            try:
+                date = parse_time(till).replace(tzinfo=None)
+            except:
+                await ctx.send("Invalid date or interval! Try again.")
+                return
+
+        # get logs for specified channels
+        log_files = glob.glob(os.path.join(PATH, str(guild.id), "*.log"))
+
+        # remove audit log entries
+        log_files = [log for log in log_files if "guild" not in log]
+
+        # remove voice channels
+        text_channel_ids = [str(c.id) for c in guild.text_channels]
+        to_remove = []
+        for l in log_files:
+            found = False
+            for c in text_channel_ids:
+                if c not in l:
+                    continue
+                found = True
+                break
+            if not found:
+                to_remove.append(l)
+
+        log_files = [log for log in log_files if log not in to_remove]
+
+        if interval:
+            end_time = datetime.utcnow() - interval
+        else:
+            end_time = date
+
+        # get messages split by channel
+        messages = await self.loop.run_in_executor(
+            None,
+            functools.partial(
+                self.log_handler,
+                log_files,
+                end_time,
+            ),
+        )
+
+        # 24 hours, calculate # of messages for each hour of the day
+        data = {"times": [i for i in range(0, 24)], "num_messages": [0 for _ in range(0, 24)]}
+
+        for message in messages:
+            # get hour:
+            hour = int(message[11:13])
+            data["num_messages"][hour] += 1
+
+        df = pd.DataFrame(data)
+        df = df.set_index("times")
+
+        # make graph and send it
+        fontsize = 30
+        fig = plt.figure(figsize=(50, 30))
+
+        # define graph and table save paths
+        save_path = str(PATH / f"plot_{ctx.message.id}.png")
+        table_save_path = str(PATH / f"plot_data_{ctx.message.id}.txt")
+
+        plt.bar(df.index, df["num_messages"], width=0.5)
+
+        # make graph look nice
+        plt.title(
+            f"Active hours for {guild} from {end_time} till now",
+            fontsize=fontsize,
+        )
+        plt.xlabel("hour", fontsize=fontsize)
+        plt.ylabel("# messages", fontsize=fontsize)
+        plt.xticks(df.index, fontsize=fontsize)
+        plt.yticks(fontsize=fontsize)
+        plt.grid(True)
+
+        fig.tight_layout()
+
+        fig.savefig(save_path, dpi=fig.dpi)
+        plt.close()
+
+        df.to_csv(table_save_path, index=True)
+
+        with open(save_path, "rb") as f, open(table_save_path, "r") as t:
+            files = (discord.File(f, filename="graph.png"), discord.File(t, filename="graph_data.csv"))
+            await ctx.send(files=files)
+
+        os.remove(save_path)
+        os.remove(table_save_path)
+
+    @graphstats.command(name="retention")
+    async def graphstats_retention(self, ctx):
+        """
+        Graph a histogram of how long members have been in the guild
+        """
+        guild = ctx.guild
+
+        data = {}
+        for member in guild.members:
+            since_joined = (ctx.message.created_at - member.joined_at).days
+            data[str(member)] = since_joined
+
+        df = pd.DataFrame(index=data.keys(), data=data.values(), columns=["days in server"])
+
+        # make graph and send it
+        fontsize = 30
+        fig = plt.figure(figsize=(50, 30))
+        ax = plt.axes()
+
+        # define graph and table save paths
+        save_path = str(PATH / f"plot_{ctx.message.id}.png")
+        table_save_path = str(PATH / f"plot_data_{ctx.message.id}.txt")
+
+        # split into 20 bins
+        bins = np.linspace(df["days in server"].min(), df["days in server"].max(), num=20)
+        hist = ax.hist(df["days in server"], bins=bins, rwidth=0.5)
+        for i in range(len(bins) - 1):
+            ax.text(hist[1][i], hist[0][i], str(int(hist[0][i])), fontsize=fontsize)
+
+        # make graph look nice
+        plt.title(
+            f"Member retention of all members in {guild}",
+            fontsize=fontsize,
+        )
+        plt.xlabel("days", fontsize=fontsize)
+        plt.ylabel("# of members", fontsize=fontsize)
+        plt.xticks(bins, fontsize=fontsize)
+        plt.yticks(fontsize=fontsize)
+        plt.grid(True)
+
+        fig.tight_layout()
+
+        fig.savefig(save_path, dpi=fig.dpi)
+        plt.close()
+
+        df.to_csv(table_save_path, index=True)
+
+        with open(save_path, "rb") as f, open(table_save_path, "r") as t:
+            files = (discord.File(f, filename="graph.png"), discord.File(t, filename="graph_data.csv"))
+            await ctx.send(files=files)
+
+        os.remove(save_path)
+        os.remove(table_save_path)
+
+    @graphstats.command(name="correlation")
+    async def graphstats_correlation(self, ctx, member: discord.Member = None):
+        """
+        Create a graph of how much users interact with each other
+
+        You can specify a specific person to see how they relate to others, or do it for everyone in the guild.
+        """
+        # build adjency matrix for graph
+        # edge weight is how many times someone replied with or has been in vc with someone else
+        # each node is a person
+        guild = ctx.guild
+        members = guild.members
+        adj_matrix = pd.DataFrame(
+            index=[str(m.name) for m in members], columns=[str(m.name) for m in members], dtype=int
+        )
+
+        for col in adj_matrix.columns:
+            adj_matrix[col].values[:] = 0
+
+        # remove audit log entries
+        log_files = glob.glob(os.path.join(PATH, str(guild.id), "*.log"))
+        log_files = [log for log in log_files if "guild" not in log]
+
+        # get messages split by channel
+        messages = await self.loop.run_in_executor(
+            None,
+            functools.partial(
+                self.log_handler,
+                log_files,
+                guild.created_at,
+                split_channels=True,
+            ),
+        )
+
+        for ch_id, data in messages.items():
+            channel = guild.get_channel(ch_id)
+            # channel may be deleted, but still want to include message data
+            if isinstance(channel, discord.VoiceChannel):
+                # ignore for now, need to figure out how to filter out when the bot fails to log a user leaving
+                pass
+            else:
+                for message in data:
+                    if "replied to" in message.split("(id:")[1].split("):")[0]:
+
+                        # add correlation to matrix
+                        user1_id = int(message.split("(id:")[1].split(")")[0])
+                        user2_id = int(message.split("(id:")[2].split("):")[0])
+
+                        user1 = guild.get_member(user1_id)
+                        user2 = guild.get_member(user2_id)
+
+                        # don't care about people who arent in the server
+                        if user1 is None or user2 is None:
+                            continue
+
+                        if user1 == user2:
+                            continue
+
+                        # add 1 to weight between the two users
+                        adj_matrix.loc[str(user1.name), str(user2.name)] += 1
+                        adj_matrix.loc[str(user2.name), str(user1.name)] += 1
+
+        # drop users who do not correlate to anyone else
+        for column in adj_matrix.columns:
+            if (adj_matrix[column] == 0).all():
+                adj_matrix = adj_matrix.drop(columns=column)
+                adj_matrix = adj_matrix.drop(index=column)
+
+        graph = nx.from_pandas_adjacency(adj_matrix)
+
+        # make graph and send it
+        fontsize = 30
+        fig = plt.figure(figsize=(30, 30))
+        plt.axis("off")
+
+        # define graph and table save paths
+        save_path = str(PATH / f"plot_{ctx.message.id}.png")
+        table_save_path = str(PATH / f"plot_data_{ctx.message.id}.txt")
+
+        widths = nx.get_edge_attributes(graph, "weight")
+        widths = np.array(list(widths.values()))
+        # clamp widths
+        widths = np.clip(widths, 1, 15)
+
+        pos = nx.spring_layout(graph, k=4)
+
+        nx.draw(graph, pos=pos, with_labels=True, width=widths, font_size=fontsize, node_size=fontsize * 2500)
+
+        # make graph look nice
+        plt.title(
+            f"Member correlation for {guild}",
+            fontsize=fontsize,
+        )
+
+        fig.savefig(save_path, dpi=fig.dpi)
+        plt.close()
+
+        adj_matrix.to_csv(table_save_path, index=True)
 
         with open(save_path, "rb") as f, open(table_save_path, "r") as t:
             files = (discord.File(f, filename="graph.png"), discord.File(t, filename="graph_data.csv"))
@@ -606,7 +1833,13 @@ class ActivityLogger(commands.Cog):
         await ctx.send(warning("**__Generating logs, please wait...__**"))
         # runs in descending order, with most recent log file first
         messages = await self.loop.run_in_executor(
-            None, functools.partial(self.log_handler, log_files, end_time, start=start,),
+            None,
+            functools.partial(
+                self.log_handler,
+                log_files,
+                end_time,
+                start=start,
+            ),
         )
 
         if user:
@@ -2123,6 +3356,9 @@ class ActivityLogger(commands.Cog):
     #        data[guild.name] = await self.config.member(member).stats()
 
     async def red_delete_data_for_user(
-        self, *, requester: Literal["discord_deleted_user", "owner", "user", "user_strict"], user_id: int,
+        self,
+        *,
+        requester: Literal["discord_deleted_user", "owner", "user", "user_strict"],
+        user_id: int,
     ):
         pass

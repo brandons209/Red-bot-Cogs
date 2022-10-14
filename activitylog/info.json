@@ -6,7 +6,13 @@
   "description": "Log messages, dms, attachments, guild updates (roles, channels, bans, kicks etc) and be able to retrieve these logs for review. Saves these right to disk and customize then to rotate log files. Tracks user's stats; how many messages they send, how many are bot commands, time spent in VC, and moderator actions against them. Also provides an upgraded userinfo command that gives these stats alongside the information Red's userinfo command gives. This is rewritten from @calebj's V2 cog.",
   "hidden": false,
   "install_msg": "Thank you for using this cog! Make sure to set bot prefixes using [p]logset prefixes for proper stat logging.",
-  "requirements": ["python-dateutil", "pytz", "matplotlib", "pandas"],
+  "requirements": [
+    "python-dateutil",
+    "pytz",
+    "matplotlib",
+    "pandas",
+    "networkx"
+  ],
   "short": "Log messages, audit actions, and track user statistics.",
   "tags": [
     "brandons209",

@@ -340,7 +340,8 @@ class NameChange(commands.Cog):
         currency_name = await bank.get_currency_name(ctx.guild)
 
         await ctx.send(
-            info(f"It costs {current_cost} {currency_name} **per minute** to change someone's name."), delete_after=30,
+            info(f"It costs {current_cost} {currency_name} **per minute** to change someone's name."),
+            delete_after=30,
         )
 
     @namechange.command(name="remove")
@@ -394,4 +395,3 @@ class NameChange(commands.Cog):
             current = await self.config.guild(before.guild).current_changes()
             if str(before.id) in current and current[str(before.id)]["new_nick"] != after.nick:
                 await self.change_nickname(after, current[str(before.id)]["new_nick"])
-
