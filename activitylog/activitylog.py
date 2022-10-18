@@ -485,7 +485,7 @@ class ActivityLogger(commands.Cog):
         save_path = str(PATH / f"plot_{ctx.message.id}.png")
         table_save_path = str(PATH / f"plot_data_{ctx.message.id}.txt")
 
-        plt.bar(df.index, df["voice_minutes"], width=0.5)
+        plt.bar(["\n".join(str(s).split(" ")) for s in df.index], df["voice_minutes"], width=0.5, align="center")
 
         # make graph look nice
         plt.title(
@@ -494,7 +494,7 @@ class ActivityLogger(commands.Cog):
         )
         plt.xlabel("Channel", fontsize=fontsize)
         plt.ylabel("Time spent in voice chat (minutes)", fontsize=fontsize)
-        plt.xticks(["\n".join(str(s).split(" ")) for s in df.index], fontsize=fontsize)
+        plt.xticks(fontsize=fontsize)
         plt.yticks(fontsize=fontsize)
         plt.grid(True)
 
@@ -1764,7 +1764,9 @@ class ActivityLogger(commands.Cog):
         guild = ctx.guild
         members = guild.members
         adj_matrix = pd.DataFrame(
-            index=[str(m.name) for m in members], columns=[str(m.name) for m in members], dtype=int
+            index=[str(m.name) for m in members],
+            columns=[str(m.name) for m in members],
+            dtype=int,
         )
 
         for col in adj_matrix.columns:
@@ -1826,7 +1828,7 @@ class ActivityLogger(commands.Cog):
 
         # drop users who do not correlate to anyone else
         for column in adj_matrix.columns:
-            if (adj_matrix[column] == 0).all():
+            if adj_matrix.loc[member.name, column] == 0 and column != member.name:
                 adj_matrix = adj_matrix.drop(columns=column)
                 adj_matrix = adj_matrix.drop(index=column)
 
