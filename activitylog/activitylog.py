@@ -429,7 +429,7 @@ class ActivityLogger(commands.Cog):
         for ch_id in messages.keys():
             channel = guild.get_channel(ch_id)
             # channel may be deleted, but still want to include message data
-            if isinstance(channel, discord.TextChannel):
+            if not isinstance(channel, discord.VoiceChannel):
                 to_delete.append(ch_id)
                 continue
             voice_minutes[ch_id] = 0
@@ -450,7 +450,7 @@ class ActivityLogger(commands.Cog):
                     elif "Voice channel leave:" in message and join_at is not None:
                         leave = parse_time_naive(message[:19])
                         voice_minutes[ch_id] += int((leave - join_at).total_seconds() / 60)
-                    join_at = None
+                        join_at = None
 
         await self.loop.run_in_executor(
             None,
@@ -1754,11 +1754,9 @@ class ActivityLogger(commands.Cog):
         os.remove(table_save_path)
 
     @graphstats.command(name="correlation")
-    async def graphstats_correlation(self, ctx, member: discord.Member = None):
+    async def graphstats_correlation(self, ctx, member: discord.Member):
         """
-        Create a graph of how much users interact with each other
-
-        You can specify a specific person to see how they relate to others, or do it for everyone in the guild.
+        Create a graph of how much a user interacts with others
         """
         # build adjency matrix for graph
         # edge weight is how many times someone replied with or has been in vc with someone else
@@ -1810,7 +1808,7 @@ class ActivityLogger(commands.Cog):
                                 if user1 is None or user2 is None:
                                     continue
 
-                                if user1 == user2:
+                                if user1 == user2 or (user1 != member and user2 != member):
                                     continue
 
                                 # add 1 to weight between the two users
