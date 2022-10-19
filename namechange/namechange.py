@@ -52,6 +52,7 @@ class NameChange(commands.Cog):
         default_guild = {
             "allowed_roles": [],
             "allowed_users": [],
+            "disallowed_users": [],
             "cost_per_minute": 0,
             "current_changes": {},
         }
@@ -102,6 +103,10 @@ class NameChange(commands.Cog):
     async def check_can_change(self, member: discord.Member):
         roles = await self.config.guild(member.guild).allowed_roles()
         members = await self.config.guild(member.guild).allowed_users()
+        disallow_members = await self.config.guild(member.guild).disallowed_users()
+
+        if member.id in disallow_members:
+            return False
 
         for role in member.roles:
             if role.id in roles:
@@ -208,7 +213,18 @@ class NameChange(commands.Cog):
             async with self.config.guild(ctx.guild).current_changes() as current_changes:
                 current_changes[str(member.id)] = data
 
-            await self.change_nickname(member, new_name)
+            result = await self.change_nickname(member, new_name)
+            if not result:
+                await ctx.send(
+                    error(
+                        f"It seem's I couldn't change {member}'s nickname, please contact a staff member to check my role hierarchy.\n\nYou have not been charged."
+                    ),
+                    delete_after=30,
+                )
+                # refund them
+                await bank.deposit_credits(ctx.author, total_cost)
+                return
+
             await ctx.send(f"{member}'s nickname changed to {new_name} until <t:{data['end_time']}>.")
 
             try:
@@ -323,6 +339,51 @@ class NameChange(commands.Cog):
         View all members that allow name changing.
         """
         members = await self.config.guild(ctx.guild).allowed_users()
+        members = [ctx.guild.get_member(m) for m in members]
+
+        msg = [f"{m.mention}\n" for m in members if m is not None]
+        msg = "Current members:\n" + "".join(msg)
+
+        for page in pagify(msg, page_length=1800, shorten_by=22):
+            await ctx.send(page)
+
+    @namechange_user.group(name="optout")
+    async def namechange_user_optout(self, ctx):
+        """
+        Opt specific users out from changing their name
+        """
+        pass
+
+    @namechange_user_optout.command(name="add")
+    async def namechange_user_optout_add(self, ctx, *, member: discord.Member):
+        """
+        Add a member to disallow name changing
+        """
+        async with self.config.guild(ctx.guild).disallowed_users() as disallowed_users:
+            if member.id not in disallowed_users:
+                disallowed_users.append(member.id)
+                await ctx.tick()
+            else:
+                await ctx.send(error(f"`{member}` is already added!"), delete_after=30)
+
+    @namechange_user_optout.command(name="del")
+    async def namechange_user_optout_del(self, ctx, *, member: discord.Member):
+        """
+        Remove a member from opting out
+        """
+        async with self.config.guild(ctx.guild).disallowed_users() as disallowed_users:
+            if member.id in disallowed_users:
+                disallowed_users.remove(member.id)
+                await ctx.tick()
+            else:
+                await ctx.send(error(f"`{member}` is not in the disallow list!"), delete_after=30)
+
+    @namechange_user_optout.command(name="list")
+    async def namechange_user_optout_list(self, ctx):
+        """
+        View all members that allow name changing.
+        """
+        members = await self.config.guild(ctx.guild).disallowed_users()
         members = [ctx.guild.get_member(m) for m in members]
 
         msg = [f"{m.mention}\n" for m in members if m is not None]
