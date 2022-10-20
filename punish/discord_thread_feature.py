@@ -37,10 +37,8 @@ async def create_thread(
         Raises HTTPException 400 if thread creation fails
     """
     guild = channel.guild
-    if archive > 4320 and "THREE_DAY_THREAD_ARCHIVE" not in guild.features:
-        archive = 1440
-    elif archive == 10080 and "SEVEN_DAY_THREAD_ARCHIVE" not in guild.features:
-        archive = 4320
+    if archive > 10080:
+        archive = 10080
 
     if thread_type == THREAD_TYPES.PRIVATE_THREAD and "PRIVATE_THREADS" not in guild.features:
         raise AttributeError("Your guild requires Level 2 Boost to use private threads.")
@@ -54,11 +52,7 @@ async def create_thread(
     }
     reason = "Punish Thread Creation"
 
-    r = Route(
-        "POST",
-        "/channels/{channel_id}/threads",
-        channel_id=channel.id,
-    )
+    r = Route("POST", "/channels/{channel_id}/threads", channel_id=channel.id,)
 
     return (await bot.http.request(r, json=fields, reason=reason))["id"]
 
@@ -73,11 +67,6 @@ async def add_user_thread(bot, channel: int, member: discord.Member):
     """
     reason = "Punish Add Member"
 
-    r = Route(
-        "POST",
-        "/channels/{channel_id}/thread-members/{user_id}",
-        channel_id=channel,
-        user_id=member.id,
-    )
+    r = Route("POST", "/channels/{channel_id}/thread-members/{user_id}", channel_id=channel, user_id=member.id,)
 
     return await bot.http.request(r, reason=reason)

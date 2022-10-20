@@ -3,7 +3,9 @@ import discord
 from discord.http import Route
 
 
-async def create_thread(bot, channel: discord.TextChannel, message: discord.Message, name: str, archive: int = 1440):
+async def create_thread(
+    bot, channel: discord.TextChannel, name: str, archive: int = 1440, message: discord.Message = None,
+):
     """
     Creates a new thread in the channel from the message
 
@@ -25,14 +27,43 @@ async def create_thread(bot, channel: discord.TextChannel, message: discord.Mess
     if archive > 10080:
         archive = 10080
 
+    reason = "Thread Rotation"
     fields = {"name": name, "auto_archive_duration": archive}
-    reason = "Thread Manager"
 
-    r = Route(
-        "POST", "/channels/{channel_id}/messages/{message_id}/threads", channel_id=channel.id, message_id=message.id,
-    )
+    if message is not None:
+        r = Route(
+            "POST",
+            "/channels/{channel_id}/messages/{message_id}/threads",
+            channel_id=channel.id,
+            message_id=message.id,
+        )
+    else:
+        fields["type"] = 11
+        r = Route("POST", "/channels/{channel_id}/threads", channel_id=channel.id,)
 
     return (await bot.http.request(r, json=fields, reason=reason))["id"]
+
+
+async def send_thread_message(
+    bot, thread_id: int, content: str, mention_roles: list = [],
+):
+    """
+    Send a message in a thread, allowing pings for roles
+
+    Args:
+        bot (Red): The bot object
+        thread_id (int): ID of the thread
+        content (str): The message to send
+        mention_roles (list, optional): List of role ids to allow mentions. Defaults to [].
+
+    Returns:
+        int: ID of the new message
+    """
+    fields = {"content": content, "allowed_mentions": {"roles": mention_roles}}
+
+    r = Route("POST", "/channels/{channel_id}/messages", channel_id=thread_id,)
+
+    return (await bot.http.request(r, json=fields))["id"]
 
 
 async def add_user_thread(bot, channel: int, member: discord.Member):
