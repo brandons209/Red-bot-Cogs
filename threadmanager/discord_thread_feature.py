@@ -22,19 +22,14 @@ async def create_thread(bot, channel: discord.TextChannel, message: discord.Mess
         Raises HTTPException 400 if thread creation fails
     """
     guild = channel.guild
-    if archive > 4320 and "THREE_DAY_THREAD_ARCHIVE" not in guild.features:
-        archive = 1440
-    elif archive == 10080 and "SEVEN_DAY_THREAD_ARCHIVE" not in guild.features:
-        archive = 4320
+    if archive > 10080:
+        archive = 10080
 
     fields = {"name": name, "auto_archive_duration": archive}
     reason = "Thread Manager"
 
     r = Route(
-        "POST",
-        "/channels/{channel_id}/messages/{message_id}/threads",
-        channel_id=channel.id,
-        message_id=message.id,
+        "POST", "/channels/{channel_id}/messages/{message_id}/threads", channel_id=channel.id, message_id=message.id,
     )
 
     return (await bot.http.request(r, json=fields, reason=reason))["id"]
@@ -50,12 +45,7 @@ async def add_user_thread(bot, channel: int, member: discord.Member):
     """
     reason = "Thread Manager"
 
-    r = Route(
-        "POST",
-        "/channels/{channel_id}/thread-members/{user_id}",
-        channel_id=channel,
-        user_id=member.id,
-    )
+    r = Route("POST", "/channels/{channel_id}/thread-members/{user_id}", channel_id=channel, user_id=member.id,)
 
     return await bot.http.request(r, reason=reason)
 
@@ -73,11 +63,7 @@ async def get_active_threads(bot, guild: discord.Guild):
 
     reason = "Thread Manager"
 
-    r = Route(
-        "GET",
-        "/guilds/{guild_id}/threads/active",
-        guild_id=guild.id,
-    )
+    r = Route("GET", "/guilds/{guild_id}/threads/active", guild_id=guild.id,)
 
     res = await bot.http.request(r, reason=reason)
 

@@ -127,9 +127,9 @@ class NameChange(commands.Cog):
         except discord.HTTPException:
             return False
 
-    @commands.command()
-    async def test(self, ctx):
-        await self.update_namechanges()
+    # @commands.command()
+    # async def test(self, ctx):
+    #    await self.update_namechanges()
 
     @commands.group(name="name", invoke_without_command=True)
     @commands.guild_only()
@@ -348,6 +348,7 @@ class NameChange(commands.Cog):
             await ctx.send(page)
 
     @namechange_user.group(name="optout")
+    @checks.admin()
     async def namechange_user_optout(self, ctx):
         """
         Opt specific users out from changing their name
@@ -401,9 +402,25 @@ class NameChange(commands.Cog):
         currency_name = await bank.get_currency_name(ctx.guild)
 
         await ctx.send(
-            info(f"It costs {current_cost} {currency_name} **per minute** to change someone's name."),
-            delete_after=30,
+            info(f"It costs {current_cost} {currency_name} **per minute** to change someone's name."), delete_after=30,
         )
+
+    @namechange.command(name="optin")
+    async def namechange_optin(self, ctx):
+        """
+        Opt in or opt out of allowing others to change your name
+
+        If you are already opted in, running the command again will opt you out.
+        """
+        member = ctx.author
+        async with self.config.guild(ctx.guild).allowed_users() as allowed_users:
+            if member.id not in allowed_users:
+                allowed_users.append(member.id)
+                await ctx.tick()
+            else:
+                allowed_users.remove(member.id)
+                await ctx.tick()
+                await ctx.send(info("You have opted out of allowing others to change your name."), delete_after=30)
 
     @namechange.command(name="remove")
     @checks.admin()
