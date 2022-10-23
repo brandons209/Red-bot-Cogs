@@ -165,7 +165,7 @@ class ThreadRotate(commands.Cog):
         await ctx.tick()
 
     @thread_rotate.command(name="topics")
-    async def thread_rotate_topics(self, ctx, channel: discord.TextChannel, *, topics: str = None):
+    async def thread_rotate_topics(self, ctx, channel: discord.TextChannel):
         """
         Modify topics for thread rotation.
 
@@ -176,16 +176,34 @@ class ThreadRotate(commands.Cog):
             await ctx.send(error("That channel has not been setup for thread rotation!"), delete_after=30)
             return
 
-        if topics is None:
-            await ctx.send(info(f"{channel.mention}'s topics:"))
-            topic_msg = "Topics:\n"
-            for topic, weight in current.items():
-                topic_msg += f"{topic}: {weight}\n"
-            await ctx.send(box(topic_msg), delete_after=300)
+        await ctx.send(info(f"{channel.mention}'s topics:"))
+        topic_msg = "Topics:\n"
+        for topic, weight in current.items():
+            topic_msg += f"{topic}: {weight}\n"
+        await ctx.send(box(topic_msg), delete_after=300)
 
-            return
+        await ctx.send(
+            info(
+                "Please list the thread topics and their selection weights.\nThe weight is how likely the topic will be choosen.\nA weight of `1` means it will not be choosen more or less than other topics.\nA weight between 0 and 1 means it is that weight times less likely to be choosen, with a weight of 0 meaning it will never be choosen.\nA weight greater than 1 means it will be that times more likely to be choosen.\n\nFor example, a weight of 1.5 means that topic is 1.5 more likely to be choose over the others. A weight of 0.5 means that topic is half as likely to be choosen over others.\n\nPlease use this format for listing the weights:\n"
+            ),
+            delete_after=300,
+        )
+        msg = await ctx.send(
+            box("topic name: weight_value\ntopic 2 name: weight_value\ntopic 3 name: weight_value")
+            + "\n\nYou can send as many messages as needed, when you are done, type `done`."
+        )
 
-        topics = topics.split("\n")
+        topic_msg = ""
+        while msg.content.lower() != "done":
+            pred = MessagePredicate.same_context(ctx)
+            try:
+                msg = await self.bot.wait_for("message", check=pred, timeout=301)
+            except asyncio.TimeoutError:
+                await ctx.send(error("Took too long, cancelling setup!"), delete_after=30)
+                return
+            topic_msg += msg.content + "\n"
+
+        topics = topic_msg.strip().split("\n")[:-1]  # remove done from end
         parsed_topics = {}
         for topic in topics:
             topic = topic.split(":")
@@ -194,10 +212,13 @@ class ThreadRotate(commands.Cog):
                     parsed_topics[":".join(topic[0:-1])] = float(topic[-1])
                 else:
                     parsed_topics[topic[0]] = float(topic[-1])
+
+                if float(topic[-1]) < 0:
+                    raise ValueError()
             except:
                 await ctx.send(
                     error(
-                        "Please make sure to use the correct format, every topic and weight should be split by a `:` and the weight should be a single decimal value."
+                        "Please make sure to use the correct format, every topic and weight should be split by a `:` and the weight should be a single decimal value greater than or equal to 0."
                     ),
                     delete_after=60,
                 )
@@ -205,6 +226,34 @@ class ThreadRotate(commands.Cog):
 
         await self.config.channel(channel).topics.set(parsed_topics)
         await ctx.tick()
+
+    @thread_rotate.command(name="clear")
+    async def thread_rotate_clear(self, ctx, channel: discord.TextChannel):
+        """
+        Clear a channel's thread rotation settings
+        """
+        await ctx.send(
+            warning(f"Are you sure you want to delete all settings for {channel.mention}? This cannot be reversed."),
+            delete_after=31,
+        )
+        pred = MessagePredicate.yes_or_no(ctx)
+        try:
+            await self.bot.wait_for("message", check=pred, timeout=30)
+        except asyncio.TimeoutError:
+            await ctx.send(error("Took too long, cancelling clear!"), delete_after=30)
+            return
+
+        if not pred.result:
+            await ctx.send(info("Cancelling clear."), delete_after=30)
+            return
+
+        await self.config.channel(channel).topics.clear()
+        await self.config.channel(channel).ping_roles.clear()
+        await self.config.channel(channel).rotation_interval.clear()
+        await self.config.channel(channel).rotate_on.clear()
+        await self.config.channel(channel).last_topic.clear()
+        await self.config.channel(channel).topic_threads.clear()
+        await ctx.send(info(f"Settings for {channel.mention} cleared."), delete_after=30)
 
     @thread_rotate.command(name="setup")
     async def thread_rotate_setup(self, ctx, channel: discord.TextChannel):
@@ -293,20 +342,26 @@ class ThreadRotate(commands.Cog):
 
         await ctx.send(
             info(
-                "Final step is to list the thread topics and their selection weights.\nThe weight is how likely the topic will be choosen.\nA weight of `1` means it will not be choosen more or less than other topics.\nA weight between 0 and 1 means it is that weight times less likely to be choosen, with a weight of 0 meaning it will never be choosen.\nA weight greater than 1 means it will be that times more likely to be choosen.\n\nFor example, a weight of 1.5 means that topic is 1.5 more likely to be choose over the others. A weight of 0.5 means that topic is half as likely to be choosen by others.\n\nPlease use this format for listing the weights:\n"
+                "Final step is to list the thread topics and their selection weights.\nThe weight is how likely the topic will be choosen.\nA weight of `1` means it will not be choosen more or less than other topics.\nA weight between 0 and 1 means it is that weight times less likely to be choosen, with a weight of 0 meaning it will never be choosen.\nA weight greater than 1 means it will be that times more likely to be choosen.\n\nFor example, a weight of 1.5 means that topic is 1.5 more likely to be choose over the others. A weight of 0.5 means that topic is half as likely to be choosen over others.\n\nPlease use this format for listing the weights:\n"
             ),
             delete_after=300,
         )
-        await ctx.send(box("topic name: weight_value\ntopic 2 name: weight_value\ntopic 3 name: weight_value"))
+        msg = await ctx.send(
+            box("topic name: weight_value\ntopic 2 name: weight_value\ntopic 3 name: weight_value")
+            + "\n\nYou can send as many messages as needed, when you are done, type `done`."
+        )
 
-        pred = MessagePredicate.same_context(ctx)
-        try:
-            msg = await self.bot.wait_for("message", check=pred, timeout=301)
-        except asyncio.TimeoutError:
-            await ctx.send(error("Took too long, cancelling setup!"), delete_after=30)
-            return
+        topic_msg = ""
+        while msg.content.lower() != "done":
+            pred = MessagePredicate.same_context(ctx)
+            try:
+                msg = await self.bot.wait_for("message", check=pred, timeout=301)
+            except asyncio.TimeoutError:
+                await ctx.send(error("Took too long, cancelling setup!"), delete_after=30)
+                return
+            topic_msg += msg.content + "\n"
 
-        topics = msg.content.split("\n")
+        topics = topic_msg.strip().split("\n")[:-1]  # remove done from end
         parsed_topics = {}
         for topic in topics:
             topic = topic.split(":")
@@ -332,7 +387,8 @@ class ThreadRotate(commands.Cog):
             topic_msg += f"{topic}: {weight}\n"
 
         await ctx.send(
-            info(f"Please review the settings for thread rotation on channel {channel.mention}:"), delete_after=300,
+            info(f"Please review the settings for thread rotation on channel {channel.mention}:"),
+            delete_after=300,
         )
         await ctx.send(
             box(
@@ -341,7 +397,8 @@ class ThreadRotate(commands.Cog):
             delete_after=300,
         )
         await ctx.send(
-            box(topic_msg), delete_after=300,
+            box(topic_msg),
+            delete_after=300,
         )
 
         await ctx.send("Type yes to confirm the thread rotation, type no to cancel thread rotation setup.")
@@ -368,4 +425,3 @@ class ThreadRotate(commands.Cog):
             info(f"Thread rotation setup! The first rotation will start at <t:{int(date.timestamp())}>"),
             delete_after=60,
         )
-

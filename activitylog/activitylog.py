@@ -411,97 +411,98 @@ class ActivityLogger(commands.Cog):
         else:
             end_time = date
 
-        # get messages split by channel
-        messages = await self.loop.run_in_executor(
-            None,
-            functools.partial(
-                self.log_handler,
-                log_files,
-                end_time,
-                split_channels=True,
-            ),
-        )
+        async with ctx.channel.typing():
+            # get messages split by channel
+            messages = await self.loop.run_in_executor(
+                None,
+                functools.partial(
+                    self.log_handler,
+                    log_files,
+                    end_time,
+                    split_channels=True,
+                ),
+            )
 
-        ### set up data dictionary
-        voice_minutes = {}
-        to_delete = []
-        # make sure to include only voice channels
-        for ch_id in messages.keys():
-            channel = guild.get_channel(ch_id)
-            # channel may be deleted, but still want to include message data
-            if not isinstance(channel, discord.VoiceChannel):
-                to_delete.append(ch_id)
-                continue
-            voice_minutes[ch_id] = 0
-        # delete text channels
-        for ch_id in to_delete:
-            del messages[ch_id]
+            ### set up data dictionary
+            voice_minutes = {}
+            to_delete = []
+            # make sure to include only voice channels
+            for ch_id in messages.keys():
+                channel = guild.get_channel(ch_id)
+                # channel may be deleted, but still want to include message data
+                if not isinstance(channel, discord.VoiceChannel):
+                    to_delete.append(ch_id)
+                    continue
+                voice_minutes[ch_id] = 0
+            # delete text channels
+            for ch_id in to_delete:
+                del messages[ch_id]
 
-        def process_messages():
-            # calculate number of messages for the user for every split
-            for ch_id, msgs in messages.items():
-                join_at = None
-                for message in msgs:
-                    if f"(id {str(user.id)})" not in message:
-                        continue
+            def process_messages():
+                # calculate number of messages for the user for every split
+                for ch_id, msgs in messages.items():
+                    join_at = None
+                    for message in msgs:
+                        if f"(id {str(user.id)})" not in message:
+                            continue
 
-                    if "Voice channel join:" in message:
-                        join_at = parse_time_naive(message[:19])
-                    elif "Voice channel leave:" in message and join_at is not None:
-                        leave = parse_time_naive(message[:19])
-                        voice_minutes[ch_id] += int((leave - join_at).total_seconds() / 60)
-                        join_at = None
+                        if "Voice channel join:" in message:
+                            join_at = parse_time_naive(message[:19])
+                        elif "Voice channel leave:" in message and join_at is not None:
+                            leave = parse_time_naive(message[:19])
+                            voice_minutes[ch_id] += int((leave - join_at).total_seconds() / 60)
+                            join_at = None
 
-        await self.loop.run_in_executor(
-            None,
-            functools.partial(
-                process_messages,
-            ),
-        )
+            await self.loop.run_in_executor(
+                None,
+                functools.partial(
+                    process_messages,
+                ),
+            )
 
-        # voice channels and minutes spent in channel per channel
-        df = pd.DataFrame(index=voice_minutes.keys(), data=voice_minutes.values(), columns=["voice_minutes"])
+            # voice channels and minutes spent in channel per channel
+            df = pd.DataFrame(index=voice_minutes.keys(), data=voice_minutes.values(), columns=["voice_minutes"])
 
-        # change channel ids to real names, or leave as delete channel
-        names = {}
-        for i, ch_id in enumerate(voice_minutes.keys()):
-            channel = guild.get_channel(ch_id)
-            names[ch_id] = channel.name if channel else f"Deleted Channel {i+1}"
-        df = df.rename(index=names)
-        df.index.name = "channel"
+            # change channel ids to real names, or leave as delete channel
+            names = {}
+            for i, ch_id in enumerate(voice_minutes.keys()):
+                channel = guild.get_channel(ch_id)
+                names[ch_id] = channel.name if channel else f"Deleted Channel {i+1}"
+            df = df.rename(index=names)
+            df.index.name = "channel"
 
-        # drop channels with no data (all zeros) and check if theres still data
-        df = df.loc[df["voice_minutes"] != 0]
-        if len(df) < 1:
-            await ctx.send(warning("There is no messages from that user in the time period you specified."))
-            return
+            # drop channels with no data (all zeros) and check if theres still data
+            df = df.loc[df["voice_minutes"] != 0]
+            if len(df) < 1:
+                await ctx.send(warning("There is no messages from that user in the time period you specified."))
+                return
 
-        # make graph and send it
-        fontsize = 30
-        fig = plt.figure(figsize=(50, 30))
-        ax = plt.axes()
+            # make graph and send it
+            fontsize = 30
+            fig = plt.figure(figsize=(50, 30))
+            ax = plt.axes()
 
-        # define graph and table save paths
-        save_path = str(PATH / f"plot_{ctx.message.id}.png")
-        table_save_path = str(PATH / f"plot_data_{ctx.message.id}.txt")
+            # define graph and table save paths
+            save_path = str(PATH / f"plot_{ctx.message.id}.png")
+            table_save_path = str(PATH / f"plot_data_{ctx.message.id}.txt")
 
-        plt.bar(["\n".join(str(s).split(" ")) for s in df.index], df["voice_minutes"], width=0.5, align="center")
+            plt.bar(["\n".join(str(s).split(" ")) for s in df.index], df["voice_minutes"], width=0.5, align="center")
 
-        # make graph look nice
-        plt.title(
-            f"{user} voice history from {end_time} to now, Total: {int(df['voice_minutes'].sum())} minutes",
-            fontsize=fontsize,
-        )
-        plt.xlabel("Channel", fontsize=fontsize)
-        plt.ylabel("Time spent in voice chat (minutes)", fontsize=fontsize)
-        plt.xticks(fontsize=fontsize)
-        plt.yticks(fontsize=fontsize)
-        plt.grid(True)
+            # make graph look nice
+            plt.title(
+                f"{user} voice history from {end_time} to now, Total: {int(df['voice_minutes'].sum())} minutes",
+                fontsize=fontsize,
+            )
+            plt.xlabel("Channel", fontsize=fontsize)
+            plt.ylabel("Time spent in voice chat (minutes)", fontsize=fontsize)
+            plt.xticks(fontsize=fontsize)
+            plt.yticks(fontsize=fontsize)
+            plt.grid(True)
 
-        fig.tight_layout()
+            fig.tight_layout()
 
-        fig.savefig(save_path, dpi=fig.dpi)
-        plt.close()
+            fig.savefig(save_path, dpi=fig.dpi)
+            plt.close()
 
         df.to_csv(table_save_path, index=True)
 
@@ -569,120 +570,123 @@ class ActivityLogger(commands.Cog):
         else:
             end_time = date
 
-        # get messages split by channel
-        messages = await self.loop.run_in_executor(
-            None,
-            functools.partial(
-                self.log_handler,
-                log_files,
-                end_time,
-                split_channels=True,
-            ),
-        )
+        async with ctx.channel.typing():
+            # get messages split by channel
+            messages = await self.loop.run_in_executor(
+                None,
+                functools.partial(
+                    self.log_handler,
+                    log_files,
+                    end_time,
+                    split_channels=True,
+                ),
+            )
 
-        ### set up data dictionary
-        num_messages = {}
-        to_delete = []
-        # make sure to include only text channels
-        for ch_id in messages.keys():
-            channel = guild.get_channel(ch_id)
-            # channel may be deleted, but still want to include message data
-            if isinstance(channel, discord.VoiceChannel):
-                to_delete.append(ch_id)
-                continue
-            num_messages[ch_id] = 0
-        # delete voice channels
-        for ch_id in to_delete:
-            del messages[ch_id]
+            ### set up data dictionary
+            num_messages = {}
+            to_delete = []
+            # make sure to include only text channels
+            for ch_id in messages.keys():
+                channel = guild.get_channel(ch_id)
+                # channel may be deleted, but still want to include message data
+                if isinstance(channel, discord.VoiceChannel):
+                    to_delete.append(ch_id)
+                    continue
+                num_messages[ch_id] = 0
+            # delete voice channels
+            for ch_id in to_delete:
+                del messages[ch_id]
 
-        data = {"times": [], "num_messages": []}
-        # add all the possible times based on the split
-        # first for each one zero out now time to the minute, day, etc
-        # then go through and add all possible times to get data for
-        now = datetime.utcnow()
-        if split == "h":
-            now -= relativedelta(minute=0, second=0, microsecond=0)
-            end_time -= relativedelta(minute=0, second=0, microsecond=0)
-            while now >= end_time:
-                data["times"].append(now)
-                data["num_messages"].append(num_messages.copy())
-                now = now - relativedelta(hours=1)
-        elif split == "d":
-            now -= relativedelta(hour=0, minute=0, second=0, microsecond=0)
-            end_time -= relativedelta(hour=0, minute=0, second=0, microsecond=0)
-            while now >= end_time:
-                data["times"].append(now)
-                data["num_messages"].append(num_messages.copy())
-                now = now - relativedelta(days=1)
-        elif split == "w":
-            now -= relativedelta(days=now.weekday(), hour=0, minute=0, second=0, microsecond=0)
-            end_time -= relativedelta(days=end_time.weekday(), hour=0, minute=0, second=0, microsecond=0)
-            while now >= end_time:
-                data["times"].append(now)
-                data["num_messages"].append(num_messages.copy())
-                now = now - relativedelta(weeks=1)
-        elif split == "m":
-            now -= relativedelta(day=1, hour=0, minute=0, second=0, microsecond=0)
-            end_time -= relativedelta(day=1, hour=0, minute=0, second=0, microsecond=0)
-            while now >= end_time:
-                data["times"].append(now)
-                data["num_messages"].append(num_messages.copy())
-                now = now - relativedelta(months=1)
-        elif split == "y":
-            now -= relativedelta(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
-            end_time -= relativedelta(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
-            while now >= end_time:
-                data["times"].append(now)
-                data["num_messages"].append(num_messages.copy())
-                now = now - relativedelta(years=1)
+            data = {"times": [], "num_messages": []}
+            # add all the possible times based on the split
+            # first for each one zero out now time to the minute, day, etc
+            # then go through and add all possible times to get data for
+            now = datetime.utcnow()
+            if split == "h":
+                now -= relativedelta(minute=0, second=0, microsecond=0)
+                end_time -= relativedelta(minute=0, second=0, microsecond=0)
+                while now >= end_time:
+                    data["times"].append(now)
+                    data["num_messages"].append(num_messages.copy())
+                    now = now - relativedelta(hours=1)
+            elif split == "d":
+                now -= relativedelta(hour=0, minute=0, second=0, microsecond=0)
+                end_time -= relativedelta(hour=0, minute=0, second=0, microsecond=0)
+                while now >= end_time:
+                    data["times"].append(now)
+                    data["num_messages"].append(num_messages.copy())
+                    now = now - relativedelta(days=1)
+            elif split == "w":
+                now -= relativedelta(days=now.weekday(), hour=0, minute=0, second=0, microsecond=0)
+                end_time -= relativedelta(days=end_time.weekday(), hour=0, minute=0, second=0, microsecond=0)
+                while now >= end_time:
+                    data["times"].append(now)
+                    data["num_messages"].append(num_messages.copy())
+                    now = now - relativedelta(weeks=1)
+            elif split == "m":
+                now -= relativedelta(day=1, hour=0, minute=0, second=0, microsecond=0)
+                end_time -= relativedelta(day=1, hour=0, minute=0, second=0, microsecond=0)
+                while now >= end_time:
+                    data["times"].append(now)
+                    data["num_messages"].append(num_messages.copy())
+                    now = now - relativedelta(months=1)
+            elif split == "y":
+                now -= relativedelta(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
+                end_time -= relativedelta(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
+                while now >= end_time:
+                    data["times"].append(now)
+                    data["num_messages"].append(num_messages.copy())
+                    now = now - relativedelta(years=1)
 
-        if not data["times"]:
-            await ctx.send(error("Your split is too large for the time provided, try a smaller split or longer time."))
-            return
+            if not data["times"]:
+                await ctx.send(
+                    error("Your split is too large for the time provided, try a smaller split or longer time.")
+                )
+                return
 
-        data["times"].reverse()
+            data["times"].reverse()
 
-        def process_messages():
-            # calculate number of messages for the user for every split
-            for ch_id, msgs in messages.items():
-                for message in msgs:
-                    if f"(id:{str(user.id)})" not in message:
-                        continue
-                    # grab time of the message
-                    current_time = parse_time_naive(message[:19])
-                    # find what time to put it in using binary search
-                    index = bisect_left(data["times"], current_time) - 1
-                    # add message to channel
-                    data["num_messages"][index][ch_id] += 1
+            def process_messages():
+                # calculate number of messages for the user for every split
+                for ch_id, msgs in messages.items():
+                    for message in msgs:
+                        if f"(id:{str(user.id)})" not in message:
+                            continue
+                        # grab time of the message
+                        current_time = parse_time_naive(message[:19])
+                        # find what time to put it in using binary search
+                        index = bisect_left(data["times"], current_time) - 1
+                        # add message to channel
+                        data["num_messages"][index][ch_id] += 1
 
-        await self.loop.run_in_executor(
-            None,
-            functools.partial(
-                process_messages,
-            ),
-        )
+            await self.loop.run_in_executor(
+                None,
+                functools.partial(
+                    process_messages,
+                ),
+            )
 
-        df = pd.DataFrame(data)
-        # make dict of num_messages into columns for every channel
-        df = pd.concat([df.drop("num_messages", axis=1), df["num_messages"].apply(pd.Series)], axis=1)
-        # calculate total messages for each time.
-        df["Total"] = df.drop("times", axis=1).sum(axis=1)
+            df = pd.DataFrame(data)
+            # make dict of num_messages into columns for every channel
+            df = pd.concat([df.drop("num_messages", axis=1), df["num_messages"].apply(pd.Series)], axis=1)
+            # calculate total messages for each time.
+            df["Total"] = df.drop("times", axis=1).sum(axis=1)
 
-        # change channel ids to real names, or leave as delete channel
-        names = {}
-        for i, ch_id in enumerate(data["num_messages"][0].keys()):
-            channel = guild.get_channel(ch_id)
-            names[ch_id] = channel.name if channel else f"Deleted Channel {i+1}"
-        df = df.rename(columns=names)
+            # change channel ids to real names, or leave as delete channel
+            names = {}
+            for i, ch_id in enumerate(data["num_messages"][0].keys()):
+                channel = guild.get_channel(ch_id)
+                names[ch_id] = channel.name if channel else f"Deleted Channel {i+1}"
+            df = df.rename(columns=names)
 
-        # set index
-        df = df.set_index("times")
+            # set index
+            df = df.set_index("times")
 
-        # drop channels with no data (all zeros) and check if theres still data
-        df = df.loc[:, (df != 0).any(axis=0)]
-        if len(df.columns) < 2:
-            await ctx.send(warning("There is no messages from that user in the time period you specified."))
-            return
+            # drop channels with no data (all zeros) and check if theres still data
+            df = df.loc[:, (df != 0).any(axis=0)]
+            if len(df.columns) < 2:
+                await ctx.send(warning("There is no messages from that user in the time period you specified."))
+                return
 
         top_n = len(df.columns) - 1
         if len(df.columns) > 2:
@@ -823,127 +827,130 @@ class ActivityLogger(commands.Cog):
         else:
             end_time = date
 
-        # get messages split by channel
-        audit_messages = await self.loop.run_in_executor(
-            None,
-            functools.partial(
-                self.log_handler,
-                log_files,
-                end_time,
-            ),
-        )
+        async with ctx.channel.typing():
+            # get messages split by channel
+            audit_messages = await self.loop.run_in_executor(
+                None,
+                functools.partial(
+                    self.log_handler,
+                    log_files,
+                    end_time,
+                ),
+            )
 
-        # filter out unneeded messages
-        audit_messages = [m for m in audit_messages if "Member leave:" in m or "Member join:" in m]
+            # filter out unneeded messages
+            audit_messages = [m for m in audit_messages if "Member leave:" in m or "Member join:" in m]
 
-        data = {"times": [], "joins": [], "leaves": []}
-        # add all the possible times based on the split
-        # first for each one zero out now time to the minute, day, etc
-        # then go through and add all possible times to get data for
-        now = datetime.utcnow()
-        if split == "h":
-            now -= relativedelta(minute=0, second=0, microsecond=0)
-            end_time -= relativedelta(minute=0, second=0, microsecond=0)
-            while now >= end_time:
-                data["times"].append(now)
-                data["joins"].append(0)
-                data["leaves"].append(0)
-                now = now - relativedelta(hours=1)
-        elif split == "d":
-            now -= relativedelta(hour=0, minute=0, second=0, microsecond=0)
-            end_time -= relativedelta(hour=0, minute=0, second=0, microsecond=0)
-            while now >= end_time:
-                data["times"].append(now)
-                data["joins"].append(0)
-                data["leaves"].append(0)
-                now = now - relativedelta(days=1)
-        elif split == "w":
-            now -= relativedelta(days=now.weekday(), hour=0, minute=0, second=0, microsecond=0)
-            end_time -= relativedelta(days=end_time.weekday(), hour=0, minute=0, second=0, microsecond=0)
-            while now >= end_time:
-                data["times"].append(now)
-                data["joins"].append(0)
-                data["leaves"].append(0)
-                now = now - relativedelta(weeks=1)
-        elif split == "m":
-            now -= relativedelta(day=1, hour=0, minute=0, second=0, microsecond=0)
-            end_time -= relativedelta(day=1, hour=0, minute=0, second=0, microsecond=0)
-            while now >= end_time:
-                data["times"].append(now)
-                data["joins"].append(0)
-                data["leaves"].append(0)
-                now = now - relativedelta(months=1)
-        elif split == "y":
-            now -= relativedelta(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
-            end_time -= relativedelta(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
-            while now >= end_time:
-                data["times"].append(now)
-                data["joins"].append(0)
-                data["leaves"].append(0)
-                now = now - relativedelta(years=1)
+            data = {"times": [], "joins": [], "leaves": []}
+            # add all the possible times based on the split
+            # first for each one zero out now time to the minute, day, etc
+            # then go through and add all possible times to get data for
+            now = datetime.utcnow()
+            if split == "h":
+                now -= relativedelta(minute=0, second=0, microsecond=0)
+                end_time -= relativedelta(minute=0, second=0, microsecond=0)
+                while now >= end_time:
+                    data["times"].append(now)
+                    data["joins"].append(0)
+                    data["leaves"].append(0)
+                    now = now - relativedelta(hours=1)
+            elif split == "d":
+                now -= relativedelta(hour=0, minute=0, second=0, microsecond=0)
+                end_time -= relativedelta(hour=0, minute=0, second=0, microsecond=0)
+                while now >= end_time:
+                    data["times"].append(now)
+                    data["joins"].append(0)
+                    data["leaves"].append(0)
+                    now = now - relativedelta(days=1)
+            elif split == "w":
+                now -= relativedelta(days=now.weekday(), hour=0, minute=0, second=0, microsecond=0)
+                end_time -= relativedelta(days=end_time.weekday(), hour=0, minute=0, second=0, microsecond=0)
+                while now >= end_time:
+                    data["times"].append(now)
+                    data["joins"].append(0)
+                    data["leaves"].append(0)
+                    now = now - relativedelta(weeks=1)
+            elif split == "m":
+                now -= relativedelta(day=1, hour=0, minute=0, second=0, microsecond=0)
+                end_time -= relativedelta(day=1, hour=0, minute=0, second=0, microsecond=0)
+                while now >= end_time:
+                    data["times"].append(now)
+                    data["joins"].append(0)
+                    data["leaves"].append(0)
+                    now = now - relativedelta(months=1)
+            elif split == "y":
+                now -= relativedelta(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
+                end_time -= relativedelta(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
+                while now >= end_time:
+                    data["times"].append(now)
+                    data["joins"].append(0)
+                    data["leaves"].append(0)
+                    now = now - relativedelta(years=1)
 
-        if not data["times"]:
-            await ctx.send(error("Your split is too large for the time provided, try a smaller split or longer time."))
-            return
+            if not data["times"]:
+                await ctx.send(
+                    error("Your split is too large for the time provided, try a smaller split or longer time.")
+                )
+                return
 
-        data["times"].reverse()
+            data["times"].reverse()
 
-        def process_messages():
-            # calculate number of messages for the user for every split
-            for message in audit_messages:
-                # grab time of the message
-                current_time = parse_time_naive(message[:19])
-                # find what time to put it in using binary search
-                index = bisect_left(data["times"], current_time) - 1
+            def process_messages():
+                # calculate number of messages for the user for every split
+                for message in audit_messages:
+                    # grab time of the message
+                    current_time = parse_time_naive(message[:19])
+                    # find what time to put it in using binary search
+                    index = bisect_left(data["times"], current_time) - 1
 
-                if "Member leave:" in message:
-                    data["leaves"][index] += 1
-                else:
-                    data["joins"][index] += 1
+                    if "Member leave:" in message:
+                        data["leaves"][index] += 1
+                    else:
+                        data["joins"][index] += 1
 
-        await self.loop.run_in_executor(
-            None,
-            functools.partial(
-                process_messages,
-            ),
-        )
+            await self.loop.run_in_executor(
+                None,
+                functools.partial(
+                    process_messages,
+                ),
+            )
 
-        df = pd.DataFrame(data)
+            df = pd.DataFrame(data)
 
-        # set index
-        df = df.set_index("times")
+            # set index
+            df = df.set_index("times")
 
-        # make graph and send it
-        fontsize = 30
-        fig = plt.figure(figsize=(50, 30))
-        ax = plt.axes()
+            # make graph and send it
+            fontsize = 30
+            fig = plt.figure(figsize=(50, 30))
+            ax = plt.axes()
 
-        # set date formater for x axis
-        xtick_locator = AutoDateLocator()
-        ax.xaxis.set_major_locator(xtick_locator)
-        ax.xaxis.set_major_formatter(AutoDateFormatter(xtick_locator))
+            # set date formater for x axis
+            xtick_locator = AutoDateLocator()
+            ax.xaxis.set_major_locator(xtick_locator)
+            ax.xaxis.set_major_formatter(AutoDateFormatter(xtick_locator))
 
-        # define graph and table save paths
-        save_path = str(PATH / f"plot_{ctx.message.id}.png")
-        table_save_path = str(PATH / f"plot_data_{ctx.message.id}.txt")
+            # define graph and table save paths
+            save_path = str(PATH / f"plot_{ctx.message.id}.png")
+            table_save_path = str(PATH / f"plot_data_{ctx.message.id}.txt")
 
-        # plot each column
-        for col_name, _ in df.iteritems():
-            plt.plot(df.index, col_name, data=df, linewidth=3, marker="o", markersize=8)
+            # plot each column
+            for col_name, _ in df.iteritems():
+                plt.plot(df.index, col_name, data=df, linewidth=3, marker="o", markersize=8)
 
-        # make graph look nice
-        plt.title(f"{guild} leaves and joins from {end_time} to now", fontsize=fontsize)
-        plt.xlabel("dates (UTC)", fontsize=fontsize)
-        plt.ylabel("# of people", fontsize=fontsize)
-        plt.xticks(fontsize=fontsize)
-        plt.yticks(fontsize=fontsize)
-        plt.grid(True)
+            # make graph look nice
+            plt.title(f"{guild} leaves and joins from {end_time} to now", fontsize=fontsize)
+            plt.xlabel("dates (UTC)", fontsize=fontsize)
+            plt.ylabel("# of people", fontsize=fontsize)
+            plt.xticks(fontsize=fontsize)
+            plt.yticks(fontsize=fontsize)
+            plt.grid(True)
 
-        plt.legend(bbox_to_anchor=(1.00, 1.0), loc="upper left", prop={"size": 30})
-        fig.tight_layout()
+            plt.legend(bbox_to_anchor=(1.00, 1.0), loc="upper left", prop={"size": 30})
+            fig.tight_layout()
 
-        fig.savefig(save_path, dpi=fig.dpi)
-        plt.close()
+            fig.savefig(save_path, dpi=fig.dpi)
+            plt.close()
 
         df.to_csv(table_save_path, index=True)
 
@@ -1054,136 +1061,139 @@ class ActivityLogger(commands.Cog):
         else:
             end_time = date
 
-        # get messages split by channel
-        messages = await self.loop.run_in_executor(
-            None,
-            functools.partial(
-                self.log_handler,
-                log_files,
-                end_time,
-                split_channels=True,
-            ),
-        )
+        async with ctx.channel.typing():
+            # get messages split by channel
+            messages = await self.loop.run_in_executor(
+                None,
+                functools.partial(
+                    self.log_handler,
+                    log_files,
+                    end_time,
+                    split_channels=True,
+                ),
+            )
 
-        ### set up data dictionary
-        num_messages = {}
-        # make sure to include only text channels
-        for ch_id in messages.keys():
-            num_messages[ch_id] = 0
+            ### set up data dictionary
+            num_messages = {}
+            # make sure to include only text channels
+            for ch_id in messages.keys():
+                num_messages[ch_id] = 0
 
-        data = {"times": [], "num_messages": []}
-        # add all the possible times based on the split
-        # first for each one zero out now time to the minute, day, etc
-        # then go through and add all possible times to get data for
-        now = datetime.utcnow()
-        if split == "h":
-            now -= relativedelta(minute=0, second=0, microsecond=0)
-            end_time -= relativedelta(minute=0, second=0, microsecond=0)
-            while now >= end_time:
-                data["times"].append(now)
-                data["num_messages"].append(num_messages.copy())
-                now = now - relativedelta(hours=1)
-        elif split == "d":
-            now -= relativedelta(hour=0, minute=0, second=0, microsecond=0)
-            end_time -= relativedelta(hour=0, minute=0, second=0, microsecond=0)
-            while now >= end_time:
-                data["times"].append(now)
-                data["num_messages"].append(num_messages.copy())
-                now = now - relativedelta(days=1)
-        elif split == "w":
-            now -= relativedelta(days=now.weekday(), hour=0, minute=0, second=0, microsecond=0)
-            end_time -= relativedelta(days=end_time.weekday(), hour=0, minute=0, second=0, microsecond=0)
-            while now >= end_time:
-                data["times"].append(now)
-                data["num_messages"].append(num_messages.copy())
-                now = now - relativedelta(weeks=1)
-        elif split == "m":
-            now -= relativedelta(day=1, hour=0, minute=0, second=0, microsecond=0)
-            end_time -= relativedelta(day=1, hour=0, minute=0, second=0, microsecond=0)
-            while now >= end_time:
-                data["times"].append(now)
-                data["num_messages"].append(num_messages.copy())
-                now = now - relativedelta(months=1)
-        elif split == "y":
-            now -= relativedelta(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
-            end_time -= relativedelta(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
-            while now >= end_time:
-                data["times"].append(now)
-                data["num_messages"].append(num_messages.copy())
-                now = now - relativedelta(years=1)
+            data = {"times": [], "num_messages": []}
+            # add all the possible times based on the split
+            # first for each one zero out now time to the minute, day, etc
+            # then go through and add all possible times to get data for
+            now = datetime.utcnow()
+            if split == "h":
+                now -= relativedelta(minute=0, second=0, microsecond=0)
+                end_time -= relativedelta(minute=0, second=0, microsecond=0)
+                while now >= end_time:
+                    data["times"].append(now)
+                    data["num_messages"].append(num_messages.copy())
+                    now = now - relativedelta(hours=1)
+            elif split == "d":
+                now -= relativedelta(hour=0, minute=0, second=0, microsecond=0)
+                end_time -= relativedelta(hour=0, minute=0, second=0, microsecond=0)
+                while now >= end_time:
+                    data["times"].append(now)
+                    data["num_messages"].append(num_messages.copy())
+                    now = now - relativedelta(days=1)
+            elif split == "w":
+                now -= relativedelta(days=now.weekday(), hour=0, minute=0, second=0, microsecond=0)
+                end_time -= relativedelta(days=end_time.weekday(), hour=0, minute=0, second=0, microsecond=0)
+                while now >= end_time:
+                    data["times"].append(now)
+                    data["num_messages"].append(num_messages.copy())
+                    now = now - relativedelta(weeks=1)
+            elif split == "m":
+                now -= relativedelta(day=1, hour=0, minute=0, second=0, microsecond=0)
+                end_time -= relativedelta(day=1, hour=0, minute=0, second=0, microsecond=0)
+                while now >= end_time:
+                    data["times"].append(now)
+                    data["num_messages"].append(num_messages.copy())
+                    now = now - relativedelta(months=1)
+            elif split == "y":
+                now -= relativedelta(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
+                end_time -= relativedelta(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
+                while now >= end_time:
+                    data["times"].append(now)
+                    data["num_messages"].append(num_messages.copy())
+                    now = now - relativedelta(years=1)
 
-        if not data["times"]:
-            await ctx.send(error("Your split is too large for the time provided, try a smaller split or longer time."))
-            return
+            if not data["times"]:
+                await ctx.send(
+                    error("Your split is too large for the time provided, try a smaller split or longer time.")
+                )
+                return
 
-        data["times"].reverse()
+            data["times"].reverse()
 
-        def process_messages():
-            # calculate number of messages for the user for every split
-            for ch_id, msgs in messages.items():
-                for message in msgs:
-                    # grab time of the message
-                    try:
-                        current_time = parse_time_naive(message[:19])
-                    except:
-                        continue
-                    # find what time to put it in using binary search
-                    index = bisect_left(data["times"], current_time) - 1
-                    # add message to channel
-                    data["num_messages"][index][ch_id] += 1
+            def process_messages():
+                # calculate number of messages for the user for every split
+                for ch_id, msgs in messages.items():
+                    for message in msgs:
+                        # grab time of the message
+                        try:
+                            current_time = parse_time_naive(message[:19])
+                        except:
+                            continue
+                        # find what time to put it in using binary search
+                        index = bisect_left(data["times"], current_time) - 1
+                        # add message to channel
+                        data["num_messages"][index][ch_id] += 1
 
-        await self.loop.run_in_executor(
-            None,
-            functools.partial(
-                process_messages,
-            ),
-        )
+            await self.loop.run_in_executor(
+                None,
+                functools.partial(
+                    process_messages,
+                ),
+            )
 
-        df = pd.DataFrame(data)
-        # make dict of num_messages into columns for every channel
-        df = pd.concat([df.drop("num_messages", axis=1), df["num_messages"].apply(pd.Series)], axis=1)
+            df = pd.DataFrame(data)
+            # make dict of num_messages into columns for every channel
+            df = pd.concat([df.drop("num_messages", axis=1), df["num_messages"].apply(pd.Series)], axis=1)
 
-        # change channel ids to real names, or leave as delete channel
-        names = {}
-        for i, ch_id in enumerate(data["num_messages"][0].keys()):
-            channel = guild.get_channel(ch_id)
-            names[ch_id] = channel.name if channel else f"Deleted Channel {i+1}"
-        df = df.rename(columns=names)
+            # change channel ids to real names, or leave as delete channel
+            names = {}
+            for i, ch_id in enumerate(data["num_messages"][0].keys()):
+                channel = guild.get_channel(ch_id)
+                names[ch_id] = channel.name if channel else f"Deleted Channel {i+1}"
+            df = df.rename(columns=names)
 
-        # set index
-        df = df.set_index("times")
+            # set index
+            df = df.set_index("times")
 
-        # make graph and send it
-        fontsize = 30
-        fig = plt.figure(figsize=(50, 30))
-        ax = plt.axes()
+            # make graph and send it
+            fontsize = 30
+            fig = plt.figure(figsize=(50, 30))
+            ax = plt.axes()
 
-        # set date formater for x axis
-        xtick_locator = AutoDateLocator()
-        ax.xaxis.set_major_locator(xtick_locator)
-        ax.xaxis.set_major_formatter(AutoDateFormatter(xtick_locator))
+            # set date formater for x axis
+            xtick_locator = AutoDateLocator()
+            ax.xaxis.set_major_locator(xtick_locator)
+            ax.xaxis.set_major_formatter(AutoDateFormatter(xtick_locator))
 
-        # define graph and table save paths
-        save_path = str(PATH / f"plot_{ctx.message.id}.png")
-        table_save_path = str(PATH / f"plot_data_{ctx.message.id}.txt")
+            # define graph and table save paths
+            save_path = str(PATH / f"plot_{ctx.message.id}.png")
+            table_save_path = str(PATH / f"plot_data_{ctx.message.id}.txt")
 
-        # plot each column
-        for col_name, col_data in df.iteritems():
-            plt.plot(df.index, col_name, data=df, linewidth=3, marker="o", markersize=8)
+            # plot each column
+            for col_name, col_data in df.iteritems():
+                plt.plot(df.index, col_name, data=df, linewidth=3, marker="o", markersize=8)
 
-        # make graph look nice
-        plt.title(f"{guild} message history from {end_time} to now", fontsize=fontsize)
-        plt.xlabel("dates (UTC)", fontsize=fontsize)
-        plt.ylabel("messages", fontsize=fontsize)
-        plt.xticks(fontsize=fontsize)
-        plt.yticks(fontsize=fontsize)
-        plt.grid(True)
+            # make graph look nice
+            plt.title(f"{guild} message history from {end_time} to now", fontsize=fontsize)
+            plt.xlabel("dates (UTC)", fontsize=fontsize)
+            plt.ylabel("messages", fontsize=fontsize)
+            plt.xticks(fontsize=fontsize)
+            plt.yticks(fontsize=fontsize)
+            plt.grid(True)
 
-        plt.legend(bbox_to_anchor=(1.00, 1.0), loc="upper left", prop={"size": 30})
-        fig.tight_layout()
+            plt.legend(bbox_to_anchor=(1.00, 1.0), loc="upper left", prop={"size": 30})
+            fig.tight_layout()
 
-        fig.savefig(save_path, dpi=fig.dpi)
-        plt.close()
+            fig.savefig(save_path, dpi=fig.dpi)
+            plt.close()
 
         df.to_csv(table_save_path, index=True)
 
@@ -1246,68 +1256,73 @@ class ActivityLogger(commands.Cog):
         else:
             end_time = date
 
-        # get messages split by channel
-        messages = await self.loop.run_in_executor(
-            None,
-            functools.partial(
-                self.log_handler,
-                log_files,
-                end_time,
-            ),
-        )
+        async with ctx.channel.typing():
+            # get messages split by channel
+            messages = await self.loop.run_in_executor(
+                None,
+                functools.partial(
+                    self.log_handler,
+                    log_files,
+                    end_time,
+                ),
+            )
 
-        data = {}
+            data = {}
 
-        def process_messages():
-            for message in messages:
-                # get user id:
-                user_id = int(message.split("(id:")[1].split(")")[0].strip())
-                user = self.bot.get_user(user_id)
-                user = user if user is not None else user_id
+            def process_messages():
+                for message in messages:
+                    # get user id:
+                    try:
+                        user_id = int(message.split("(id:")[1].split(")")[0].strip())
+                    except:
+                        continue
 
-                if str(user) not in data:
-                    data[str(user)] = 0
+                    user = self.bot.get_user(user_id)
+                    user = user if user is not None else user_id
 
-                data[str(user)] += 1
+                    if str(user) not in data:
+                        data[str(user)] = 0
 
-        await self.loop.run_in_executor(
-            None,
-            functools.partial(
-                process_messages,
-            ),
-        )
+                    data[str(user)] += 1
 
-        df = pd.DataFrame(index=data.keys(), data=data.values(), columns=["num_messages"])
-        df.index.name = "user"
-        df = df.sort_values("num_messages", ascending=False)
+            await self.loop.run_in_executor(
+                None,
+                functools.partial(
+                    process_messages,
+                ),
+            )
 
-        # make graph and send it
-        fontsize = 30
-        fig = plt.figure(figsize=(50, 30))
-        ax = plt.axes()
+            df = pd.DataFrame(index=data.keys(), data=data.values(), columns=["num_messages"])
+            df.index.name = "user"
+            df = df.sort_values("num_messages", ascending=False)
 
-        # define graph and table save paths
-        save_path = str(PATH / f"plot_{ctx.message.id}.png")
-        table_save_path = str(PATH / f"plot_data_{ctx.message.id}.txt")
+            # make graph and send it
+            fontsize = 30
+            fig = plt.figure(figsize=(50, 30))
+            ax = plt.axes()
 
-        graph_data = df.head(10)
-        plt.bar(graph_data.index, graph_data["num_messages"], width=0.5)
+            # define graph and table save paths
+            save_path = str(PATH / f"plot_{ctx.message.id}.png")
+            table_save_path = str(PATH / f"plot_data_{ctx.message.id}.txt")
 
-        # make graph look nice
-        plt.title(
-            f"Top 10 active users in {channel} from {end_time} till now",
-            fontsize=fontsize,
-        )
-        plt.xlabel("user", fontsize=fontsize)
-        plt.ylabel("# messages", fontsize=fontsize)
-        plt.xticks(graph_data.index, fontsize=fontsize)
-        plt.yticks(fontsize=fontsize)
-        plt.grid(True)
+            graph_data = df.head(10)
+            plt.bar(graph_data.index, graph_data["num_messages"], width=0.5)
 
-        fig.tight_layout()
+            # make graph look nice
+            plt.title(
+                f"Top 10 active users in {channel} from {end_time} till now",
+                fontsize=fontsize,
+            )
+            plt.xlabel("user", fontsize=fontsize)
+            plt.ylabel("# messages", fontsize=fontsize)
+            plt.xticks(graph_data.index, fontsize=fontsize)
+            plt.yticks(fontsize=fontsize)
+            plt.grid(True)
 
-        fig.savefig(save_path, dpi=fig.dpi)
-        plt.close()
+            fig.tight_layout()
+
+            fig.savefig(save_path, dpi=fig.dpi)
+            plt.close()
 
         df.to_csv(table_save_path, index=True)
 
@@ -1378,68 +1393,72 @@ class ActivityLogger(commands.Cog):
         else:
             end_time = date
 
-        # get messages split by channel
-        messages = await self.loop.run_in_executor(
-            None,
-            functools.partial(
-                self.log_handler,
-                log_files,
-                end_time,
-            ),
-        )
+        async with ctx.channel.typing():
+            # get messages split by channel
+            messages = await self.loop.run_in_executor(
+                None,
+                functools.partial(
+                    self.log_handler,
+                    log_files,
+                    end_time,
+                ),
+            )
 
-        data = {}
+            data = {}
 
-        def process_messages():
-            for message in messages:
-                # get user id:
-                user_id = int(message.split("(id:")[1].split(")")[0].strip())
-                user = self.bot.get_user(user_id)
-                user = user if user is not None else user_id
+            def process_messages():
+                for message in messages:
+                    # get user id:
+                    try:
+                        user_id = int(message.split("(id:")[1].split(")")[0].strip())
+                    except:
+                        continue
+                    user = self.bot.get_user(user_id)
+                    user = user if user is not None else user_id
 
-                if str(user) not in data:
-                    data[str(user)] = 0
+                    if str(user) not in data:
+                        data[str(user)] = 0
 
-                data[str(user)] += 1
+                    data[str(user)] += 1
 
-        await self.loop.run_in_executor(
-            None,
-            functools.partial(
-                process_messages,
-            ),
-        )
+            await self.loop.run_in_executor(
+                None,
+                functools.partial(
+                    process_messages,
+                ),
+            )
 
-        df = pd.DataFrame(index=data.keys(), data=data.values(), columns=["num_messages"])
-        df.index.name = "user"
-        df = df.sort_values("num_messages", ascending=False)
+            df = pd.DataFrame(index=data.keys(), data=data.values(), columns=["num_messages"])
+            df.index.name = "user"
+            df = df.sort_values("num_messages", ascending=False)
 
-        # make graph and send it
-        fontsize = 30
-        fig = plt.figure(figsize=(50, 30))
-        ax = plt.axes()
+            # make graph and send it
+            fontsize = 30
+            fig = plt.figure(figsize=(50, 30))
+            ax = plt.axes()
 
-        # define graph and table save paths
-        save_path = str(PATH / f"plot_{ctx.message.id}.png")
-        table_save_path = str(PATH / f"plot_data_{ctx.message.id}.txt")
+            # define graph and table save paths
+            save_path = str(PATH / f"plot_{ctx.message.id}.png")
+            table_save_path = str(PATH / f"plot_data_{ctx.message.id}.txt")
 
-        graph_data = df.head(10)
-        plt.bar(graph_data.index, graph_data["num_messages"], width=0.5)
+            graph_data = df.head(10)
+            plt.bar(graph_data.index, graph_data["num_messages"], width=0.5)
 
-        # make graph look nice
-        plt.title(
-            f"Top 10 active users in {guild} from {end_time} till now",
-            fontsize=fontsize,
-        )
-        plt.xlabel("user", fontsize=fontsize)
-        plt.ylabel("# messages", fontsize=fontsize)
-        plt.xticks(graph_data.index, fontsize=fontsize)
-        plt.yticks(fontsize=fontsize)
-        plt.grid(True)
+            # make graph look nice
+            plt.title(
+                f"Top 10 active users in {guild} from {end_time} till now",
+                fontsize=fontsize,
+            )
+            plt.xlabel("user", fontsize=fontsize)
+            plt.ylabel("# messages", fontsize=fontsize)
+            plt.xticks(graph_data.index, fontsize=fontsize)
+            plt.yticks(fontsize=fontsize)
+            plt.grid(True)
 
-        fig.tight_layout()
+            fig.tight_layout()
 
-        fig.savefig(save_path, dpi=fig.dpi)
-        plt.close()
+            fig.savefig(save_path, dpi=fig.dpi)
+            plt.close()
 
         df.to_csv(table_save_path, index=True)
 
@@ -1502,65 +1521,66 @@ class ActivityLogger(commands.Cog):
         else:
             end_time = date
 
-        # get messages split by channel
-        messages = await self.loop.run_in_executor(
-            None,
-            functools.partial(
-                self.log_handler,
-                log_files,
-                end_time,
-            ),
-        )
+        async with ctx.channel.typing():
+            # get messages split by channel
+            messages = await self.loop.run_in_executor(
+                None,
+                functools.partial(
+                    self.log_handler,
+                    log_files,
+                    end_time,
+                ),
+            )
 
-        # 24 hours, calculate # of messages for each hour of the day
-        data = {"times": [i for i in range(0, 24)], "num_messages": [0 for _ in range(0, 24)]}
+            # 24 hours, calculate # of messages for each hour of the day
+            data = {"times": [i for i in range(0, 24)], "num_messages": [0 for _ in range(0, 24)]}
 
-        def process_messages():
-            for message in messages:
-                # get hour:
-                try:
-                    hour = int(message[11:13])
-                except:
-                    continue
-                data["num_messages"][hour] += 1
+            def process_messages():
+                for message in messages:
+                    # get hour:
+                    try:
+                        hour = int(message[11:13])
+                    except:
+                        continue
+                    data["num_messages"][hour] += 1
 
-        await self.loop.run_in_executor(
-            None,
-            functools.partial(
-                process_messages,
-            ),
-        )
+            await self.loop.run_in_executor(
+                None,
+                functools.partial(
+                    process_messages,
+                ),
+            )
 
-        # voice channels and minutes spent in channel per channel
-        df = pd.DataFrame(data)
-        df = df.set_index("times")
+            # voice channels and minutes spent in channel per channel
+            df = pd.DataFrame(data)
+            df = df.set_index("times")
 
-        # make graph and send it
-        fontsize = 30
-        fig = plt.figure(figsize=(50, 30))
-        ax = plt.axes()
+            # make graph and send it
+            fontsize = 30
+            fig = plt.figure(figsize=(50, 30))
+            ax = plt.axes()
 
-        # define graph and table save paths
-        save_path = str(PATH / f"plot_{ctx.message.id}.png")
-        table_save_path = str(PATH / f"plot_data_{ctx.message.id}.txt")
+            # define graph and table save paths
+            save_path = str(PATH / f"plot_{ctx.message.id}.png")
+            table_save_path = str(PATH / f"plot_data_{ctx.message.id}.txt")
 
-        plt.bar(df.index, df["num_messages"], width=0.5)
+            plt.bar(df.index, df["num_messages"], width=0.5)
 
-        # make graph look nice
-        plt.title(
-            f"Active hours for {channel} from {end_time} till now",
-            fontsize=fontsize,
-        )
-        plt.xlabel("hour", fontsize=fontsize)
-        plt.ylabel("# messages", fontsize=fontsize)
-        plt.xticks(df.index, fontsize=fontsize)
-        plt.yticks(fontsize=fontsize)
-        plt.grid(True)
+            # make graph look nice
+            plt.title(
+                f"Active hours for {channel} from {end_time} till now",
+                fontsize=fontsize,
+            )
+            plt.xlabel("hour", fontsize=fontsize)
+            plt.ylabel("# messages", fontsize=fontsize)
+            plt.xticks(df.index, fontsize=fontsize)
+            plt.yticks(fontsize=fontsize)
+            plt.grid(True)
 
-        fig.tight_layout()
+            fig.tight_layout()
 
-        fig.savefig(save_path, dpi=fig.dpi)
-        plt.close()
+            fig.savefig(save_path, dpi=fig.dpi)
+            plt.close()
 
         df.to_csv(table_save_path, index=True)
 
@@ -1632,63 +1652,64 @@ class ActivityLogger(commands.Cog):
         else:
             end_time = date
 
-        # get messages split by channel
-        messages = await self.loop.run_in_executor(
-            None,
-            functools.partial(
-                self.log_handler,
-                log_files,
-                end_time,
-            ),
-        )
+        async with ctx.channel.typing():
+            # get messages split by channel
+            messages = await self.loop.run_in_executor(
+                None,
+                functools.partial(
+                    self.log_handler,
+                    log_files,
+                    end_time,
+                ),
+            )
 
-        # 24 hours, calculate # of messages for each hour of the day
-        data = {"times": [i for i in range(0, 24)], "num_messages": [0 for _ in range(0, 24)]}
+            # 24 hours, calculate # of messages for each hour of the day
+            data = {"times": [i for i in range(0, 24)], "num_messages": [0 for _ in range(0, 24)]}
 
-        def process_messages():
-            for message in messages:
-                # get hour:
-                try:
-                    hour = int(message[11:13])
-                except:
-                    continue
-                data["num_messages"][hour] += 1
+            def process_messages():
+                for message in messages:
+                    # get hour:
+                    try:
+                        hour = int(message[11:13])
+                    except:
+                        continue
+                    data["num_messages"][hour] += 1
 
-        await self.loop.run_in_executor(
-            None,
-            functools.partial(
-                process_messages,
-            ),
-        )
+            await self.loop.run_in_executor(
+                None,
+                functools.partial(
+                    process_messages,
+                ),
+            )
 
-        df = pd.DataFrame(data)
-        df = df.set_index("times")
+            df = pd.DataFrame(data)
+            df = df.set_index("times")
 
-        # make graph and send it
-        fontsize = 30
-        fig = plt.figure(figsize=(50, 30))
+            # make graph and send it
+            fontsize = 30
+            fig = plt.figure(figsize=(50, 30))
 
-        # define graph and table save paths
-        save_path = str(PATH / f"plot_{ctx.message.id}.png")
-        table_save_path = str(PATH / f"plot_data_{ctx.message.id}.txt")
+            # define graph and table save paths
+            save_path = str(PATH / f"plot_{ctx.message.id}.png")
+            table_save_path = str(PATH / f"plot_data_{ctx.message.id}.txt")
 
-        plt.bar(df.index, df["num_messages"], width=0.5)
+            plt.bar(df.index, df["num_messages"], width=0.5)
 
-        # make graph look nice
-        plt.title(
-            f"Active hours for {guild} from {end_time} till now",
-            fontsize=fontsize,
-        )
-        plt.xlabel("hour", fontsize=fontsize)
-        plt.ylabel("# messages", fontsize=fontsize)
-        plt.xticks(df.index, fontsize=fontsize)
-        plt.yticks(fontsize=fontsize)
-        plt.grid(True)
+            # make graph look nice
+            plt.title(
+                f"Active hours for {guild} from {end_time} till now",
+                fontsize=fontsize,
+            )
+            plt.xlabel("hour", fontsize=fontsize)
+            plt.ylabel("# messages", fontsize=fontsize)
+            plt.xticks(df.index, fontsize=fontsize)
+            plt.yticks(fontsize=fontsize)
+            plt.grid(True)
 
-        fig.tight_layout()
+            fig.tight_layout()
 
-        fig.savefig(save_path, dpi=fig.dpi)
-        plt.close()
+            fig.savefig(save_path, dpi=fig.dpi)
+            plt.close()
 
         df.to_csv(table_save_path, index=True)
 
@@ -1776,90 +1797,91 @@ class ActivityLogger(commands.Cog):
         log_files = glob.glob(os.path.join(PATH, str(guild.id), "*.log"))
         log_files = [log for log in log_files if "guild" not in log]
 
-        # get messages split by channel
-        messages = await self.loop.run_in_executor(
-            None,
-            functools.partial(
-                self.log_handler,
-                log_files,
-                guild.created_at,
-                split_channels=True,
-            ),
-        )
+        async with ctx.channel.typing():
+            # get messages split by channel
+            messages = await self.loop.run_in_executor(
+                None,
+                functools.partial(
+                    self.log_handler,
+                    log_files,
+                    guild.created_at,
+                    split_channels=True,
+                ),
+            )
 
-        def process_messages():
-            for ch_id, data in messages.items():
-                channel = guild.get_channel(ch_id)
-                # channel may be deleted, but still want to include message data
-                if isinstance(channel, discord.VoiceChannel):
-                    # ignore for now, need to figure out how to filter out when the bot fails to log a user leaving
-                    pass
-                else:
-                    for message in data:
-                        try:
-                            if "replied to" in message.split("(id:")[1].split("):")[0]:
+            def process_messages():
+                for ch_id, data in messages.items():
+                    channel = guild.get_channel(ch_id)
+                    # channel may be deleted, but still want to include message data
+                    if isinstance(channel, discord.VoiceChannel):
+                        # ignore for now, need to figure out how to filter out when the bot fails to log a user leaving
+                        pass
+                    else:
+                        for message in data:
+                            try:
+                                if "replied to" in message.split("(id:")[1].split("):")[0]:
 
-                                # add correlation to matrix
-                                user1_id = int(message.split("(id:")[1].split(")")[0])
-                                user2_id = int(message.split("(id:")[2].split("):")[0])
+                                    # add correlation to matrix
+                                    user1_id = int(message.split("(id:")[1].split(")")[0])
+                                    user2_id = int(message.split("(id:")[2].split("):")[0])
 
-                                user1 = guild.get_member(user1_id)
-                                user2 = guild.get_member(user2_id)
+                                    user1 = guild.get_member(user1_id)
+                                    user2 = guild.get_member(user2_id)
 
-                                # don't care about people who arent in the server
-                                if user1 is None or user2 is None:
-                                    continue
+                                    # don't care about people who arent in the server
+                                    if user1 is None or user2 is None:
+                                        continue
 
-                                if user1 == user2 or (user1 != member and user2 != member):
-                                    continue
+                                    if user1 == user2 or (user1 != member and user2 != member):
+                                        continue
 
-                                # add 1 to weight between the two users
-                                adj_matrix.loc[str(user1.name), str(user2.name)] += 1
-                                adj_matrix.loc[str(user2.name), str(user1.name)] += 1
-                        except IndexError:
-                            continue
+                                    # add 1 to weight between the two users
+                                    adj_matrix.loc[str(user1.name), str(user2.name)] += 1
+                                    adj_matrix.loc[str(user2.name), str(user1.name)] += 1
+                            except IndexError:
+                                continue
 
-        await self.loop.run_in_executor(
-            None,
-            functools.partial(
-                process_messages,
-            ),
-        )
+            await self.loop.run_in_executor(
+                None,
+                functools.partial(
+                    process_messages,
+                ),
+            )
 
-        # drop users who do not correlate to anyone else
-        for column in adj_matrix.columns:
-            if adj_matrix.loc[member.name, column] == 0 and column != member.name:
-                adj_matrix = adj_matrix.drop(columns=column)
-                adj_matrix = adj_matrix.drop(index=column)
+            # drop users who do not correlate to anyone else
+            for column in adj_matrix.columns:
+                if (adj_matrix.loc[member.name, column] == 0).all() and column != member.name:
+                    adj_matrix = adj_matrix.drop(columns=column)
+                    adj_matrix = adj_matrix.drop(index=column)
 
-        graph = nx.from_pandas_adjacency(adj_matrix)
+            graph = nx.from_pandas_adjacency(adj_matrix)
 
-        # make graph and send it
-        fontsize = 30
-        fig = plt.figure(figsize=(30, 30))
-        plt.axis("off")
+            # make graph and send it
+            fontsize = 30
+            fig = plt.figure(figsize=(30, 30))
+            plt.axis("off")
 
-        # define graph and table save paths
-        save_path = str(PATH / f"plot_{ctx.message.id}.png")
-        table_save_path = str(PATH / f"plot_data_{ctx.message.id}.txt")
+            # define graph and table save paths
+            save_path = str(PATH / f"plot_{ctx.message.id}.png")
+            table_save_path = str(PATH / f"plot_data_{ctx.message.id}.txt")
 
-        widths = nx.get_edge_attributes(graph, "weight")
-        widths = np.array(list(widths.values()))
-        # clamp widths
-        widths = np.clip(widths, 1, 15)
+            widths = nx.get_edge_attributes(graph, "weight")
+            widths = np.array(list(widths.values()))
+            # clamp widths
+            widths = np.clip(widths, 1, 15)
 
-        pos = nx.spring_layout(graph, k=4)
+            pos = nx.spring_layout(graph, k=4)
 
-        nx.draw(graph, pos=pos, with_labels=True, width=widths, font_size=fontsize, node_size=fontsize * 2500)
+            nx.draw(graph, pos=pos, with_labels=True, width=widths, font_size=fontsize, node_size=fontsize * 2500)
 
-        # make graph look nice
-        plt.title(
-            f"Member correlation for {guild}",
-            fontsize=fontsize,
-        )
+            # make graph look nice
+            plt.title(
+                f"Member correlation for {guild}",
+                fontsize=fontsize,
+            )
 
-        fig.savefig(save_path, dpi=fig.dpi)
-        plt.close()
+            fig.savefig(save_path, dpi=fig.dpi)
+            plt.close()
 
         adj_matrix.to_csv(table_save_path, index=True)
 
