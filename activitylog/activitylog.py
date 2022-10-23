@@ -1774,8 +1774,120 @@ class ActivityLogger(commands.Cog):
         os.remove(save_path)
         os.remove(table_save_path)
 
-    @graphstats.command(name="correlation")
-    async def graphstats_correlation(self, ctx, member: discord.Member):
+    @graphstats.group(name="correlation")
+    async def graphstats_corr(self, ctx):
+        """
+        Graph correlation graphs between users
+        """
+        pass
+
+    @graphstats_corr.command(name="guild")
+    async def graphstats_correlation_guild(self, ctx):
+        """
+        Create a table of how all members correlate with each other.
+
+        Because of the nature of drawing graphs, this will only output a csv file.
+
+        Please use the generated file with Gephi.
+        """
+        # build adjency matrix for graph
+        # edge weight is how many times someone replied with or has been in vc with someone else
+        # each node is a person
+        guild = ctx.guild
+        members = guild.members
+        adj_matrix = pd.DataFrame(
+            0,
+            index=[str(m.name) for m in members],
+            columns=[str(m.name) for m in members],
+            dtype=int,
+        )
+
+        # remove audit log entries
+        log_files = glob.glob(os.path.join(PATH, str(guild.id), "*.log"))
+        log_files = [log for log in log_files if "guild" not in log]
+
+        async with ctx.channel.typing():
+            # get messages split by channel
+            messages = await self.loop.run_in_executor(
+                None,
+                functools.partial(
+                    self.log_handler,
+                    log_files,
+                    guild.created_at,
+                    split_channels=True,
+                ),
+            )
+
+            def process_messages():
+                for ch_id, data in messages.items():
+                    channel = guild.get_channel(ch_id)
+                    # channel may be deleted, but still want to include message data
+                    if isinstance(channel, discord.VoiceChannel):
+                        # ignore for now, need to figure out how to filter out when the bot fails to log a user leaving
+                        pass
+                    else:
+                        for message in data:
+                            try:
+                                if "replied to" in message.split("(id:")[1].split("):")[0]:
+
+                                    # add correlation to matrix
+                                    user1_id = int(message.split("(id:")[1].split(")")[0])
+                                    user2_id = int(message.split("(id:")[2].split("):")[0])
+
+                                    user1 = guild.get_member(user1_id)
+                                    user2 = guild.get_member(user2_id)
+
+                                    # don't care about people who arent in the server
+                                    if user1 is None or user2 is None:
+                                        continue
+
+                                    if user1 == user2:
+                                        continue
+
+                                    # add 1 to weight between the two users
+                                    adj_matrix.loc[str(user1.name), str(user2.name)] += 1
+                                    adj_matrix.loc[str(user2.name), str(user1.name)] += 1
+                            except IndexError:
+                                continue
+                            except KeyError:  # not sure why this happens... TODO figure it out
+                                continue
+
+            await self.loop.run_in_executor(
+                None,
+                functools.partial(
+                    process_messages,
+                ),
+            )
+
+            # drop users who do not correlate to anyone else
+            for column in adj_matrix.columns:
+                try:
+                    if (adj_matrix.loc[column] == 0).all():
+                        adj_matrix = adj_matrix.drop(columns=column)
+                        adj_matrix = adj_matrix.drop(index=column)
+                except KeyError:  # not sure why this happens... TODO figure it out
+                    continue
+
+            # define table save paths
+            table_save_path = str(PATH / f"plot_data_{ctx.message.id}.txt")
+
+        adj_matrix.to_csv(table_save_path, index=True)
+
+        with open(table_save_path, "r") as t:
+            files = [discord.File(t, filename="graph_data.csv")]
+            await ctx.send(files=files)
+
+        os.remove(table_save_path)
+
+        # extra info
+        await ctx.send(
+            info(
+                "It is impossible to display the graph properly with large numbers of users, which would apply for most servers even with a handful of members. If you want to see the entire graph and interactively analyze it, please download the csv file and this software: https://gephi.org/\n\nThis software is available on all platforms and easy to visualize the entire graph.\n\nWhen you open gephi, go to `File > Import from spreadsheet` and select the `graph_data.csv` file generated. Then under the `Layout` panel on the left side, select the `Fruchterman Reingold` algorithm which will format the graph with the selected user in the middle and everyone else around them. You can then edit the labels and size of the graph using the icons on the bottom bar to visualize it."
+            )
+        )
+
+    @graphstats_corr.command(name="user")
+    async def graphstats_correlation_user(self, ctx, member: discord.Member):
         """
         Create a graph of how much a user interacts with others
         """
@@ -1785,13 +1897,11 @@ class ActivityLogger(commands.Cog):
         guild = ctx.guild
         members = guild.members
         adj_matrix = pd.DataFrame(
+            0,
             index=[str(m.name) for m in members],
             columns=[str(m.name) for m in members],
             dtype=int,
         )
-
-        for col in adj_matrix.columns:
-            adj_matrix[col].values[:] = 0
 
         # remove audit log entries
         log_files = glob.glob(os.path.join(PATH, str(guild.id), "*.log"))
@@ -1840,6 +1950,8 @@ class ActivityLogger(commands.Cog):
                                     adj_matrix.loc[str(user2.name), str(user1.name)] += 1
                             except IndexError:
                                 continue
+                            except KeyError:  # not sure why this happens... TODO figure it out
+                                continue
 
             await self.loop.run_in_executor(
                 None,
@@ -1850,11 +1962,21 @@ class ActivityLogger(commands.Cog):
 
             # drop users who do not correlate to anyone else
             for column in adj_matrix.columns:
-                if (adj_matrix.loc[member.name, column] == 0).all() and column != member.name:
-                    adj_matrix = adj_matrix.drop(columns=column)
-                    adj_matrix = adj_matrix.drop(index=column)
+                try:
+                    if (adj_matrix.loc[member.name, column] == 0).all() and column != member.name:
+                        adj_matrix = adj_matrix.drop(columns=column)
+                        adj_matrix = adj_matrix.drop(index=column)
+                except KeyError:  # not sure why this happens... TODO figure it out
+                    continue
 
-            graph = nx.from_pandas_adjacency(adj_matrix)
+            # only graph the most correlated people, since otherwise the graph is unreadable
+            sums = adj_matrix.sum().sort_values(ascending=False)
+            graph_cols = sums[:20]
+            # fix because networkx is dumb, see https://stackoverflow.com/questions/69349516/using-a-square-matrix-with-networkx-but-keep-getting-adjacency-matrix-not-square
+            stack = adj_matrix.loc[graph_cols.index, graph_cols.index].stack()
+            stack = stack[stack >= 1].rename_axis(("source", "target")).reset_index(name="weight")
+
+            graph = nx.from_pandas_edgelist(stack, edge_attr=True)
 
             # make graph and send it
             fontsize = 30
@@ -1876,7 +1998,7 @@ class ActivityLogger(commands.Cog):
 
             # make graph look nice
             plt.title(
-                f"Member correlation for {guild}",
+                f"Member correlation for {member} in {guild}",
                 fontsize=fontsize,
             )
 
@@ -1891,6 +2013,13 @@ class ActivityLogger(commands.Cog):
 
         os.remove(save_path)
         os.remove(table_save_path)
+
+        # extra info
+        await ctx.send(
+            info(
+                "The following graph is only shows the most correlated people, as for most servers it is impossible to display the graph properly with large numbers of users. If you want to see the entire graph and interactively analyze it, please download the csv file and this software: https://gephi.org/\n\nThis software is available on all platforms and easy to visualize the entire graph.\n\nWhen you open gephi, go to `File > Import from spreadsheet` and select the `graph_data.csv` file generated. Then under the `Layout` panel on the left side, select the `Fruchterman Reingold` algorithm which will format the graph with the selected user in the middle and everyone else around them. You can then edit the labels and size of the graph using the icons on the bottom bar to visualize it."
+            )
+        )
 
     @staticmethod
     def log_handler(log_files: list, end_time: datetime, start: datetime = None, split_channels: bool = False):
