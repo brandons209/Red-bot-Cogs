@@ -52,7 +52,11 @@ async def create_thread(
     }
     reason = "Punish Thread Creation"
 
-    r = Route("POST", "/channels/{channel_id}/threads", channel_id=channel.id,)
+    r = Route(
+        "POST",
+        "/channels/{channel_id}/threads",
+        channel_id=channel.id,
+    )
 
     return (await bot.http.request(r, json=fields, reason=reason))["id"]
 
@@ -67,6 +71,11 @@ async def add_user_thread(bot, channel: int, member: discord.Member):
     """
     reason = "Punish Add Member"
 
-    r = Route("POST", "/channels/{channel_id}/thread-members/{user_id}", channel_id=channel, user_id=member.id,)
+    r = Route(
+        "POST",
+        "/channels/{channel_id}/thread-members/{user_id}",
+        channel_id=channel,
+        user_id=member.id,
+    )
 
     return await bot.http.request(r, reason=reason)

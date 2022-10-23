@@ -1859,15 +1859,6 @@ class ActivityLogger(commands.Cog):
                 ),
             )
 
-            # drop users who do not correlate to anyone else
-            for column in adj_matrix.columns:
-                try:
-                    if (adj_matrix.loc[column] == 0).all():
-                        adj_matrix = adj_matrix.drop(columns=column)
-                        adj_matrix = adj_matrix.drop(index=column)
-                except KeyError:  # not sure why this happens... TODO figure it out
-                    continue
-
             # define table save paths
             table_save_path = str(PATH / f"plot_data_{ctx.message.id}.txt")
 
