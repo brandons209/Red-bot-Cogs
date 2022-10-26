@@ -1,7 +1,10 @@
 import asyncio
 import discord
 import random
+import matplotlib.pyplot as plt
+import pandas as pd
 from typing import Optional, Literal
+from io import BytesIO
 
 from redbot.core import Config, checks, commands
 from redbot.core.utils.chat_formatting import *
@@ -114,6 +117,49 @@ class ThreadRotate(commands.Cog):
         """
         pass
 
+    @thread_rotate.command(name="simulation")
+    async def thread_rotate_simulation(self, ctx, channel: discord.TextChannel):
+        """
+        Run a simulation using the settings for the channel to see how often topics are chosen.
+        """
+        topics = await self.config.channel(channel).topics()
+        if not topics:
+            await ctx.send(error("That channel has not been setup for thread rotation!"), delete_after=30)
+            return
+
+        topic_names = [k + f": {v}" for k, v in topics.items()]
+        dist = random.choices(topic_names, weights=list(topics.values()), k=10000 * len(topics))
+
+        # make graph and send it
+        fontsize = 30
+        fig = plt.figure(figsize=(50, 20 + 10 * (len(topics) % 10)))
+
+        # define graph and table save paths
+        save_path = BytesIO()
+
+        pd.Series(dist).value_counts(sort=False).plot(kind="barh")
+
+        # make graph look nice
+        plt.title(
+            f"Simulation for {channel} with {len(topics)} unique topics and {10000 * len(topics)} rotations",
+            fontsize=fontsize,
+        )
+        plt.xlabel("# of times chosen", fontsize=fontsize)
+        plt.ylabel("Topics and Weights", fontsize=fontsize)
+        plt.xticks(fontsize=fontsize)
+        plt.yticks(fontsize=fontsize)
+        plt.grid(True)
+
+        fig.tight_layout()
+
+        fig.savefig(save_path, dpi=fig.dpi)
+        plt.close()
+
+        save_path.seek(0)
+        files = [discord.File(save_path, filename="graph.png")]
+        await ctx.send(files=files)
+        save_path.close()
+
     @thread_rotate.command(name="manual")
     async def thread_rotate_manual(self, ctx, channel: discord.TextChannel):
         """
@@ -180,7 +226,9 @@ class ThreadRotate(commands.Cog):
         topic_msg = "Topics:\n"
         for topic, weight in current.items():
             topic_msg += f"{topic}: {weight}\n"
-        await ctx.send(box(topic_msg), delete_after=300)
+
+        for page in pagify(topic_msg):
+            await ctx.send(box(page), delete_after=300)
 
         await ctx.send(
             info(
@@ -218,14 +266,14 @@ class ThreadRotate(commands.Cog):
             except:
                 await ctx.send(
                     error(
-                        "Please make sure to use the correct format, every topic and weight should be split by a `:` and the weight should be a single decimal value greater than or equal to 0."
+                        "Please make sure to use the correct format, every topic and weight should be split by a `:` and the weight should be a single decimal value greater than or equal to 0. Topic {topic} caused this error."
                     ),
                     delete_after=60,
                 )
                 return
 
         await self.config.channel(channel).topics.set(parsed_topics)
-        await ctx.tick()
+        await ctx.send(info("Topics changed successfully!"), delete_after=60)
 
     @thread_rotate.command(name="clear")
     async def thread_rotate_clear(self, ctx, channel: discord.TextChannel):
@@ -376,7 +424,7 @@ class ThreadRotate(commands.Cog):
             except:
                 await ctx.send(
                     error(
-                        "Please make sure to use the correct format, every topic and weight should be split by a `:` and the weight should be a single decimal value greater than or equal to 0."
+                        "Please make sure to use the correct format, every topic and weight should be split by a `:` and the weight should be a single decimal value greater than or equal to 0. Topic {topic} caused this error."
                     ),
                     delete_after=60,
                 )
@@ -396,10 +444,11 @@ class ThreadRotate(commands.Cog):
             ),
             delete_after=300,
         )
-        await ctx.send(
-            box(topic_msg),
-            delete_after=300,
-        )
+        for page in pagify(topic_msg):
+            await ctx.send(
+                box(page),
+                delete_after=300,
+            )
 
         await ctx.send("Type yes to confirm the thread rotation, type no to cancel thread rotation setup.")
 
