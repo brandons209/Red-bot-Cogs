@@ -62,16 +62,17 @@ class NameChange(commands.Cog):
 
     async def init(self):
         await self.bot.wait_until_ready()
-
+        check_names = True
         while True:
-            await self.update_namechanges()
+            await self.update_namechanges(check_names=check_names)
             await asyncio.sleep(60)
+            check_names = False
 
     def cog_unload(self):
         if self.task is not None:
             self.task.cancel()
 
-    async def update_namechanges(self):
+    async def update_namechanges(self, check_names: bool = False):
         for guild in self.bot.guilds:
             to_remove = []
             to_change = {}
@@ -88,6 +89,9 @@ class NameChange(commands.Cog):
                     # name change is past due
                     to_change[member] = data
                     to_remove.append(member_id)
+                elif check_names and member.display_name != data["new_nick"]:
+                    # need to also check if anyone changed their name during bot's downtime and change them back
+                    await self.change_nickname(member, data["new_nick"])
 
             async with self.config.guild(guild).current_changes() as current_changes:
                 for id in to_remove:
