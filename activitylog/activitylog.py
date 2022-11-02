@@ -2000,8 +2000,13 @@ class ActivityLogger(commands.Cog):
                             data.remove(msg)
 
                         for i, message in enumerate(data):
-                            user1_id = int(message.split("(id:")[1].split(")")[0])
-                            user1 = guild.get_member(user1_id)
+                            try:
+                                user1_id = int(message.split("(id:")[1].split(")")[0])
+                                user1 = guild.get_member(user1_id)
+                            except IndexError:
+                                pass
+                            except KeyError:
+                                pass
                             if user1 is None:
                                 continue
 
