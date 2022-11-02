@@ -49,7 +49,10 @@ def parse_time(datetimestring: str):
 
 
 def parse_time_naive(datetimestring: str):
-    return parser.parse(datetimestring)
+    try:
+        return parser.parse(datetimestring)
+    except:
+        return None
 
 
 def parse_timedelta(argument: str) -> Optional[relativedelta]:
