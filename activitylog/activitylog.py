@@ -1954,7 +1954,10 @@ class ActivityLogger(commands.Cog):
                                     continue
 
                                 if "Voice channel join:" in message:
-                                    joined_at[user] = parse_time_naive(message[:19])
+                                    join_time = parse_time_naive(message[:19])
+                                    if join_time is None:
+                                        continue
+                                    joined_at[user] = join_time
                                     # check others in VC to make sure a leave wasnt missed, 24 hours should be a fine time
                                     to_delete = []
                                     for other_user, join_time in joined_at.items():
@@ -1964,7 +1967,10 @@ class ActivityLogger(commands.Cog):
                                     for u in to_delete:
                                         del joined_at[u]
                                 elif "Voice channel leave:" in message and user in joined_at:
-                                    time_in_vc = parse_time_naive(message[:19]) - joined_at[user]
+                                    leave_time = parse_time_naive(message[:19])
+                                    if leave_time is None:
+                                        continue
+                                    time_in_vc = leave_time - joined_at[user]
                                     minutes = np.floor(time_in_vc.total_seconds() / 60)
                                     if len(joined_at) > 2:
                                         corr_weight = (
@@ -2011,6 +2017,8 @@ class ActivityLogger(commands.Cog):
                                 continue
 
                             curr_msg_time = parse_time_naive(message[:19])
+                            if curr_msg_time is None:
+                                continue
 
                             try:
                                 if "replied to" in message.split("(id:")[1].split("):")[0]:
@@ -2042,7 +2050,7 @@ class ActivityLogger(commands.Cog):
 
                                     # filter out messages being too far away time wise
                                     prev_msg_time = parse_time_naive(prev_message[:19])
-                                    if curr_msg_time - prev_msg_time > CORR_MSG_DELTA:
+                                    if prev_msg_time is None or curr_msg_time - prev_msg_time > CORR_MSG_DELTA:
                                         continue
 
                                     adj_matrix[members[user1], members[user2]] += corr_weights["messages"][j - i]
@@ -2135,7 +2143,10 @@ class ActivityLogger(commands.Cog):
                                     continue
 
                                 if "Voice channel join:" in message:
-                                    joined_at[user] = parse_time_naive(message[:19])
+                                    join_time = parse_time_naive(message[:19])
+                                    if join_time is None:
+                                        continue
+                                    joined_at[user] = join_time
                                     # check others in VC to make sure a leave wasnt missed, 24 hours should be a fine time
                                     to_delete = []
                                     for other_user, join_time in joined_at.items():
@@ -2145,7 +2156,10 @@ class ActivityLogger(commands.Cog):
                                     for u in to_delete:
                                         del joined_at[u]
                                 elif "Voice channel leave:" in message and user in joined_at:
-                                    time_in_vc = parse_time_naive(message[:19]) - joined_at[user]
+                                    leave_time = parse_time_naive(message[:19])
+                                    if leave_time is None:
+                                        continue
+                                    time_in_vc = leave_time - joined_at[user]
                                     minutes = np.floor(time_in_vc.total_seconds() / 60)
                                     if len(joined_at) > 2:
                                         corr_weight = (
@@ -2194,6 +2208,8 @@ class ActivityLogger(commands.Cog):
                                 continue
 
                             curr_msg_time = parse_time_naive(message[:19])
+                            if curr_msg_time is None:
+                                continue
 
                             try:
                                 if "replied to" in message.split("(id:")[1].split("):")[0]:
@@ -2228,7 +2244,7 @@ class ActivityLogger(commands.Cog):
 
                                     # filter out messages being too far away time wise
                                     prev_msg_time = parse_time_naive(prev_message[:19])
-                                    if curr_msg_time - prev_msg_time > CORR_MSG_DELTA:
+                                    if prev_msg_time is None or curr_msg_time - prev_msg_time > CORR_MSG_DELTA:
                                         continue
 
                                     adj_matrix[members[user1], members[user2]] += corr_weights["messages"][j - i]
