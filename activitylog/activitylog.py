@@ -1927,149 +1927,158 @@ class ActivityLogger(commands.Cog):
         log_files = glob.glob(os.path.join(PATH, str(guild.id), "*.log"))
         log_files = [log for log in log_files if "guild" not in log]
 
-        async with ctx.channel.typing():
-            # get messages split by channel
-            messages = await self.loop.run_in_executor(
-                None,
-                functools.partial(
-                    self.log_handler,
-                    log_files,
-                    guild.created_at,
-                    split_channels=True,
-                ),
-            )
+        # get messages split by channel
+        messages = await self.loop.run_in_executor(
+            None,
+            functools.partial(
+                self.log_handler,
+                log_files,
+                guild.created_at,
+                split_channels=True,
+            ),
+        )
 
-            def process_messages():
-                for ch_id, data in messages.items():
-                    channel = guild.get_channel(ch_id)
-                    # channel may be deleted, but still want to include message data
-                    if isinstance(channel, discord.VoiceChannel):
-                        joined_at = {}
-                        # ignore for now, need to figure out how to filter out when the bot fails to log a user leaving
-                        for message in data:
+        async def process_messages():
+            progress_msg_str = "Processed {}/{} channels."
+            progress_msg = await ctx.send(progress_msg_str.format(0, len(messages)))
+            progress_index = 0
+            for ch_id, data in messages.items():
+                channel = guild.get_channel(ch_id)
+                # channel may be deleted, but still want to include message data
+                if isinstance(channel, discord.VoiceChannel):
+                    joined_at = {}
+                    # ignore for now, need to figure out how to filter out when the bot fails to log a user leaving
+                    for message in data:
+                        try:
+                            user_id = int(message.split("(id")[-1].split(")")[0].strip().strip(":"))
+                            user = guild.get_member(user_id)
+                            if not user:
+                                continue
+
+                            if "Voice channel join:" in message:
+                                join_time = parse_time_naive(message[:19])
+                                if join_time is None:
+                                    continue
+                                joined_at[user] = join_time
+                                # check others in VC to make sure a leave wasnt missed, 24 hours should be a fine time
+                                to_delete = []
+                                for other_user, join_time in joined_at.items():
+                                    time_in_vc = datetime.utcnow() - joined_at[user]
+                                    if time_in_vc > VOICE_TIME_LIMIT:
+                                        to_delete.append(other_user)
+                                for u in to_delete:
+                                    del joined_at[u]
+                            elif "Voice channel leave:" in message and user in joined_at:
+                                leave_time = parse_time_naive(message[:19])
+                                if leave_time is None:
+                                    continue
+                                time_in_vc = leave_time - joined_at[user]
+                                minutes = np.floor(time_in_vc.total_seconds() / 60)
+                                if len(joined_at) > 2:
+                                    corr_weight = (
+                                        corr_weights["vc_per_minute"]
+                                        * corr_weights["vc_people_multiplier"]
+                                        / (len(joined_at) - 2)
+                                    ) * minutes
+                                else:
+                                    corr_weight = corr_weights["vc_per_minute"] * minutes
+
+                                # add correlation data to everyone in the vc when someone leaves
+                                for other_user, join_time in joined_at.items():
+                                    if user == other_user:
+                                        continue
+                                    adj_matrix_voice[members[user], members[other_user]] += corr_weight
+                                    adj_matrix_voice[members[other_user], members[user]] += corr_weight
+
+                                del joined_at[user]
+                        except IndexError:
+                            pass
+                        except KeyError:  # happens if user rejoins after running this command
+                            pass
+                        except ValueError:
+                            pass
+                        await asyncio.sleep(0)
+                else:
+                    to_delete = []
+                    for message in data:
+                        # delete things like message edits
+                        if "edited message from" in message and "to read:" in message:
+                            to_delete.append(message)
+                        elif " deleted message from " in message:
+                            to_delete.append(message)
+                        await asyncio.sleep(0)
+
+                    for msg in to_delete:
+                        data.remove(msg)
+                        await asyncio.sleep(0)
+
+                    for i, message in enumerate(data):
+                        try:
+                            user1_id = int(message.split("(id:")[1].split(")")[0])
+                            user1 = guild.get_member(user1_id)
+                        except IndexError:
+                            pass
+                        except KeyError:
+                            pass
+                        if user1 is None:
+                            continue
+
+                        curr_msg_time = parse_time_naive(message[:19])
+                        if curr_msg_time is None:
+                            continue
+
+                        try:
+                            if "replied to" in message.split("(id:")[1].split("):")[0]:
+                                # add correlation to matrix
+                                user2_id = int(message.split("(id:")[2].split("):")[0])
+                                user2 = guild.get_member(user2_id)
+
+                                # don't care about people who arent in the server
+                                if not (user2 is None or user1 == user2):
+                                    adj_matrix[members[user1], members[user2]] += corr_weights["reply"]
+                                    adj_matrix[members[user2], members[user1]] += corr_weights["reply"]
+                                    continue
+                        except IndexError:
+                            pass
+                        except KeyError:  # happens if user rejoins after running this command
+                            pass
+                        except ValueError:
+                            pass
+
+                        # get messages around current message and add weights
+                        for j in range(max(i - 5, 0), i):
                             try:
-                                user_id = int(message.split("(id")[-1].split(")")[0].strip().strip(":"))
-                                user = guild.get_member(user_id)
-                                if not user:
+                                prev_message = data[j]
+                                user2 = int(prev_message.split("(id:")[1].split(")")[0])
+                                user2 = guild.get_member(user2)
+                                if user2 is None:
                                     continue
 
-                                if "Voice channel join:" in message:
-                                    join_time = parse_time_naive(message[:19])
-                                    if join_time is None:
-                                        continue
-                                    joined_at[user] = join_time
-                                    # check others in VC to make sure a leave wasnt missed, 24 hours should be a fine time
-                                    to_delete = []
-                                    for other_user, join_time in joined_at.items():
-                                        time_in_vc = datetime.utcnow() - joined_at[user]
-                                        if time_in_vc > VOICE_TIME_LIMIT:
-                                            to_delete.append(other_user)
-                                    for u in to_delete:
-                                        del joined_at[u]
-                                elif "Voice channel leave:" in message and user in joined_at:
-                                    leave_time = parse_time_naive(message[:19])
-                                    if leave_time is None:
-                                        continue
-                                    time_in_vc = leave_time - joined_at[user]
-                                    minutes = np.floor(time_in_vc.total_seconds() / 60)
-                                    if len(joined_at) > 2:
-                                        corr_weight = (
-                                            corr_weights["vc_per_minute"]
-                                            * corr_weights["vc_people_multiplier"]
-                                            / (len(joined_at) - 2)
-                                        ) * minutes
-                                    else:
-                                        corr_weight = corr_weights["vc_per_minute"] * minutes
+                                if user1 == user2:
+                                    continue
 
-                                    # add correlation data to everyone in the vc when someone leaves
-                                    for other_user, join_time in joined_at.items():
-                                        if user == other_user:
-                                            continue
-                                        adj_matrix_voice[members[user], members[other_user]] += corr_weight
-                                        adj_matrix_voice[members[other_user], members[user]] += corr_weight
+                                # filter out messages being too far away time wise
+                                prev_msg_time = parse_time_naive(prev_message[:19])
+                                if prev_msg_time is None or curr_msg_time - prev_msg_time > CORR_MSG_DELTA:
+                                    continue
 
-                                    del joined_at[user]
+                                adj_matrix[members[user1], members[user2]] += corr_weights["messages"][j - i]
                             except IndexError:
                                 pass
-                            except KeyError:  # not sure why this happens... TODO figure it out
+                            except KeyError:  # happens if user rejoins after running this command
                                 pass
-                            except ValueError:
-                                pass
-                    else:
-                        to_delete = []
-                        for message in data:
-                            # delete things like message edits
-                            if "edited message from" in message and "to read:" in message:
-                                to_delete.append(message)
-                            elif " deleted message from " in message:
-                                to_delete.append(message)
+                        await asyncio.sleep(0)
 
-                        for msg in to_delete:
-                            data.remove(msg)
+                progress_index += 1
+                try:
+                    await progress_msg.edit(content=progress_msg_str.format(progress_index, len(messages)))
+                except:
+                    progress_msg = await ctx.send(progress_msg_str.format(0, len(messages)))
 
-                        for i, message in enumerate(data):
-                            try:
-                                user1_id = int(message.split("(id:")[1].split(")")[0])
-                                user1 = guild.get_member(user1_id)
-                            except IndexError:
-                                pass
-                            except KeyError:
-                                pass
-                            if user1 is None:
-                                continue
+        await process_messages()
 
-                            curr_msg_time = parse_time_naive(message[:19])
-                            if curr_msg_time is None:
-                                continue
-
-                            try:
-                                if "replied to" in message.split("(id:")[1].split("):")[0]:
-                                    # add correlation to matrix
-                                    user2_id = int(message.split("(id:")[2].split("):")[0])
-                                    user2 = guild.get_member(user2_id)
-
-                                    # don't care about people who arent in the server
-                                    if not (user2 is None or user1 == user2):
-                                        adj_matrix[members[user1], members[user2]] += corr_weights["reply"]
-                                        adj_matrix[members[user2], members[user1]] += corr_weights["reply"]
-                                        continue
-                            except IndexError:
-                                pass
-                            except KeyError:  # not sure why this happens... TODO figure it out
-                                pass
-                            except ValueError:
-                                pass
-
-                            # get messages around current message and add weights
-                            for j in range(max(i - 5, 0), i):
-                                try:
-                                    prev_message = data[j]
-                                    user2 = int(prev_message.split("(id:")[1].split(")")[0])
-                                    user2 = guild.get_member(user2)
-                                    if user2 is None:
-                                        continue
-
-                                    if user1 == user2:
-                                        continue
-
-                                    # filter out messages being too far away time wise
-                                    prev_msg_time = parse_time_naive(prev_message[:19])
-                                    if prev_msg_time is None or curr_msg_time - prev_msg_time > CORR_MSG_DELTA:
-                                        continue
-
-                                    adj_matrix[members[user1], members[user2]] += corr_weights["messages"][j - i]
-                                except IndexError:
-                                    pass
-
-            await self.loop.run_in_executor(
-                None,
-                functools.partial(
-                    process_messages,
-                ),
-            )
-
-            # define table save paths
-            table_save_path = str(PATH / f"plot_data_{ctx.message.id}")
+        # define table save paths
+        table_save_path = str(PATH / f"plot_data_{ctx.message.id}")
 
         member_names = [m.name for m in members.keys()]
         adj_matrix = pd.DataFrame(data=adj_matrix, index=member_names, columns=member_names)
@@ -2120,211 +2129,218 @@ class ActivityLogger(commands.Cog):
         log_files = glob.glob(os.path.join(PATH, str(guild.id), "*.log"))
         log_files = [log for log in log_files if "guild" not in log]
 
-        async with ctx.channel.typing():
-            # get messages split by channel
-            messages = await self.loop.run_in_executor(
-                None,
-                functools.partial(
-                    self.log_handler,
-                    log_files,
-                    guild.created_at,
-                    split_channels=True,
-                ),
-            )
+        # get messages split by channel
+        messages = await self.loop.run_in_executor(
+            None,
+            functools.partial(
+                self.log_handler,
+                log_files,
+                guild.created_at,
+                split_channels=True,
+            ),
+        )
 
-            def process_messages():
-                for ch_id, data in messages.items():
-                    channel = guild.get_channel(ch_id)
-                    # channel may be deleted, but still want to include message data
-                    if isinstance(channel, discord.VoiceChannel):
-                        joined_at = {}
-                        # ignore for now, need to figure out how to filter out when the bot fails to log a user leaving
-                        for message in data:
+        async def process_messages():
+            progress_msg_str = "Processed {}/{} channels."
+            progress_msg = await ctx.send(progress_msg_str.format(0, len(messages)))
+            progress_index = 0
+            for ch_id, data in messages.items():
+                channel = guild.get_channel(ch_id)
+                # channel may be deleted, but still want to include message data
+                if isinstance(channel, discord.VoiceChannel):
+                    joined_at = {}
+                    # ignore for now, need to figure out how to filter out when the bot fails to log a user leaving
+                    for message in data:
+                        try:
+                            user_id = int(message.split("(id")[-1].split(")")[0].strip().strip(":"))
+                            user = guild.get_member(user_id)
+                            if not user:
+                                continue
+
+                            if "Voice channel join:" in message:
+                                join_time = parse_time_naive(message[:19])
+                                if join_time is None:
+                                    continue
+                                joined_at[user] = join_time
+                                # check others in VC to make sure a leave wasnt missed, 24 hours should be a fine time
+                                to_delete = []
+                                for other_user, join_time in joined_at.items():
+                                    time_in_vc = datetime.utcnow() - joined_at[user]
+                                    if time_in_vc > VOICE_TIME_LIMIT:
+                                        to_delete.append(other_user)
+                                for u in to_delete:
+                                    del joined_at[u]
+                            elif "Voice channel leave:" in message and user in joined_at:
+                                leave_time = parse_time_naive(message[:19])
+                                if leave_time is None:
+                                    continue
+                                time_in_vc = leave_time - joined_at[user]
+                                minutes = np.floor(time_in_vc.total_seconds() / 60)
+                                if len(joined_at) > 2:
+                                    corr_weight = (
+                                        corr_weights["vc_per_minute"]
+                                        * corr_weights["vc_people_multiplier"]
+                                        / (len(joined_at) - 2)
+                                    ) * minutes
+                                else:
+                                    corr_weight = corr_weights["vc_per_minute"] * minutes
+
+                                # add correlation data to everyone in the vc when someone leaves
+                                if user == member:
+                                    for other_user, join_time in joined_at.items():
+                                        if user == other_user:
+                                            continue
+                                        adj_matrix_voice[members[user], members[other_user]] += corr_weight
+                                        adj_matrix_voice[members[other_user], members[user]] += corr_weight
+                                else:
+                                    for other_user, join_time in joined_at.items():
+                                        if user == other_user or other_user != member:
+                                            continue
+                                        adj_matrix_voice[members[user], members[other_user]] += corr_weight
+                                        adj_matrix_voice[members[other_user], members[user]] += corr_weight
+
+                                del joined_at[user]
+                        except IndexError:
+                            pass
+                        except KeyError:  # happens if user rejoins after running this command
+                            pass
+                        except ValueError:
+                            pass
+                        await asyncio.sleep(0)
+                else:
+                    to_delete = []
+                    for message in data:
+                        # delete things like message edits
+                        if "edited message from" in message and "to read:" in message:
+                            to_delete.append(message)
+                        elif " deleted message from " in message:
+                            to_delete.append(message)
+                        await asyncio.sleep(0)
+
+                    for msg in to_delete:
+                        data.remove(msg)
+                        await asyncio.sleep(0)
+
+                    for i, message in enumerate(data):
+                        user1_id = int(message.split("(id:")[1].split(")")[0])
+                        user1 = guild.get_member(user1_id)
+                        if user1 is None:
+                            continue
+
+                        curr_msg_time = parse_time_naive(message[:19])
+                        if curr_msg_time is None:
+                            continue
+
+                        try:
+                            if "replied to" in message.split("(id:")[1].split("):")[0]:
+                                # add correlation to matrix
+                                user2_id = int(message.split("(id:")[2].split("):")[0])
+                                user2 = guild.get_member(user2_id)
+
+                                # don't care about people who arent in the server
+                                if not (user2 is None or user1 == user2) and (user1 == member or user2 == member):
+                                    adj_matrix[members[user1], members[user2]] += corr_weights["reply"]
+                                    adj_matrix[members[user2], members[user1]] += corr_weights["reply"]
+                                    continue
+                        except IndexError:
+                            pass
+                        except KeyError:  # happens if user rejoins after running this command
+                            pass
+                        except ValueError:
+                            pass
+                        await asyncio.sleep(0)
+                        # get messages around current message and add weights
+                        for j in range(max(i - 5, 0), i):
                             try:
-                                user_id = int(message.split("(id")[-1].split(")")[0].strip().strip(":"))
-                                user = guild.get_member(user_id)
-                                if not user:
+                                prev_message = data[j]
+                                user2 = int(prev_message.split("(id:")[1].split(")")[0])
+                                user2 = guild.get_member(user2)
+                                if user2 is None:
                                     continue
 
-                                if "Voice channel join:" in message:
-                                    join_time = parse_time_naive(message[:19])
-                                    if join_time is None:
-                                        continue
-                                    joined_at[user] = join_time
-                                    # check others in VC to make sure a leave wasnt missed, 24 hours should be a fine time
-                                    to_delete = []
-                                    for other_user, join_time in joined_at.items():
-                                        time_in_vc = datetime.utcnow() - joined_at[user]
-                                        if time_in_vc > VOICE_TIME_LIMIT:
-                                            to_delete.append(other_user)
-                                    for u in to_delete:
-                                        del joined_at[u]
-                                elif "Voice channel leave:" in message and user in joined_at:
-                                    leave_time = parse_time_naive(message[:19])
-                                    if leave_time is None:
-                                        continue
-                                    time_in_vc = leave_time - joined_at[user]
-                                    minutes = np.floor(time_in_vc.total_seconds() / 60)
-                                    if len(joined_at) > 2:
-                                        corr_weight = (
-                                            corr_weights["vc_per_minute"]
-                                            * corr_weights["vc_people_multiplier"]
-                                            / (len(joined_at) - 2)
-                                        ) * minutes
-                                    else:
-                                        corr_weight = corr_weights["vc_per_minute"] * minutes
+                                if user1 == user2:
+                                    continue
 
-                                    # add correlation data to everyone in the vc when someone leaves
-                                    if user == member:
-                                        for other_user, join_time in joined_at.items():
-                                            if user == other_user:
-                                                continue
-                                            adj_matrix_voice[members[user], members[other_user]] += corr_weight
-                                            adj_matrix_voice[members[other_user], members[user]] += corr_weight
-                                    else:
-                                        for other_user, join_time in joined_at.items():
-                                            if user == other_user or other_user != member:
-                                                continue
-                                            adj_matrix_voice[members[user], members[other_user]] += corr_weight
-                                            adj_matrix_voice[members[other_user], members[user]] += corr_weight
+                                if user1 != member and user2 != member:
+                                    continue
 
-                                    del joined_at[user]
+                                # filter out messages being too far away time wise
+                                prev_msg_time = parse_time_naive(prev_message[:19])
+                                if prev_msg_time is None or curr_msg_time - prev_msg_time > CORR_MSG_DELTA:
+                                    continue
+
+                                adj_matrix[members[user1], members[user2]] += corr_weights["messages"][j - i]
                             except IndexError:
                                 pass
-                            except KeyError:  # not sure why this happens... TODO figure it out
+                            except KeyError:  # happens if user rejoins after running this command
                                 pass
-                            except ValueError:
-                                pass
-                    else:
-                        to_delete = []
-                        for message in data:
-                            # delete things like message edits
-                            if "edited message from" in message and "to read:" in message:
-                                to_delete.append(message)
-                            elif " deleted message from " in message:
-                                to_delete.append(message)
+                        await asyncio.sleep(0)
 
-                        for msg in to_delete:
-                            data.remove(msg)
-
-                        for i, message in enumerate(data):
-                            user1_id = int(message.split("(id:")[1].split(")")[0])
-                            user1 = guild.get_member(user1_id)
-                            if user1 is None:
-                                continue
-
-                            curr_msg_time = parse_time_naive(message[:19])
-                            if curr_msg_time is None:
-                                continue
-
-                            try:
-                                if "replied to" in message.split("(id:")[1].split("):")[0]:
-                                    # add correlation to matrix
-                                    user2_id = int(message.split("(id:")[2].split("):")[0])
-                                    user2 = guild.get_member(user2_id)
-
-                                    # don't care about people who arent in the server
-                                    if not (user2 is None or user1 == user2) and (user1 == member or user2 == member):
-                                        adj_matrix[members[user1], members[user2]] += corr_weights["reply"]
-                                        adj_matrix[members[user2], members[user1]] += corr_weights["reply"]
-                                        continue
-                            except IndexError:
-                                pass
-                            except KeyError:  # not sure why this happens... TODO figure it out
-                                pass
-                            except ValueError:
-                                pass
-
-                            # get messages around current message and add weights
-                            for j in range(max(i - 5, 0), i):
-                                try:
-                                    prev_message = data[j]
-                                    user2 = int(prev_message.split("(id:")[1].split(")")[0])
-                                    user2 = guild.get_member(user2)
-                                    if user2 is None:
-                                        continue
-
-                                    if user1 == user2:
-                                        continue
-
-                                    if user1 != member and user2 != member:
-                                        continue
-
-                                    # filter out messages being too far away time wise
-                                    prev_msg_time = parse_time_naive(prev_message[:19])
-                                    if prev_msg_time is None or curr_msg_time - prev_msg_time > CORR_MSG_DELTA:
-                                        continue
-
-                                    adj_matrix[members[user1], members[user2]] += corr_weights["messages"][j - i]
-                                except IndexError:
-                                    pass
-
-            await self.loop.run_in_executor(
-                None,
-                functools.partial(
-                    process_messages,
-                ),
-            )
-
-            member_names = [m.name for m in members.keys()]
-            adj_matrix = pd.DataFrame(data=adj_matrix, index=member_names, columns=member_names)
-            adj_matrix_voice = pd.DataFrame(data=adj_matrix_voice, index=member_names, columns=member_names)
-            adj_matrix_all = (
-                adj_matrix + adj_matrix_voice
-            )  # have to add first otherwise tables dont line up for addition
-
-            # drop users who do not correlate to anyone else
-            for column in adj_matrix.columns:
+                progress_index += 1
                 try:
-                    if (adj_matrix.loc[member.name, column] == 0).all() and column != member.name:
-                        adj_matrix = adj_matrix.drop(columns=column)
-                        adj_matrix = adj_matrix.drop(index=column)
+                    await progress_msg.edit(content=progress_msg_str.format(progress_index, len(messages)))
+                except:
+                    progress_msg = await ctx.send(progress_msg_str.format(0, len(messages)))
 
-                    if (adj_matrix_voice.loc[member.name, column] == 0).all() and column != member.name:
-                        adj_matrix_voice = adj_matrix_voice.drop(columns=column)
-                        adj_matrix_voice = adj_matrix_voice.drop(index=column)
+        await process_messages()
 
-                    if (adj_matrix_all.loc[member.name, column] == 0).all() and column != member.name:
-                        adj_matrix_all = adj_matrix_all.drop(columns=column)
-                        adj_matrix_all = adj_matrix_all.drop(index=column)
-                except KeyError:  # not sure why this happens... TODO figure it out
-                    continue
+        member_names = [m.name for m in members.keys()]
+        adj_matrix = pd.DataFrame(data=adj_matrix, index=member_names, columns=member_names)
+        adj_matrix_voice = pd.DataFrame(data=adj_matrix_voice, index=member_names, columns=member_names)
+        adj_matrix_all = adj_matrix + adj_matrix_voice  # have to add first otherwise tables dont line up for addition
 
-            # only graph the most correlated people, since otherwise the graph is unreadable
-            sums = adj_matrix_all.sum().sort_values(ascending=False)
-            graph_cols = sums[:20]
-            # fix because networkx is dumb, see https://stackoverflow.com/questions/69349516/using-a-square-matrix-with-networkx-but-keep-getting-adjacency-matrix-not-square
-            stack = adj_matrix_all.loc[graph_cols.index, graph_cols.index].stack()
-            stack = stack[stack >= 1].rename_axis(("source", "target")).reset_index(name="weight")
+        # drop users who do not correlate to anyone else
+        for column in adj_matrix.columns:
+            try:
+                if (adj_matrix.loc[member.name, column] == 0).all() and column != member.name:
+                    adj_matrix = adj_matrix.drop(columns=column)
+                    adj_matrix = adj_matrix.drop(index=column)
 
-            graph = nx.from_pandas_edgelist(stack, edge_attr=True)
+                if (adj_matrix_voice.loc[member.name, column] == 0).all() and column != member.name:
+                    adj_matrix_voice = adj_matrix_voice.drop(columns=column)
+                    adj_matrix_voice = adj_matrix_voice.drop(index=column)
 
-            # make graph and send it
-            fontsize = 30
-            fig = plt.figure(figsize=(30, 30))
-            plt.axis("off")
+                if (adj_matrix_all.loc[member.name, column] == 0).all() and column != member.name:
+                    adj_matrix_all = adj_matrix_all.drop(columns=column)
+                    adj_matrix_all = adj_matrix_all.drop(index=column)
+            except KeyError:  # not sure why this happens... TODO figure it out
+                continue
 
-            # define graph and table save paths
-            save_path = str(PATH / f"plot_{ctx.message.id}.png")
-            table_save_path = str(PATH / f"plot_data_{ctx.message.id}")
+        # only graph the most correlated people, since otherwise the graph is unreadable
+        sums = adj_matrix_all.sum().sort_values(ascending=False)
+        graph_cols = sums[:20]
+        # fix because networkx is dumb, see https://stackoverflow.com/questions/69349516/using-a-square-matrix-with-networkx-but-keep-getting-adjacency-matrix-not-square
+        stack = adj_matrix_all.loc[graph_cols.index, graph_cols.index].stack()
+        stack = stack[stack >= 1].rename_axis(("source", "target")).reset_index(name="weight")
 
-            widths = nx.get_edge_attributes(graph, "weight")
-            widths = np.array(list(widths.values()))
-            # clamp widths
-            widths = np.clip(widths, 1, 15)
+        graph = nx.from_pandas_edgelist(stack, edge_attr=True)
 
-            pos = nx.spring_layout(graph, k=4)
+        # make graph and send it
+        fontsize = 30
+        fig = plt.figure(figsize=(30, 30))
+        plt.axis("off")
 
-            nx.draw(graph, pos=pos, with_labels=True, width=widths, font_size=fontsize, node_size=fontsize * 2500)
+        # define graph and table save paths
+        save_path = str(PATH / f"plot_{ctx.message.id}.png")
+        table_save_path = str(PATH / f"plot_data_{ctx.message.id}")
 
-            # make graph look nice
-            plt.title(
-                f"Member correlation for {member} in {guild}",
-                fontsize=fontsize,
-            )
+        widths = nx.get_edge_attributes(graph, "weight")
+        widths = np.array(list(widths.values()))
+        # clamp widths
+        widths = np.clip(widths, 1, 15)
 
-            fig.savefig(save_path, dpi=fig.dpi)
-            plt.close()
+        pos = nx.spring_layout(graph, k=4)
+
+        nx.draw(graph, pos=pos, with_labels=True, width=widths, font_size=fontsize, node_size=fontsize * 2500)
+
+        # make graph look nice
+        plt.title(
+            f"Member correlation for {member} in {guild}",
+            fontsize=fontsize,
+        )
+
+        fig.savefig(save_path, dpi=fig.dpi)
+        plt.close()
 
         adj_matrix.to_csv(table_save_path + "_text.txt", index=True)
         adj_matrix_voice.to_csv(table_save_path + "_voice.txt", index=True)
