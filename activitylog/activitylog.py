@@ -1948,7 +1948,7 @@ class ActivityLogger(commands.Cog):
                         # ignore for now, need to figure out how to filter out when the bot fails to log a user leaving
                         for message in data:
                             try:
-                                user_id = int(message.split("(id")[-1].split(")")[0].strip())
+                                user_id = int(message.split("(id")[-1].split(")")[0].strip().strip(":"))
                                 user = guild.get_member(user_id)
                                 if not user:
                                     continue
@@ -1993,6 +1993,8 @@ class ActivityLogger(commands.Cog):
                                 pass
                             except KeyError:  # not sure why this happens... TODO figure it out
                                 pass
+                            except ValueError:
+                                pass
                     else:
                         to_delete = []
                         for message in data:
@@ -2034,6 +2036,8 @@ class ActivityLogger(commands.Cog):
                             except IndexError:
                                 pass
                             except KeyError:  # not sure why this happens... TODO figure it out
+                                pass
+                            except ValueError:
                                 pass
 
                             # get messages around current message and add weights
@@ -2137,7 +2141,7 @@ class ActivityLogger(commands.Cog):
                         # ignore for now, need to figure out how to filter out when the bot fails to log a user leaving
                         for message in data:
                             try:
-                                user_id = int(message.split("(id")[-1].split(")")[0].strip())
+                                user_id = int(message.split("(id")[-1].split(")")[0].strip().strip(":"))
                                 user = guild.get_member(user_id)
                                 if not user:
                                     continue
@@ -2189,6 +2193,8 @@ class ActivityLogger(commands.Cog):
                                 pass
                             except KeyError:  # not sure why this happens... TODO figure it out
                                 pass
+                            except ValueError:
+                                pass
                     else:
                         to_delete = []
                         for message in data:
@@ -2225,6 +2231,8 @@ class ActivityLogger(commands.Cog):
                             except IndexError:
                                 pass
                             except KeyError:  # not sure why this happens... TODO figure it out
+                                pass
+                            except ValueError:
                                 pass
 
                             # get messages around current message and add weights
