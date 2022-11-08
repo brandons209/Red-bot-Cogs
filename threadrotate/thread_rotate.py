@@ -64,7 +64,7 @@ class ThreadRotate(commands.Cog):
         topic_threads = await self.config.channel(channel).topic_threads()
         ping_roles = await self.config.channel(channel).ping_roles()
         rotation = timedelta(seconds=await self.config.channel(channel).rotation_interval())
-        rotate_on = datetime.fromtimestamp(await self.config.channel(channel).rotate_on())
+        rotate_on = datetime.now()
         last_topic = await self.config.channel(channel).last_topic()
 
         # choose new topic
