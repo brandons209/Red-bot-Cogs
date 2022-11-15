@@ -1,0 +1,11 @@
+{
+    "author": [
+        "brandons209"
+    ],
+    "install_msg": "Thank you for installing my cog!",
+    "name": "Channel Control",
+    "description": "Suite of tools for controlling channels with the bot.",
+    "tags": [
+        "channel"
+    ]
+}
