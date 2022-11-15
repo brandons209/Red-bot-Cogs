@@ -54,14 +54,12 @@ class ChannelControl(commands.Cog):
         # update channel positions for new channels
         for guild in self.bot.guilds:
             locked = await self.config.guild(guild).locked()
-            if not locked:
-                continue
             all_channels = guild.text_channels + guild.voice_channels
             for channel in all_channels:
                 curr = await self.config.channel(channel).pos()
                 if curr == -1:
                     await self.config.channel(channel).pos.set(channel.position)
-                elif curr != channel.position:
+                elif curr != channel.position and locked:
                     # channel moved while bot was down, need to fix
                     try:
                         await channel.edit(position=curr)
