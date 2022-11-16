@@ -18,9 +18,7 @@ class ChannelControl(commands.Cog):
 
         self.config = Config.get_conf(self, identifier=4896413516576857, force_registration=True)
 
-        default_guild = {"locked": False}
-        default_channel = {"pos": -1}
-        self.config.register_channel(**default_channel)
+        default_guild = {"locked": False, "text_channels": {}, "voice_channels": {}}
         self.config.register_guild(**default_guild)
 
         self.task = asyncio.create_task(self.init())
@@ -51,18 +49,81 @@ class ChannelControl(commands.Cog):
         except RuntimeError:
             pass
 
-        # update channel positions for new channels
-        for guild in self.bot.guilds:
-            locked = await self.config.guild(guild).locked()
-            all_channels = guild.text_channels + guild.voice_channels
-            for channel in all_channels:
-                curr = await self.config.channel(channel).pos()
-                if curr == -1:
-                    await self.config.channel(channel).pos.set(channel.position)
-                elif curr != channel.position and locked:
-                    # channel moved while bot was down, need to fix
+        # update channel positions if channels are locked:
+        while True:
+            for guild in self.bot.guilds:
+                locked = await self.config.guild(guild).locked()
+                if not locked:
+                    continue
+                await self.set_channel_positions(guild)
+
+                await asyncio.sleep(1)
+
+            await asyncio.sleep(120)
+
+    def get_channel_positions(self, guild: discord.Guild):
+        text_channels = {}
+        voice_channels = {}
+
+        for cat in guild.categories:
+            text_channels[str(cat.id)] = {}
+            voice_channels[str(cat.id)] = {}
+            for channel in cat.text_channels:
+                text_channels[str(cat.id)][str(channel.id)] = channel.position
+            for channel in cat.voice_channels:
+                voice_channels[str(cat.id)][str(channel.id)] = channel.position
+
+        # make sure they are sorted
+        for cat in guild.categories:
+            text_channels[str(cat.id)] = {
+                k: v for k, v in sorted(text_channels[str(cat.id)].items(), key=lambda i: i[1])
+            }
+            voice_channels[str(cat.id)] = {
+                k: v for k, v in sorted(voice_channels[str(cat.id)].items(), key=lambda i: i[1])
+            }
+
+        return text_channels, voice_channels
+
+    async def set_channel_positions(self, guild: discord.Guild):
+        # these are in sorted order
+        text_channels = await self.config.guild(guild).text_channels()
+        voice_channels = await self.config.guild(guild).voice_channels()
+
+        for cat_id in text_channels.keys():
+            cat = guild.get_channel(int(cat_id))
+            if not cat:
+                continue
+            for ch_id, pos in text_channels[cat_id].items():
+                channel = guild.get_channel(int(ch_id))
+                if not channel:
+                    continue
+
+                # first check if channel is in right category
+                if channel.category_id != int(cat_id):
                     try:
-                        await channel.edit(position=curr)
+                        await channel.edit(category=cat, position=pos)
+                    except:
+                        pass
+                elif channel.position != pos:
+                    try:
+                        await channel.edit(position=pos)
+                    except:
+                        pass
+
+            for ch_id, pos in voice_channels[cat_id].items():
+                channel = guild.get_channel(int(ch_id))
+                if not channel:
+                    continue
+
+                # first check if channel is in right category
+                if channel.category_id != int(cat_id):
+                    try:
+                        await channel.edit(category=cat, position=pos)
+                    except:
+                        pass
+                elif channel.position != pos:
+                    try:
+                        await channel.edit(position=pos)
                     except:
                         pass
 
@@ -115,6 +176,10 @@ class ChannelControl(commands.Cog):
                 moderator=ctx.author,
             )
             await self.config.guild(ctx.guild).locked.set(toggle)
+            text_channels, voice_channels = self.get_channel_positions(ctx.guild)
+
+            await self.config.guild(ctx.guild).text_channels.set(text_channels)
+            await self.config.guild(ctx.guild).voice_channels.set(voice_channels)
         elif not toggle and locked:
             await ctx.send(info("Channels are unlocked and can be moved."), delete_after=30)
             await self.create_case(
@@ -129,25 +194,3 @@ class ChannelControl(commands.Cog):
             await ctx.send(info("Channel positions are already locked!"), delete_after=30)
         else:
             await ctx.send(info("Channel positions are already unlocked!"), delete_after=30)
-
-    @commands.Cog.listener()
-    async def on_guild_channel_create(self, channel: Union[discord.TextChannel, discord.VoiceChannel]):
-        await self.config.channel(channel).pos.set(channel.position)
-
-    @commands.Cog.listener()
-    async def on_guild_channel_update(
-        self,
-        before: Union[discord.TextChannel, discord.VoiceChannel],
-        after: Union[discord.TextChannel, discord.VoiceChannel],
-    ):
-        if before.position != after.position:
-            locked = await self.config.guild(before.guild).locked()
-            if locked:
-                pos = await self.config.channel(after).pos()
-                if pos != -1:  # this shouldnt happen, but its possible
-                    try:
-                        await after.edit(position=pos)
-                    except:
-                        pass
-            else:
-                await self.config.channel(after).pos.set(after.position)
