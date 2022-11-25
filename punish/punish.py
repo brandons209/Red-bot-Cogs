@@ -1306,7 +1306,8 @@ class Punish(commands.Cog):
             # modify case to include mention to thread channel for easy access
             if thread_id is not None:
                 try:
-                    edits = {"reason": reason + f"\n\n<#{thread_id}>"}
+                    new_reason = reason + f"\n\n<#{thread_id}>" if reason is not None else f"<#{thread_id}>"
+                    edits = {"reason": new_reason}
                     await case.edit(edits)
                 except Exception as e:
                     await ctx.send(warning(f"Couldn't edit case to add thread mention: {e}"))
