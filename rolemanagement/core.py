@@ -9,9 +9,19 @@ from typing import AsyncIterator, Tuple, Optional, Union, List, Dict, Literal
 
 import discord
 from discord.ext.commands import CogMeta as DPYCogMeta
-from redbot.core import checks, commands, bank
+from redbot.core import checks, commands, bank, modlog
 from redbot.core.config import Config
-from redbot.core.utils.chat_formatting import box, pagify, warning, humanize_list
+from redbot.core.utils.chat_formatting import (
+    box,
+    pagify,
+    warning,
+    humanize_list,
+    error,
+    info,
+)
+from redbot.core.utils.predicates import MessagePredicate
+from dateutil import parser
+from datetime import datetime
 
 from .events import EventMixin
 from .exceptions import (
@@ -60,8 +70,8 @@ class RoleManagement(
     Cog for role management
     """
 
-    __author__ = "mikeshardmind(Sinbad), DiscordLiz"
-    __version__ = "323.1.4"
+    __author__ = "mikeshardmind(Sinbad), DiscordLiz, Brandons209"
+    __version__ = "325.0.0"
 
     def format_help_for_context(self, ctx):
         pre_processed = super().format_help_for_context(ctx)
@@ -69,8 +79,12 @@ class RoleManagement(
 
     def __init__(self, bot):
         self.bot = bot
-        self.config = Config.get_conf(self, identifier=78631113035100160, force_registration=True)
-        self.config.register_global(handled_variation=False, handled_full_str_emoji=False)
+        self.config = Config.get_conf(
+            self, identifier=78631113035100160, force_registration=True
+        )
+        self.config.register_global(
+            handled_variation=False, handled_full_str_emoji=False
+        )
         self.config.register_role(
             exclusive_to={},
             requires_any=[],
@@ -84,13 +98,16 @@ class RoleManagement(
             subscription=0,
             subscribed_users={},
             dm_msg=None,
+            age_verification=None,
         )  # subscribed_users maps str(user.id)-> end time in unix timestamp
-        self.config.register_member(roles=[], forbidden=[])
+        self.config.register_member(roles=[], forbidden=[], birthday=None)
         self.config.init_custom("REACTROLE", 2)
         self.config.register_custom(
             "REACTROLE", roleid=None, channelid=None, guildid=None
         )  # ID : Message.id, str(React)
-        self.config.register_guild(notify_channel=None, s_roles=[], free_roles=[], join_roles=[])
+        self.config.register_guild(
+            notify_channel=None, s_roles=[], free_roles=[], join_roles=[], age_log=False
+        )
         self._ready = asyncio.Event()
         self._start_task: Optional[asyncio.Task] = None
         self.loop = asyncio.get_event_loop()
@@ -145,6 +162,19 @@ class RoleManagement(
 
             await self.config.custom("REACTROLE").set(data)
             await self.config.handled_full_str_emoji.set(True)
+
+        # register casetype for age
+        age_case = {
+            "name": "Date of Birth Added",
+            "default_setting": True,
+            "image": "🧓",
+            "case_str": "Date of Birth Added",
+        }
+
+        try:
+            await modlog.register_casetypes([age_case])
+        except RuntimeError:
+            pass
 
         self._ready.set()
 
@@ -225,7 +255,9 @@ class RoleManagement(
 
                         role_data = await self.sub_helper(guild, role, role_data)
 
-                        await self.config.role(role).subscribed_users.set(role_data["subscribed_users"])
+                        await self.config.role(role).subscribed_users.set(
+                            role_data["subscribed_users"]
+                        )
                         if len(role_data["subscribed_users"]) == 0:
                             s_roles.remove(role_id)
 
@@ -243,6 +275,32 @@ class RoleManagement(
     @commands.guild_only()
     @commands.bot_has_permissions(manage_roles=True)
     @checks.admin_or_permissions(manage_roles=True)
+    @commands.command()
+    async def changeage(self, ctx: GuildContext, member: discord.Member, birthday: str):
+        """
+        Manually update the birthday of a user.
+        """
+        try:
+            dob = parser.parse(birthday)
+        except:
+            await ctx.send(error("Invalid date format!"), delete_after=30)
+            return
+
+        if dob.year == datetime.now().year:
+            await ctx.send(
+                error(
+                    f"Invalid date format, please make sure to include your birth year."
+                ),
+                delete_after=30,
+            )
+            return
+
+        await self.config.member(member).birthday.set(dob.strftime("%m/%d/%Y"))
+        await ctx.tick()
+
+    @commands.guild_only()
+    @commands.bot_has_permissions(manage_roles=True)
+    @checks.admin_or_permissions(manage_roles=True)
     @commands.command(name="hackrole")
     async def hackrole(self, ctx: GuildContext, user_id: int, *, role: discord.Role):
         """
@@ -250,7 +308,9 @@ class RoleManagement(
         """
 
         if not await self.all_are_valid_roles(ctx, role):
-            return await ctx.maybe_send_embed("Can't do that. Discord role heirarchy applies here.")
+            return await ctx.maybe_send_embed(
+                "Can't do that. Discord role heirarchy applies here."
+            )
 
         if not await self.config.role(role).sticky():
             return await ctx.send("This only works on sticky roles.")
@@ -266,7 +326,9 @@ class RoleManagement(
                 await ctx.maybe_send_embed("They are in the guild...assigned anyway.")
         else:
 
-            async with self.config.member_from_ids(ctx.guild.id, user_id).roles() as sticky:
+            async with self.config.member_from_ids(
+                ctx.guild.id, user_id
+            ).roles() as sticky:
                 if role.id not in sticky:
                     sticky.append(role.id)
 
@@ -327,7 +389,9 @@ class RoleManagement(
         """
 
         if not await self.all_are_valid_roles(ctx, role):
-            return await ctx.maybe_send_embed("Can't do that. Discord role heirarchy applies here.")
+            return await ctx.maybe_send_embed(
+                "Can't do that. Discord role heirarchy applies here."
+            )
 
         try:
             message = await channel.fetch_message(msgid)
@@ -352,7 +416,9 @@ class RoleManagement(
             try:
                 await message.add_reaction(_emoji)
             except discord.HTTPException:
-                return await ctx.maybe_send_embed("Hmm, that message couldn't be reacted to")
+                return await ctx.maybe_send_embed(
+                    "Hmm, that message couldn't be reacted to"
+                )
 
         cfg = self.config.custom("REACTROLE", str(message.id), eid)
         await cfg.set(
@@ -372,15 +438,21 @@ class RoleManagement(
     @commands.bot_has_permissions(manage_roles=True)
     @checks.admin_or_permissions(manage_guild=True)
     @commands.command(name="roleunbind")
-    async def unbind_role_from_reactions(self, ctx: commands.Context, role: discord.Role, msgid: int, emoji: str):
+    async def unbind_role_from_reactions(
+        self, ctx: commands.Context, role: discord.Role, msgid: int, emoji: str
+    ):
         """
         unbinds a role from a reaction on a message
         """
 
         if not await self.all_are_valid_roles(ctx, role):
-            return await ctx.maybe_send_embed("Can't do that. Discord role heirarchy applies here.")
+            return await ctx.maybe_send_embed(
+                "Can't do that. Discord role heirarchy applies here."
+            )
 
-        await self.config.custom("REACTROLE", f"{msgid}", self.strip_variations(emoji)).clear()
+        await self.config.custom(
+            "REACTROLE", f"{msgid}", self.strip_variations(emoji)
+        ).clear()
         await ctx.tick()
 
     @commands.guild_only()
@@ -393,8 +465,37 @@ class RoleManagement(
         """
         pass
 
+    @rgroup.command(name="age")
+    async def rg_age_verification(self, ctx, role: discord.Role, age: int):
+        """
+        Add an age verification requirement for a role
+
+        Users will have to give the bot their birthdate in order to obtain a role.
+
+        An age of 0 will disable age verification.
+        """
+        if age == 0:
+            await self.config.role(role).age_verification.set(None)
+        elif age < 0:
+            await ctx.send(error("Age must be greater than or equal to 0."))
+            return
+        else:
+            await self.config.role(role).age_verification.set(age)
+
+        await ctx.tick()
+
+    @rgroup.command(name="agelog")
+    async def rg_age_verification_log(self, ctx, log: bool):
+        """
+        Log age verification to modlog
+        """
+        await self.config.guild(ctx.guild).age_log.set(log)
+        await ctx.tick()
+
     @rgroup.command(name="addwith")
-    async def rg_addwith(self, ctx: GuildContext, add_role: discord.Role, *roles: discord.Role):
+    async def rg_addwith(
+        self, ctx: GuildContext, add_role: discord.Role, *roles: discord.Role
+    ):
         """
         Sets a list of roles to add to a user when they receive
         the role specifed by `add_role`
@@ -426,7 +527,12 @@ class RoleManagement(
 
         use_embeds = await ctx.embed_requested()
         react_roles = "\n".join(
-            [msg async for msg in self.build_messages_for_react_roles(*ctx.guild.roles, use_embeds=use_embeds)]
+            [
+                msg
+                async for msg in self.build_messages_for_react_roles(
+                    *ctx.guild.roles, use_embeds=use_embeds
+                )
+            ]
         )
 
         if not react_roles:
@@ -437,7 +543,9 @@ class RoleManagement(
 
         color = await ctx.embed_colour() if use_embeds else None
 
-        for page in pagify(react_roles, escape_mass_mentions=False, page_length=1800, shorten_by=0):
+        for page in pagify(
+            react_roles, escape_mass_mentions=False, page_length=1800, shorten_by=0
+        ):
             # unrolling iterative calling of ctx.maybe_send_embed
             if use_embeds:
                 await ctx.send(embed=discord.Embed(description=page, color=color))
@@ -445,7 +553,9 @@ class RoleManagement(
                 await ctx.send(page)
 
     @rgroup.command(name="dm-message")
-    async def rg_dm_message(self, ctx: GuildContext, role: discord.Role, *, msg: str = None):
+    async def rg_dm_message(
+        self, ctx: GuildContext, role: discord.Role, *, msg: str = None
+    ):
         """
         Set message to DM to user when they obtain the role.
         Will send it in the channel they ran the command if DM fails to send.
@@ -511,7 +621,9 @@ class RoleManagement(
             return
         roles = [ctx.guild.get_role(role) for role in roles]
         missing = len([role for role in roles if role is None])
-        roles = [f"{i+1}.{role.name}" for i, role in enumerate(roles) if role is not None]
+        roles = [
+            f"{i+1}.{role.name}" for i, role in enumerate(roles) if role is not None
+        ]
 
         msg = "\n".join(sorted(roles))
         msg = pagify(msg)
@@ -532,13 +644,19 @@ class RoleManagement(
             f"\n{'is' if rsets['sticky'] else 'is not'} sticky."
         )
         if rsets["requires_any"]:
-            rstring = ", ".join(r.name for r in ctx.guild.roles if r.id in rsets["requires_any"])
+            rstring = ", ".join(
+                r.name for r in ctx.guild.roles if r.id in rsets["requires_any"]
+            )
             output += f"\nThis role requires any of the following roles: {rstring}"
         if rsets["requires_all"]:
-            rstring = ", ".join(r.name for r in ctx.guild.roles if r.id in rsets["requires_all"])
+            rstring = ", ".join(
+                r.name for r in ctx.guild.roles if r.id in rsets["requires_all"]
+            )
             output += f"\nThis role requires all of the following roles: {rstring}"
         if rsets["add_with"]:
-            rstring = ", ".join(r.name for r in ctx.guild.roles if r.id in rsets["add_with"])
+            rstring = ", ".join(
+                r.name for r in ctx.guild.roles if r.id in rsets["add_with"]
+            )
             output += f"\nThis role when added will also be added with the following roles: {rstring}"
         if rsets["exclusive_to"]:
             rstring = ""
@@ -562,11 +680,17 @@ class RoleManagement(
             dm_msg = rsets["dm_msg"]
             output += f"\nDM Message: {box(dm_msg)}"
 
+        if rsets["age_verification"]:
+            age = rsets["age_verification"]
+            output += f"\nMinimum Age: `{age}`"
+
         for page in pagify(output):
             await ctx.send(page)
 
     @rgroup.command(name="cost")
-    async def make_purchasable(self, ctx: GuildContext, cost: int, *, role: discord.Role):
+    async def make_purchasable(
+        self, ctx: GuildContext, cost: int, *, role: discord.Role
+    ):
         """
         Makes a role purchasable for a specified cost.
         Cost must be a number greater than 0.
@@ -579,7 +703,9 @@ class RoleManagement(
         """
 
         if not await self.all_are_valid_roles(ctx, role):
-            return await ctx.maybe_send_embed("Can't do that. Discord role heirarchy applies here.")
+            return await ctx.maybe_send_embed(
+                "Can't do that. Discord role heirarchy applies here."
+            )
 
         if cost < 0:
             return await ctx.send_help()
@@ -607,7 +733,9 @@ class RoleManagement(
            (etc)
         """
         if not await self.all_are_valid_roles(ctx, role):
-            return await ctx.maybe_send_embed("Can't do that. Discord role heirarchy applies here.")
+            return await ctx.maybe_send_embed(
+                "Can't do that. Discord role heirarchy applies here."
+            )
         role_cost = await self.config.role(role).cost()
 
         if role_cost == 0:
@@ -630,7 +758,9 @@ class RoleManagement(
         await ctx.send(f"Subscription set to {parse_seconds(time.total_seconds())}.")
 
     @rgroup.command(name="forbid")
-    async def forbid_role(self, ctx: GuildContext, role: discord.Role, *, user: discord.Member):
+    async def forbid_role(
+        self, ctx: GuildContext, role: discord.Role, *, user: discord.Member
+    ):
         """
         Forbids a user from gaining a specific role.
         """
@@ -642,7 +772,9 @@ class RoleManagement(
         await ctx.tick()
 
     @rgroup.command(name="unforbid")
-    async def unforbid_role(self, ctx: GuildContext, role: discord.Role, *, user: discord.Member):
+    async def unforbid_role(
+        self, ctx: GuildContext, role: discord.Role, *, user: discord.Member
+    ):
         """
         Unforbids a user from gaining a specific role.
         """
@@ -654,7 +786,9 @@ class RoleManagement(
         await ctx.tick()
 
     @rgroup.command(name="exclusive")
-    async def set_exclusivity(self, ctx: GuildContext, group: str, *roles: discord.Role):
+    async def set_exclusivity(
+        self, ctx: GuildContext, group: str, *roles: discord.Role
+    ):
         """
         Set exclusive roles for group
         Takes 2 or more roles and sets them as exclusive to eachother
@@ -672,12 +806,16 @@ class RoleManagement(
             async with self.config.role(role).exclusive_to() as ex_list:
                 if group not in ex_list.keys():
                     ex_list[group] = []
-                ex_list[group].extend([r.id for r in _roles if r != role and r.id not in ex_list[group]])
+                ex_list[group].extend(
+                    [r.id for r in _roles if r != role and r.id not in ex_list[group]]
+                )
 
         await ctx.tick()
 
     @rgroup.command(name="unexclusive")
-    async def unset_exclusivity(self, ctx: GuildContext, group: str, *roles: discord.Role):
+    async def unset_exclusivity(
+        self, ctx: GuildContext, group: str, *roles: discord.Role
+    ):
         """
         Remove exclusive roles for group
         Takes any number of roles, and removes their exclusivity settings
@@ -695,21 +833,29 @@ class RoleManagement(
             ex_list = await self.config.role(role).exclusive_to()
             if group not in ex_list.keys():
                 continue
-            ex_list[group] = [idx for idx in ex_list if idx not in [r.id for r in _roles]]
+            ex_list[group] = [
+                idx for idx in ex_list if idx not in [r.id for r in _roles]
+            ]
             if not ex_list[group]:
                 del ex_list[group]
             await self.config.role(role).exclusive_to.set(ex_list)
         await ctx.tick()
 
     @rgroup.command(name="sticky")
-    async def setsticky(self, ctx: GuildContext, role: discord.Role, sticky: bool = None):
+    async def setsticky(
+        self, ctx: GuildContext, role: discord.Role, sticky: bool = None
+    ):
         """
         sets a role as sticky if used without a settings, gets the current ones
         """
 
         if sticky is None:
             is_sticky = await self.config.role(role).sticky()
-            return await ctx.send("{role} {verb} sticky".format(role=role.name, verb=("is" if is_sticky else "is not")))
+            return await ctx.send(
+                "{role} {verb} sticky".format(
+                    role=role.name, verb=("is" if is_sticky else "is not")
+                )
+            )
 
         await self.config.role(role).sticky.set(sticky)
         if sticky:
@@ -745,7 +891,9 @@ class RoleManagement(
         await ctx.tick()
 
     @rgroup.command(name="selfrem")
-    async def selfrem(self, ctx: GuildContext, role: discord.Role, removable: bool = None):
+    async def selfrem(
+        self, ctx: GuildContext, role: discord.Role, removable: bool = None
+    ):
         """
         Sets if a role is self-removable (default False)
 
@@ -755,14 +903,18 @@ class RoleManagement(
         if removable is None:
             is_removable = await self.config.role(role).self_removable()
             return await ctx.send(
-                "{role} {verb} self-removable".format(role=role.name, verb=("is" if is_removable else "is not"))
+                "{role} {verb} self-removable".format(
+                    role=role.name, verb=("is" if is_removable else "is not")
+                )
             )
 
         await self.config.role(role).self_removable.set(removable)
         await ctx.tick()
 
     @rgroup.command(name="selfadd")
-    async def selfadd(self, ctx: GuildContext, role: discord.Role, assignable: bool = None):
+    async def selfadd(
+        self, ctx: GuildContext, role: discord.Role, assignable: bool = None
+    ):
         """
         Sets if a role is self-assignable via command
 
@@ -774,7 +926,9 @@ class RoleManagement(
         if assignable is None:
             is_assignable = await self.config.role(role).self_role()
             return await ctx.send(
-                "{role} {verb} self-assignable".format(role=role.name, verb=("is" if is_assignable else "is not"))
+                "{role} {verb} self-assignable".format(
+                    role=role.name, verb=("is" if is_assignable else "is not")
+                )
             )
 
         await self.config.role(role).self_role.set(assignable)
@@ -823,7 +977,9 @@ class RoleManagement(
             return
         roles = [ctx.guild.get_role(role) for role in roles]
         missing = len([role for role in roles if role is None])
-        roles = [f"{i+1}.{role.name}" for i, role in enumerate(roles) if role is not None]
+        roles = [
+            f"{i+1}.{role.name}" for i, role in enumerate(roles) if role is not None
+        ]
 
         msg = "\n".join(sorted(roles))
         msg = pagify(msg)
@@ -868,7 +1024,9 @@ class RoleManagement(
         embed = discord.Embed(title="Roles", colour=ctx.guild.me.colour)
         embed.set_footer(text="You can only have one role in the same unique group!")
         i = 0
-        for role, (cost, sub, ex_groups) in sorted(data.items(), key=lambda kv: kv[1][0]):
+        for role, (cost, sub, ex_groups) in sorted(
+            data.items(), key=lambda kv: kv[1][0]
+        ):
             if ex_groups:
                 groups = humanize_list(list(ex_groups.keys()))
             else:
@@ -904,7 +1062,9 @@ class RoleManagement(
             cost = await self.config.role(role).cost()
             subscription = await self.config.role(role).subscription()
         except PermissionOrHierarchyException:
-            await ctx.send("I cannot assign roles which I can not manage. (Discord Hierarchy)")
+            await ctx.send(
+                "I cannot assign roles which I can not manage. (Discord Hierarchy)"
+            )
         except MissingRequirementsException as e:
             msg = ""
             if e.miss_all:
@@ -922,16 +1082,27 @@ class RoleManagement(
             )
         else:
             if not eligible:
-                return await ctx.send(f"You aren't allowed to add `{role}` to yourself {ctx.author.mention}!")
+                return await ctx.send(
+                    f"You aren't allowed to add `{role}` to yourself {ctx.author.mention}!"
+                )
 
             if not cost:
-                return await ctx.send("This role doesn't have a cost. Please try again using `[p]selfrole add`.")
+                return await ctx.send(
+                    "This role doesn't have a cost. Please try again using `[p]selfrole add`."
+                )
+
+            if not await self.verify_age(role, ctx=ctx):
+                return await ctx.send(
+                    "You do not meet the minimum age requiremnt for this role, if you think this is an error please contact a staff member."
+                )
 
             free_roles = await self.config.guild(ctx.guild).free_roles()
             currency_name = await bank.get_currency_name(ctx.guild)
             for m_role in ctx.author.roles:
                 if m_role.id in free_roles:
-                    await ctx.send(f"You're special, no {currency_name} will be deducted from your account.")
+                    await ctx.send(
+                        f"You're special, no {currency_name} will be deducted from your account."
+                    )
                     cost = 0
                     # await self.update_roles_atomically(who=ctx.author, give=[role], remove=remove)
                     # await ctx.tick()
@@ -941,11 +1112,15 @@ class RoleManagement(
                 if cost > 0:
                     await bank.withdraw_credits(ctx.author, cost)
             except ValueError:
-                return await ctx.send(f"You don't have enough {currency_name} (Cost: {cost} {currency_name})")
+                return await ctx.send(
+                    f"You don't have enough {currency_name} (Cost: {cost} {currency_name})"
+                )
             else:
                 if subscription > 0:
                     if cost > 0:
-                        await ctx.send(f"{role.name} will be renewed every {parse_seconds(subscription)}")
+                        await ctx.send(
+                            f"{role.name} will be renewed every {parse_seconds(subscription)}"
+                        )
                     async with self.config.role(role).subscribed_users() as s:
                         s[str(ctx.author.id)] = time.time() + subscription
                     async with self.config.guild(ctx.guild).s_roles() as s:
@@ -957,7 +1132,9 @@ class RoleManagement(
                     await ctx.send(
                         f"Removed `{humanize_list([r.name for r in remove])}` role{plural} since they are exclusive to the role you added."
                     )
-                await self.update_roles_atomically(who=ctx.author, give=[role], remove=remove)
+                await self.update_roles_atomically(
+                    who=ctx.author, give=[role], remove=remove
+                )
                 await self.dm_user(ctx, role)
                 await ctx.tick()
 
@@ -974,7 +1151,9 @@ class RoleManagement(
             eligible = await self.config.role(role).self_role()
             cost = await self.config.role(role).cost()
         except PermissionOrHierarchyException:
-            await ctx.send("I cannot assign roles which I can not manage. (Discord Hierarchy)")
+            await ctx.send(
+                "I cannot assign roles which I can not manage. (Discord Hierarchy)"
+            )
         except MissingRequirementsException as e:
             msg = ""
             if e.miss_all:
@@ -992,11 +1171,19 @@ class RoleManagement(
             )
         else:
             if not eligible:
-                await ctx.send(f"You aren't allowed to add `{role}` to yourself {ctx.author.mention}!")
+                await ctx.send(
+                    f"You aren't allowed to add `{role}` to yourself {ctx.author.mention}!"
+                )
+
+            elif not await self.verify_age(role, ctx=ctx):
+                return await ctx.send(
+                    "You do not meet the minimum age requiremnt for this role, if you think this is an error please contact a staff member."
+                )
 
             elif cost:
                 await ctx.send(
-                    "This role is not free. " "Please use `[p]selfrole buy` if you would like to purchase it."
+                    "This role is not free. "
+                    "Please use `[p]selfrole buy` if you would like to purchase it."
                 )
             else:
                 if remove:
@@ -1004,7 +1191,9 @@ class RoleManagement(
                     await ctx.send(
                         f"Removed `{humanize_list([r.name for r in remove])}` role{plural} since they are exclusive to the role you added."
                     )
-                await self.update_roles_atomically(who=ctx.author, give=[role], remove=remove)
+                await self.update_roles_atomically(
+                    who=ctx.author, give=[role], remove=remove
+                )
                 await self.dm_user(ctx, role)
                 await ctx.tick()
 
@@ -1025,11 +1214,15 @@ class RoleManagement(
                 pass
             await ctx.tick()
         else:
-            await ctx.send(f"You aren't allowed to remove `{role}` from yourself {ctx.author.mention}!`")
+            await ctx.send(
+                f"You aren't allowed to remove `{role}` from yourself {ctx.author.mention}!`"
+            )
 
     # Stuff for clean interaction with react role entries
 
-    async def build_messages_for_react_roles(self, *roles: discord.Role, use_embeds=True) -> AsyncIterator[str]:
+    async def build_messages_for_react_roles(
+        self, *roles: discord.Role, use_embeds=True
+    ) -> AsyncIterator[str]:
         """
         Builds info.
 
@@ -1055,19 +1248,133 @@ class RoleManagement(
                     )
                 else:
                     link = (
-                        f"unknown message with id {message_id}" f" (use `roleset fixup` to find missing data for this)"
+                        f"unknown message with id {message_id}"
+                        f" (use `roleset fixup` to find missing data for this)"
                     )
 
                 emoji: Union[discord.Emoji, str]
                 if emoji_info.isdigit():
                     emoji = (
-                        discord.utils.get(self.bot.emojis, id=int(emoji_info)) or f"A custom enoji with id {emoji_info}"
+                        discord.utils.get(self.bot.emojis, id=int(emoji_info))
+                        or f"A custom enoji with id {emoji_info}"
                     )
                 else:
                     emoji = emoji_info
 
                 react_m = f"{role.name} is bound to {emoji} on {link}"
                 yield react_m
+
+    async def verify_age(
+        self,
+        role: discord.Role,
+        ctx: GuildContext = None,
+        member: discord.Member = None,
+    ) -> bool:
+        """
+        Verify age of a user.
+
+        Returns True if age is successfully verified, false otherwise.
+        """
+        if ctx is not None:
+            member = ctx.author
+
+        guild = member.guild
+        dob = await self.config.member(member).birthday()
+        min_age = await self.config.role(role).age_verification()
+        age_log = await self.config.guild(guild).age_log()
+        today = datetime.utcnow().date()
+
+        if min_age is None:
+            return True
+
+        if dob is not None:
+            dob = parser.parse(dob).date()
+            age = today.year - dob.year
+
+            # check to see if their birthday has passed
+            dob = dob.replace(year=today.year)
+            if dob > today:
+                # birthday hasn't passed, subtract one from age
+                age -= 1
+
+            return age > min_age
+
+        if ctx is not None:
+            await ctx.send(
+                info(
+                    "Please check your DMs with me in order to continue getting this role!"
+                ),
+                delete_after=30,
+            )
+
+        # get dob of user
+        try:
+            age_msg = f"Hello! In order to get the `{role}` role in `{guild}`, you must provide your **full date of birth** in order to verify your age. Please send it here."
+            await member.send(age_msg)
+            pred = MessagePredicate.same_context(user=member)
+            msg = await self.bot.wait_for("message", check=pred, timeout=60)
+        except discord.Forbidden:  # TODO: send message in guild telling user to allow dms?
+            return False
+        except discord.HTTPException:
+            return False
+        except asyncio.TimeoutError:
+            await member.send(
+                error(
+                    f"Took too long, the {role} role has not been added to you in {guild}!\nPlease try again."
+                ),
+                delete_after=30,
+            )
+            return False
+
+        try:
+            dob = parser.parse(msg.content.strip())
+        except:
+            await member.send(
+                error(
+                    f"Invalid date format, the {role} role has not been added to you in {guild}!\nPlease try again."
+                ),
+                delete_after=30,
+            )
+            return False
+
+        dob = dob.date()
+        if dob.year == today.year:
+            await member.send(
+                error(
+                    f"Invalid date format, please make sure to include your birth year, the {role} role has not been added to you in {guild}!\nPlease try again."
+                ),
+                delete_after=30,
+            )
+            return False
+
+        dob_str = dob.strftime("%m/%d/%Y")
+        await member.send(
+            f"Thank you! Please check back in `{guild}` to confirm you obtained the role. If not, you may not meet the age requirement for the role."
+        )
+        await self.config.member(member).birthday.set(dob_str)
+        if age_log:
+            try:
+                await modlog.create_case(
+                    self.bot,
+                    guild,
+                    datetime.now(),
+                    "Date of Birth Added",
+                    member,
+                    moderator=member,
+                    reason=f"Date of birth added for `{member}`: `{dob_str}`\n\nRole: `{role}`",
+                )
+            except:  # TODO: warn staff
+                pass
+
+        age = today.year - dob.year
+
+        # check to see if their birthday has passed
+        dob = dob.replace(year=today.year)
+        if dob > today:
+            # birthday hasn't passed, subtract one from age
+            age -= 1
+
+        return age > min_age
 
     async def dm_user(self, ctx: GuildContext, role: discord.Role):
         """
@@ -1085,7 +1392,9 @@ class RoleManagement(
             )
             await ctx.send(dm_msg)
 
-    async def get_react_role_entries(self, role: discord.Role) -> AsyncIterator[Tuple[str, str, dict]]:
+    async def get_react_role_entries(
+        self, role: discord.Role
+    ) -> AsyncIterator[Tuple[str, str, dict]]:
         """
         yields:
             str, str, dict

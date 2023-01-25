@@ -68,7 +68,9 @@ class EventMixin(MixinMeta):
         for r in gained:
             add_with = await self.config.role_from_id(r).add_with()
             if add_with:
-                to_add = [discord.utils.get(after.guild.roles, id=add) for add in add_with]
+                to_add = [
+                    discord.utils.get(after.guild.roles, id=add) for add in add_with
+                ]
                 await after.add_roles(*to_add, reason=f"add with role {r}")
 
         for r in sym_diff:
@@ -117,7 +119,9 @@ class EventMixin(MixinMeta):
                 await member.add_roles(*to_add)
 
     @commands.Cog.listener()
-    async def on_raw_reaction_add(self, payload: discord.raw_models.RawReactionActionEvent):
+    async def on_raw_reaction_add(
+        self, payload: discord.raw_models.RawReactionActionEvent
+    ):
         await self.wait_for_ready()
         if not payload.guild_id:
             return
@@ -153,6 +157,15 @@ class EventMixin(MixinMeta):
         if role is None or role in member.roles:
             return
 
+        if not await self.verify_age(role, member=member):
+            try:
+                await member.send(
+                    f"You do not meet the minimum age requiremnt for `{role}`, if you think this is an error please contact a staff member."
+                )
+            except:
+                pass
+            return
+
         try:
             remove = await self.is_self_assign_eligible(member, role)
         except (RoleManagementException, PermissionOrHierarchyException):
@@ -167,7 +180,9 @@ class EventMixin(MixinMeta):
             await self.update_roles_atomically(who=member, give=[role], remove=remove)
 
     @commands.Cog.listener()
-    async def on_raw_reaction_remove(self, payload: discord.raw_models.RawReactionActionEvent):
+    async def on_raw_reaction_remove(
+        self, payload: discord.raw_models.RawReactionActionEvent
+    ):
         await self.wait_for_ready()
         if not payload.guild_id:
             return
