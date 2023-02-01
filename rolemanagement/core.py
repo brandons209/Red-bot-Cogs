@@ -1308,7 +1308,7 @@ class RoleManagement(
                 # birthday hasn't passed, subtract one from age
                 age -= 1
 
-            return age > min_age
+            return age >= min_age
 
         if ctx is not None:
             await ctx.send(
@@ -1320,7 +1320,7 @@ class RoleManagement(
 
         # get dob of user
         try:
-            age_msg = f"Hello! In order to get the `{role}` role in `{guild}`, you must provide your **full date of birth** in order to verify your age. Please send it here."
+            age_msg = f"Hello! In order to get the `{role}` role in `{guild}`, you must provide your **full date of birth** in order to verify your age. Please send it here. (Avoid the format dd/mm/yyyy as I may get confused!)"
             await member.send(age_msg)
             pred = MessagePredicate.same_context(user=member)
             msg = await self.bot.wait_for("message", check=pred, timeout=60)
@@ -1385,7 +1385,7 @@ class RoleManagement(
             # birthday hasn't passed, subtract one from age
             age -= 1
 
-        return age > min_age
+        return age >= min_age
 
     async def dm_user(self, ctx: GuildContext, role: discord.Role):
         """
