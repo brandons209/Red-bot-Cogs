@@ -18,5 +18,5 @@
     ],
     "hidden": false,
     "min_bot_version": "3.4.0",
-    "end_user_data_statement": "This will only store sticky and subscribed roles for users."
+    "end_user_data_statement": "This will only store birthdays, sticky, and subscribed roles for users."
 }

@@ -101,6 +101,7 @@ class RoleManagement(
             age_verification=None,
         )  # subscribed_users maps str(user.id)-> end time in unix timestamp
         self.config.register_member(roles=[], forbidden=[], birthday=None)
+        self.config.register_user(birthday=None)
         self.config.init_custom("REACTROLE", 2)
         self.config.register_custom(
             "REACTROLE", roleid=None, channelid=None, guildid=None
@@ -175,6 +176,16 @@ class RoleManagement(
             await modlog.register_casetypes([age_case])
         except RuntimeError:
             pass
+
+        # fix moving birthdays to user config from member config
+        for guild in self.bot.guilds:
+            for member in guild.members:
+                m_age = await self.config.member(member).birthday()
+                u_age = await self.config.user(member).birthday()
+
+                if m_age and u_age is None:
+                    await self.config.user(member).birthday.set(m_age)
+                    await self.config.member(member).birthday.set(None)
 
         self._ready.set()
 
@@ -295,7 +306,7 @@ class RoleManagement(
             )
             return
 
-        await self.config.member(member).birthday.set(dob.strftime("%m/%d/%Y"))
+        await self.config.user(member).birthday.set(dob.strftime("%m/%d/%Y"))
         await ctx.tick()
 
     @commands.guild_only()
@@ -1279,7 +1290,7 @@ class RoleManagement(
             member = ctx.author
 
         guild = member.guild
-        dob = await self.config.member(member).birthday()
+        dob = await self.config.user(member).birthday()
         min_age = await self.config.role(role).age_verification()
         age_log = await self.config.guild(guild).age_log()
         today = datetime.utcnow().date()
@@ -1351,7 +1362,7 @@ class RoleManagement(
         await member.send(
             f"Thank you! Please check back in `{guild}` to confirm you obtained the role. If not, you may not meet the age requirement for the role."
         )
-        await self.config.member(member).birthday.set(dob_str)
+        await self.config.user(member).birthday.set(dob_str)
         if age_log:
             try:
                 await modlog.create_case(
@@ -1424,4 +1435,4 @@ class RoleManagement(
         requester: Literal["discord_deleted_user", "owner", "user", "user_strict"],
         user_id: int,
     ):
-        pass
+        await self.config.user_from_id(user_id).clear()

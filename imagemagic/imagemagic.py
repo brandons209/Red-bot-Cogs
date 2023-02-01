@@ -4,6 +4,7 @@ from wand.image import Image
 from io import BytesIO
 from typing import Optional, Tuple, Literal
 import asyncio, functools, urllib
+from PIL import Image as PILImage
 
 MAX_SIZE = 8 * 1024 * 1024
 
@@ -18,7 +19,9 @@ class ImageMagic(commands.Cog):
     def __init__(self, bot):
         super().__init__()
 
-        self.config = Config.get_conf(self, identifier=4928034571, force_registration=True)
+        self.config = Config.get_conf(
+            self, identifier=4928034571, force_registration=True
+        )
         self.bot = bot
 
     async def _get_image(self, ctx, link: str = None) -> Image:
@@ -33,7 +36,9 @@ class ImageMagic(commands.Cog):
             if ctx.message.reference:
                 msg = ctx.message.reference.resolved
                 if msg is None:
-                    msg = await ctx.channel.fetch_message(ctx.message.reference.message_id)
+                    msg = await ctx.channel.fetch_message(
+                        ctx.message.reference.message_id
+                    )
                 if msg and msg.attachments:
                     for a in msg.attachments:
                         path = urllib.parse.urlparse(a.url).path
@@ -61,7 +66,9 @@ class ImageMagic(commands.Cog):
                         except:
                             raise ImageFindError("Invalid filetype")
                 except (OSError, aiohttp.ClientError):
-                    raise ImageFindError("An image could not be found. Make sure you provide a direct link.")
+                    raise ImageFindError(
+                        "An image could not be found. Make sure you provide a direct link."
+                    )
         else:  # attached image
             path = urllib.parse.urlparse(ctx.message.attachments[0].url).path
             if ctx.message.attachments[0].size > max_filesize:
@@ -84,6 +91,27 @@ class ImageMagic(commands.Cog):
             intensity = 10
         intensity /= 10
         return intensity
+
+    def _jpeg_compress(self, img: Image, quality: int) -> Image:
+        # save image to temp variable to load it as a PIL image
+        temp_file = BytesIO()
+        img.save(file=temp_file)
+        temp_file.seek(0)
+
+        # load as PIL image
+        pil_img = PILImage.open(temp_file)
+        img = PILImage.new("RGB", pil_img.size)
+        img.paste(pil_img)
+
+        # compress
+        temp_file = BytesIO()
+        img.save(temp_file, "JPEG", quality=quality)
+        temp_file.seek(0)
+
+        # return as wand image
+        img = Image(file=temp_file)
+
+        return img, "jpeg.jpeg"
 
     def _distortion(self, img: Image, func: str, args: Tuple) -> Tuple[Image, str]:
         # distort
@@ -110,7 +138,9 @@ class ImageMagic(commands.Cog):
             return
 
         try:
-            await ctx.reply(file=discord.File(BytesIO(img.make_blob()), name), mention_author=False)
+            await ctx.reply(
+                file=discord.File(BytesIO(img.make_blob()), name), mention_author=False
+            )
         except discord.errors.HTTPException:
             await ctx.reply("That image is too large.", mention_author=False)
             return
@@ -126,8 +156,21 @@ class ImageMagic(commands.Cog):
         pass
 
     @distort.command()
-    async def barrel(self, ctx, intensity: Optional[float] = 10, *, link: str = None):
+    async def jpeg(self, ctx, quality: Optional[float] = 10, *, link: str = None):
+        """
+        Applies JPEG compression to image
+        """
+        quality = int(self._intensity(quality) * 100)
+        async with ctx.typing():
+            try:
+                img = await self._get_image(ctx, link)
+            except ImageFindError as e:
+                return await ctx.reply(e, mention_author=False)
 
+            await self._command_body(ctx, args=(self._jpeg_compress, img, quality))
+
+    @distort.command()
+    async def barrel(self, ctx, intensity: Optional[float] = 10, *, link: str = None):
         """
         Bulges the center of the image outward
         """
@@ -145,7 +188,10 @@ class ImageMagic(commands.Cog):
                     self._distortion,
                     img,
                     "distort",
-                    ("barrel", (amount * intensity, amount * intensity, amount * intensity, 0)),
+                    (
+                        "barrel",
+                        (amount * intensity, amount * intensity, amount * intensity, 0),
+                    ),
                 ),
             )
 
@@ -162,7 +208,9 @@ class ImageMagic(commands.Cog):
             except ImageFindError as e:
                 return await ctx.reply(e, mention_author=False)
 
-            await self._command_body(ctx, args=(self._distortion, img, "implode", (amount * intensity,)))
+            await self._command_body(
+                ctx, args=(self._distortion, img, "implode", (amount * intensity,))
+            )
 
     @distort.command()
     async def swirl(self, ctx, intensity: Optional[float] = 10, *, link: str = None):
@@ -170,7 +218,19 @@ class ImageMagic(commands.Cog):
         Swirls the center of the image
         """
 
-        switch = {0: 0, 1: 18, 2: 36, 3: 54, 4: 72, 5: 90, 6: 108, 7: 126, 8: 144, 9: 162, 10: 180}
+        switch = {
+            0: 0,
+            1: 18,
+            2: 36,
+            3: 54,
+            4: 72,
+            5: 90,
+            6: 108,
+            7: 126,
+            8: 144,
+            9: 162,
+            10: 180,
+        }
         intensity = float(switch.get(round(intensity), 180))
 
         async with ctx.typing():
@@ -179,7 +239,9 @@ class ImageMagic(commands.Cog):
             except ImageFindError as e:
                 return await ctx.reply(e, mention_author=False)
 
-            await self._command_body(ctx, args=(self._distortion, img, "swirl", (intensity,)))
+            await self._command_body(
+                ctx, args=(self._distortion, img, "swirl", (intensity,))
+            )
 
     @distort.command()
     async def charcoal(self, ctx, intensity: Optional[float], *, link: str = None):
@@ -193,7 +255,9 @@ class ImageMagic(commands.Cog):
             except ImageFindError as e:
                 return await ctx.reply(e, mention_author=False)
 
-            await self._command_body(ctx, args=(self._distortion, img, "charcoal", (1.5, 0.5)))
+            await self._command_body(
+                ctx, args=(self._distortion, img, "charcoal", (1.5, 0.5))
+            )
 
     @distort.command()
     async def sketch(self, ctx, intensity: Optional[float], *, link: str = None):
@@ -207,7 +271,9 @@ class ImageMagic(commands.Cog):
             except ImageFindError as e:
                 return await ctx.reply(e, mention_author=False)
 
-            await self._command_body(ctx, args=(self._distortion, img, "sketch", (0.5, 0.0, 98.0)))
+            await self._command_body(
+                ctx, args=(self._distortion, img, "sketch", (0.5, 0.0, 98.0))
+            )
 
     @distort.command()
     async def zoom(self, ctx, intensity: Optional[float], *, link: str = None):
@@ -225,7 +291,15 @@ class ImageMagic(commands.Cog):
             w = img.width
             img = self._distortion(img, "transform", (f"{w}x{h}", "150%"))[0]
 
-            await self._command_body(ctx, args=(self._distortion, img, "transform", (f"{w/1.5}x{h/1.5}+{w/2}+{h/2}",)))
+            await self._command_body(
+                ctx,
+                args=(
+                    self._distortion,
+                    img,
+                    "transform",
+                    (f"{w/1.5}x{h/1.5}+{w/2}+{h/2}",),
+                ),
+            )
 
 
 async def red_delete_data_for_user(
