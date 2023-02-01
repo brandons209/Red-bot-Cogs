@@ -105,7 +105,7 @@ class ImageMagic(commands.Cog):
 
         # compress
         temp_file = BytesIO()
-        img.save(temp_file, "JPEG", quality=quality)
+        img.save(temp_file, "JPEG", quality=(1 - quality))
         temp_file.seek(0)
 
         # return as wand image
@@ -156,11 +156,12 @@ class ImageMagic(commands.Cog):
         pass
 
     @distort.command()
-    async def jpeg(self, ctx, quality: Optional[float] = 10, *, link: str = None):
+    async def jpeg(self, ctx, intensity: Optional[float] = 10, *, link: str = None):
         """
         Applies JPEG compression to image
         """
-        quality = int(self._intensity(quality) * 100)
+        # we want to flip the quality range so it matches the intentsity of other commands.
+        quality = int(self._intensity(intensity) * 100)
         async with ctx.typing():
             try:
                 img = await self._get_image(ctx, link)
