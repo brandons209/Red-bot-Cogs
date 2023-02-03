@@ -95,23 +95,50 @@ class ImageMagic(commands.Cog):
     def _jpeg_compress(self, img: Image, quality: int) -> Image:
         # save image to temp variable to load it as a PIL image
         temp_file = BytesIO()
-        img.save(file=temp_file)
+        img.save(file=temp_file, adjoin=True if img.animation else False)
         temp_file.seek(0)
 
         # load as PIL image
-        pil_img = PILImage.open(temp_file)
-        img = PILImage.new("RGB", pil_img.size)
-        img.paste(pil_img)
+        img = PILImage.open(temp_file)
 
-        # compress
-        temp_file = BytesIO()
-        img.save(temp_file, "JPEG", quality=(1 - quality))
-        temp_file.seek(0)
+        # if its gif, compress each image
+        temp_files = [BytesIO() for _ in range(getattr(img, "n_frames", 1))]
+        duration = []
+        for temp_file in temp_files:
+            try:
+                duration += [img.info["duration"]]
+            except KeyError:
+                pass
+            # compress
+            img.convert("RGB").save(temp_file, "JPEG", quality=(1 - quality))
+            temp_file.seek(0)
+            try:
+                img.seek(img.tell() + 1)
+            except:
+                pass
+
+        # combine pil images back into a single object and save as gif
+        images = [PILImage.open(f) for f in temp_files]
+        final_file = BytesIO()
+
+        if len(images) > 1:
+            images[0].save(
+                final_file,
+                "GIF",
+                save_all=True,
+                append_images=images[1:],
+                optimize=False,
+                loop=0,
+                duration=duration,
+            )
+        else:
+            images[0].save(final_file, "JPEG")
+        final_file.seek(0)
 
         # return as wand image
-        img = Image(file=temp_file)
+        img = Image(file=final_file)
 
-        return img, "jpeg.jpeg"
+        return img, "jpeg.jpeg" if len(images) == 1 else "jpeg.gif"
 
     def _distortion(self, img: Image, func: str, args: Tuple) -> Tuple[Image, str]:
         # distort
