@@ -25,13 +25,15 @@ class ThreadRotate(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.config = Config.get_conf(self, identifier=45612361654894681623, force_registration=True)
-
+        self.methods = ["replacement", "unique"]
         default_channel = {
             "topics": {},
             "topic_threads": {},
             "ping_roles": [],
             "rotation_interval": 10080,
             "rotate_on": None,
+            "method": "replacement",
+            "prev_topics": [],
             "last_topic": None,
         }
         self.config.register_channel(**default_channel)
@@ -66,11 +68,29 @@ class ThreadRotate(commands.Cog):
         rotation = timedelta(seconds=await self.config.channel(channel).rotation_interval())
         rotate_on = datetime.now()
         last_topic = await self.config.channel(channel).last_topic()
+        method = await self.config.channel(channel).method()
+        prev_topics = await self.config.channel(channel).prev_topics()
 
         # choose new topic
         # don't want to choose the last topic, so set it's weight to 0 so it is not choosen
         if last_topic is not None:
             topics[last_topic] = 0
+
+        # select without replacement if method is "unique"
+        if method == "unique":
+            # first check if the list of topics have been exhausted
+            topic_names = list(topics.keys())
+            cnt = 0
+            for t in topic_names:
+                if t in prev_topics:
+                    cnt += 1
+
+            # reset list
+            if cnt == len(topic_names):
+                prev_topics = []
+
+            for t in prev_topics:
+                topics[t] = 0
 
         new_topic = random.choices(list(topics.keys()), weights=list(topics.values()), k=1)[0]
 
@@ -88,7 +108,9 @@ class ThreadRotate(commands.Cog):
             try:
                 await send_thread_message(self.bot, topic_threads[new_topic], role_msg, mention_roles=ping_roles)
                 new_thread_id = topic_threads[new_topic]
-            except discord.HTTPException:  # may occur if bot cant unarchive manually archived threads or thread is deleted
+            except (
+                discord.HTTPException
+            ):  # may occur if bot cant unarchive manually archived threads or thread is deleted
                 try:
                     new_thread_id = await create_thread(self.bot, channel, new_topic, archive=10080)
                 except discord.HTTPException:
@@ -107,6 +129,9 @@ class ThreadRotate(commands.Cog):
 
         await self.config.channel(channel).rotate_on.set(int((rotate_on + rotation).timestamp()))
         await self.config.channel(channel).last_topic.set(new_topic)
+        if method == "unique":
+            prev_topics.append(new_topic)
+            await self.config.channel(channel).prev_topics.set(prev_topics)
 
     @commands.group(name="rotate")
     @commands.guild_only()
@@ -171,6 +196,40 @@ class ThreadRotate(commands.Cog):
             return
 
         await self.rotate_thread(channel)
+        await ctx.tick()
+
+    @thread_rotate.command(name="method")
+    async def thread_rotate_method(self, ctx, channel: discord.TextChannel, method: str):
+        """
+        Set the method for random selection of topics.
+
+        Possible methods are:
+            - replacement: select a channel with replacement, meaning the same channel can be selected again for every rotation.
+            - unique: select a channel without replacement, meaning for each rotation a new topic will be selected that was not selected previously, until all topics are exhausted.
+        """
+        current = await self.config.channel(channel).topics()
+        if not current:
+            await ctx.send(error("That channel has not been setup for thread rotation!"), delete_after=30)
+            return
+
+        method = method.lower()
+        if method not in self.methods:
+            await ctx.send(
+                error(f"Unknown method {method}, please choose from this list: {humanize_list(self.methods)}."),
+                delete_after=60,
+            )
+            return
+
+        prev_method = await self.config.channel(channel).method()
+
+        if method == prev_method:
+            await ctx.send(info(f"Selection method for {channel.mention} is already set to {method}!"), delete_after=60)
+            return
+
+        if prev_method == "replacement":
+            await self.config.channel(channel).prev_topics.clear()
+
+        await self.config.channel(channel).method.set(method)
         await ctx.tick()
 
     @thread_rotate.command(name="interval")
@@ -295,12 +354,7 @@ class ThreadRotate(commands.Cog):
             await ctx.send(info("Cancelling clear."), delete_after=30)
             return
 
-        await self.config.channel(channel).topics.clear()
-        await self.config.channel(channel).ping_roles.clear()
-        await self.config.channel(channel).rotation_interval.clear()
-        await self.config.channel(channel).rotate_on.clear()
-        await self.config.channel(channel).last_topic.clear()
-        await self.config.channel(channel).topic_threads.clear()
+        await self.config.channel(channel).clear()
         await ctx.send(info(f"Settings for {channel.mention} cleared."), delete_after=30)
 
     @thread_rotate.command(name="setup")
@@ -381,12 +435,39 @@ class ThreadRotate(commands.Cog):
                 except:
                     role = discord.utils.find(lambda c: c.name == r, guild.roles)
                     if role is None:
-                        await ctx.send(error(f"Unknown channel: `{r}`, please run the command again."), delete_after=60)
+                        await ctx.send(
+                            error(
+                                f"Unknown role: `{r}`, please run the command again. (make sure to seperate roles by commas!)"
+                            ),
+                            delete_after=60,
+                        )
                         return
 
                 role_objs.append(role)
         else:
             role_objs = []
+
+        await ctx.send(
+            info(
+                "Next step: select the method I will use to rotate topics with.\nAvailable methods are:\n\t- `replacement`: the same channel can be selected again for every rotation.\n\t- `unique`: for each rotation a new topic will be selected that was not selected previously, until all topics are exhausted."
+            ),
+            delete_after=300,
+        )
+
+        pred = MessagePredicate.same_context(ctx)
+        try:
+            msg = await self.bot.wait_for("message", check=pred, timeout=241)
+        except asyncio.TimeoutError:
+            await ctx.send(error("Took too long, cancelling setup!"), delete_after=30)
+            return
+
+        method = msg.content.lower().strip()
+        if method not in self.methods:
+            await ctx.send(
+                error(f"Unknown method {method}, please choose from this list: {humanize_list(self.methods)}."),
+                delete_after=30,
+            )
+            return
 
         await ctx.send(
             info(
@@ -440,7 +521,7 @@ class ThreadRotate(commands.Cog):
         )
         await ctx.send(
             box(
-                f"Rotation interval: {humanize_timedelta(seconds=interval.total_seconds())}\n\nRotation Start: {date}\n\nPing roles: {humanize_list([r.name for r in role_objs])}"
+                f"Rotation interval: {humanize_timedelta(seconds=interval.total_seconds())}\n\nRotation Start: {date}\n\nRotation Method: `{method}`\n\nPing roles: {humanize_list([r.name for r in role_objs])}"
             ),
             delete_after=300,
         )
@@ -469,6 +550,7 @@ class ThreadRotate(commands.Cog):
         await self.config.channel(channel).ping_roles.set([r.id for r in role_objs])
         await self.config.channel(channel).rotation_interval.set(interval.total_seconds())
         await self.config.channel(channel).rotate_on.set(int(date.timestamp()))
+        await self.config.channel(channel).method.set(method)
 
         await ctx.send(
             info(f"Thread rotation setup! The first rotation will start at <t:{int(date.timestamp())}>"),
