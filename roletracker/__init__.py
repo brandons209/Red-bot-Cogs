@@ -6,4 +6,4 @@ __red_end_user_data_statement__ = "This cog stores the users who have a trackabl
 async def setup(bot):
     roletracker = RoleTracker(bot)
     await roletracker.initialize()
-    bot.add_cog(roletracker)
+    await bot.add_cog(roletracker)

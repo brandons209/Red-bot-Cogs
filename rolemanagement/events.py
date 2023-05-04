@@ -68,9 +68,7 @@ class EventMixin(MixinMeta):
         for r in gained:
             add_with = await self.config.role_from_id(r).add_with()
             if add_with:
-                to_add = [
-                    discord.utils.get(after.guild.roles, id=add) for add in add_with
-                ]
+                to_add = [discord.utils.get(after.guild.roles, id=add) for add in add_with]
                 await after.add_roles(*to_add, reason=f"add with role {r}")
 
         for r in sym_diff:
@@ -119,9 +117,7 @@ class EventMixin(MixinMeta):
                 await member.add_roles(*to_add)
 
     @commands.Cog.listener()
-    async def on_raw_reaction_add(
-        self, payload: discord.raw_models.RawReactionActionEvent
-    ):
+    async def on_raw_reaction_add(self, payload: discord.raw_models.RawReactionActionEvent):
         await self.wait_for_ready()
         if not payload.guild_id:
             return
@@ -180,9 +176,7 @@ class EventMixin(MixinMeta):
             await self.update_roles_atomically(who=member, give=[role], remove=remove)
 
     @commands.Cog.listener()
-    async def on_raw_reaction_remove(
-        self, payload: discord.raw_models.RawReactionActionEvent
-    ):
+    async def on_raw_reaction_remove(self, payload: discord.raw_models.RawReactionActionEvent):
         await self.wait_for_ready()
         if not payload.guild_id:
             return

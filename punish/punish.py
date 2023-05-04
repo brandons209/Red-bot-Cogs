@@ -526,7 +526,6 @@ class Punish(commands.Cog):
         guild_remove_roles = set(role_memo.filter(remove_roles, skip_nulls=True))
 
         for member_id, member_data in punished.items():
-
             member = guild.get_member(int(member_id))
 
             if not member:
@@ -951,7 +950,6 @@ class Punish(commands.Cog):
             punished = await self.config.guild(guild).PUNISHED()
 
             for member_id, data in punished.items():
-
                 until = data["until"]
                 member = guild.get_member(int(member_id))
 
@@ -1381,7 +1379,6 @@ class Punish(commands.Cog):
             await self.cancel_queue_event(member.guild.id, member.id)
 
             if apply_roles:
-
                 # readd removed roles from user, by replacing user's roles with all of their roles plus the ones that
                 # were removed (and can be re-added), minus the punish role
                 user_roles = set(member.roles)

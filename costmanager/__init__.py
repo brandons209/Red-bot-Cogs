@@ -3,5 +3,5 @@ from .manager import CostManager
 __red_end_user_data_statement__ = "This cog won't store anything for a user."
 
 
-def setup(bot):
-    bot.add_cog(CostManager(bot))
+async def setup(bot):
+    await bot.add_cog(CostManager(bot))

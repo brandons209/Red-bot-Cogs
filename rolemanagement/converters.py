@@ -61,7 +61,6 @@ class ComplexActionConverter(NamedTuple):
 
     @classmethod
     async def convert(cls, ctx: Context, argument: str):
-
         parser = NoExitParser(description="Role management syntax help", add_help=False)
         parser.add_argument("--has-any", nargs="*", dest="any", default=[])
         parser.add_argument("--has-all", nargs="*", dest="all", default=[])
@@ -120,7 +119,6 @@ class ComplexActionConverter(NamedTuple):
             vals[attr] = await _RoleConverter.convert(ctx, vals[attr])
 
         for attr in ("hasperm", "anyperm", "notperm"):
-
             vals[attr] = [i.replace("_", " ").lower().replace(" ", "_").replace("server", "guild") for i in vals[attr]]
             if any(perm not in dir(discord.Permissions) for perm in vals[attr]):
                 raise BadArgument("You gave an invalid permission")
@@ -205,7 +203,6 @@ class ComplexSearchConverter(NamedTuple):
             vals[attr] = await _RoleConverter.convert(ctx, vals[attr])
 
         for attr in ("hasperm", "anyperm", "notperm"):
-
             vals[attr] = [i.replace("_", " ").lower().replace(" ", "_").replace("server", "guild") for i in vals[attr]]
             if any(perm not in dir(discord.Permissions) for perm in vals[attr]):
                 raise BadArgument("You gave an invalid permission")

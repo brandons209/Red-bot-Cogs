@@ -645,7 +645,8 @@ class Suggestion(commands.Cog):
     async def setglobal(self, ctx: commands.Context):
         """Global suggestions settings.
 
-        There is nothing like approved or rejected channels because global suggestions are meant to be for the bot only and will only work if it is sent in a server where normal suggestions are disabled."""
+        There is nothing like approved or rejected channels because global suggestions are meant to be for the bot only and will only work if it is sent in a server where normal suggestions are disabled.
+        """
         pass
 
     @setglobal.command(name="toggle")

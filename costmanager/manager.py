@@ -47,7 +47,6 @@ class CostManager(commands.Cog):
 
     # permission hook checker for cost of command
     async def cost_checker(self, ctx):
-
         cost = await self.get_cost(ctx)
 
         if cost == 0:

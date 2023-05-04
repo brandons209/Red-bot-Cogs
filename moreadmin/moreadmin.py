@@ -1261,7 +1261,6 @@ class MoreAdmin(commands.Cog):
 
                 await channel.send(embed=data)
             elif sus_kick_threshold and age < sus_kick_threshold:
-
                 data = discord.Embed(title="NEW ACCOUNT KICKED", colour=member.colour)
                 data.add_field(name="Account Age", value=parse_seconds(age))
                 data.add_field(name="Kick Threshold", value=parse_seconds(sus_kick_threshold))

@@ -19,7 +19,6 @@ configable_guild_defaults = {
 
 
 def settings_converter(user_input: str) -> dict:
-
     if user_input.startswith("```") and user_input.endswith("```"):
         user_input = "\n".join(user_input.split("\n")[1:-1])
 

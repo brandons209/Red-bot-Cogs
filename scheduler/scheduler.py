@@ -325,7 +325,6 @@ class Scheduler(commands.Cog):
             return [t for t in self.tasks if pred(t)]
 
     async def fetch_tasks_by_guild(self, guild: discord.Guild) -> List[Task]:
-
         async with self._iter_lock:
             return [t for t in self.tasks if t.channel in guild.text_channels]
 
@@ -472,7 +471,6 @@ class Scheduler(commands.Cog):
         tasks: List[Task],
         message: Optional[discord.Message] = None,
     ):
-
         color = await ctx.embed_color()
 
         async def task_killer(

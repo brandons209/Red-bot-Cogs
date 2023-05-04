@@ -10,7 +10,6 @@ MessagePredicate = Callable[[discord.Message], bool]
 
 
 class RecentActivityRecord:
-
     __slots__ = ("activities", "messages")
 
     def __init__(self):
@@ -32,7 +31,6 @@ class RecentActivityRecord:
         after: Optional[datetime] = None,
         message_check: Optional[MessagePredicate] = None,
     ) -> List[Union[datetime, discord.Message]]:
-
         ret: List[Union[datetime, discord.Message]] = []
 
         for a in self.activities:
@@ -57,7 +55,6 @@ class RecentActivityRecord:
         after: Optional[datetime] = None,
         message_check: Optional[MessagePredicate] = None,
     ) -> int:
-
         ret = len(self._filter(after=after, message_check=message_check))
 
         return ret
@@ -84,14 +81,12 @@ RecordDict = Dict[discord.Guild, Dict[discord.Member, RecentActivityRecord]]
 
 
 class RecordHandler:
-
     __slots__ = ("records",)
 
     def __init__(self):
         self.records: RecordDict = {}
 
     def proccess_message(self, message):
-
         try:
             member = message.author
             guild = member.guild
@@ -115,7 +110,6 @@ class RecordHandler:
         after: datetime,
         message_check: Optional[MessagePredicate] = None,
     ) -> Iterator[discord.Member]:
-
         with contextlib.suppress(KeyError):
             for member, rec in self.records[guild].items():
                 if rec.conditional_count(after=after, message_check=message_check):

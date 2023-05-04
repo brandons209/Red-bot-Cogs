@@ -221,7 +221,6 @@ class MassManagementMixin(MixinMeta):
         chunks = [members[i : (i + chunk_size)] for i in range(0, len(members), chunk_size)]
 
         for part, chunk in enumerate(chunks, 1):
-
             csvf = io.StringIO()
             fieldnames = [
                 "ID",
