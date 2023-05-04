@@ -6,4 +6,4 @@ __red_end_user_data_statement__ = "This will store who is currently punished in 
 async def setup(bot):
     punish = Punish(bot)
     await punish.initialize()
-    bot.add_cog(punish)
+    await bot.add_cog(punish)
