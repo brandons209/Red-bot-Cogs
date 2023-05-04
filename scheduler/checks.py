@@ -5,7 +5,6 @@ from redbot.core import commands
 
 def can_run_command(command_name: str):
     async def predicate(ctx):
-
         command = ctx.bot.get_command(command_name)
         if not command:
             return False

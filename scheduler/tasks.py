@@ -30,13 +30,11 @@ class Task:
         return hash(self.uid)
 
     async def get_message(self, bot):
-
         pfx = (await bot.get_prefix(self.channel))[0]
         content = f"{pfx}{self.content}"
         return SchedulerMessage(content=content, author=self.author, channel=self.channel)
 
     def to_config(self):
-
         return {
             self.uid: {
                 "nicename": self.nicename,
@@ -51,7 +49,6 @@ class Task:
 
     @classmethod
     def bulk_from_config(cls, bot: discord.Client, **entries):
-
         for uid, data in entries.items():
             cid = data.pop("channel", 0)
             aid = data.pop("author", 0)
@@ -80,7 +77,6 @@ class Task:
 
     @property
     def next_call_delay(self) -> float:
-
         now = datetime.now(timezone.utc)
 
         if self.recur and now >= self.initial:
@@ -90,7 +86,6 @@ class Task:
         return (self.initial - now).total_seconds()
 
     def to_embed(self, index: int, page_count: int, color: discord.Color):
-
         now = datetime.now(timezone.utc)
         next_run_at = now + timedelta(seconds=self.next_call_delay)
         embed = discord.Embed(color=color, timestamp=next_run_at)

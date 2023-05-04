@@ -145,12 +145,10 @@ class Confession(commands.Cog):
             await menu(ctx, pages=embeds, controls=SELECT_CONTROLS, message=None, page=0, timeout=20)
 
     async def selected_guild(self, ctx, user_guilds, confession, page):
-
         confession_guild = user_guilds[page]
         await self.send_confession(ctx, confession_guild, confession)
 
     async def send_confession(self, ctx, confession_guild: discord.Guild, confession: str):
-
         confession_room = await self.config.guild(confession_guild).confession_room()
         confession_room = confession_guild.get_channel(confession_room)
 

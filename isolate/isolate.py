@@ -432,7 +432,6 @@ class Isolate(commands.Cog):
             await self.bot.request_offline_members(guild)
 
         for member_id, member_data in isolated.items():
-
             member = guild.get_member(member_id)
 
             if not member:
@@ -859,7 +858,6 @@ class Isolate(commands.Cog):
             isolated = await self.config.guild(guild).ISOLATED()
 
             for member_id, data in isolated.items():
-
                 until = data["until"]
                 member = guild.get_member(int(member_id))
 
@@ -1252,7 +1250,6 @@ class Isolate(commands.Cog):
             await self.cancel_queue_event(member.guild.id, member.id)
 
             if apply_roles:
-
                 # readd removed roles from user, by replacing user's roles with all of their roles plus the ones that
                 # were removed (and can be re-added), minus the isolate role
                 user_roles = set(member.roles)

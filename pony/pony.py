@@ -186,7 +186,8 @@ class Pony(commands.Cog):
 
         Leave blank to get current max filters.
 
-        Gives an error when a user tries to add a filter while the server's filter list contains a certain amount of tags"""
+        Gives an error when a user tries to add a filter while the server's filter list contains a certain amount of tags
+        """
         if new_max_filters is None:
             max_filters = self.config.maxfilters()
             await ctx.send("Current filter limit: {} filters.".format(max_filters))
@@ -214,7 +215,6 @@ class Pony(commands.Cog):
                 import_settings = json.load(raw_settings)
                 for json_guild_id, json_guild_verbose in import_settings.items():
                     if json_guild_id != "maxfilters":
-
                         guild = bot.get_guild(int(json_guild_id))
                         if guild is None:
                             continue
@@ -234,7 +234,6 @@ class Pony(commands.Cog):
                 msg = "Filters import successful for these guilds:\n"
                 for json_guild_id, json_guild_filters in import_filters.items():
                     if json_guild_id != "default":
-
                         guild = bot.get_guild(int(json_guild_id))  # returns None if guild is not found
                         if guild is None:
                             continue

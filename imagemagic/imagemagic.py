@@ -8,6 +8,7 @@ from PIL import Image as PILImage
 
 MAX_SIZE = 8 * 1024 * 1024
 
+
 # by Flame442
 class ImageFindError(Exception):
     """Generic error for the __get_image function."""
@@ -19,9 +20,7 @@ class ImageMagic(commands.Cog):
     def __init__(self, bot):
         super().__init__()
 
-        self.config = Config.get_conf(
-            self, identifier=4928034571, force_registration=True
-        )
+        self.config = Config.get_conf(self, identifier=4928034571, force_registration=True)
         self.bot = bot
 
     async def _get_image(self, ctx, link: str = None) -> Image:
@@ -36,9 +35,7 @@ class ImageMagic(commands.Cog):
             if ctx.message.reference:
                 msg = ctx.message.reference.resolved
                 if msg is None:
-                    msg = await ctx.channel.fetch_message(
-                        ctx.message.reference.message_id
-                    )
+                    msg = await ctx.channel.fetch_message(ctx.message.reference.message_id)
                 if msg and msg.attachments:
                     for a in msg.attachments:
                         path = urllib.parse.urlparse(a.url).path
@@ -66,9 +63,7 @@ class ImageMagic(commands.Cog):
                         except:
                             raise ImageFindError("Invalid filetype")
                 except (OSError, aiohttp.ClientError):
-                    raise ImageFindError(
-                        "An image could not be found. Make sure you provide a direct link."
-                    )
+                    raise ImageFindError("An image could not be found. Make sure you provide a direct link.")
         else:  # attached image
             path = urllib.parse.urlparse(ctx.message.attachments[0].url).path
             if ctx.message.attachments[0].size > max_filesize:
@@ -165,9 +160,7 @@ class ImageMagic(commands.Cog):
             return
 
         try:
-            await ctx.reply(
-                file=discord.File(BytesIO(img.make_blob()), name), mention_author=False
-            )
+            await ctx.reply(file=discord.File(BytesIO(img.make_blob()), name), mention_author=False)
         except discord.errors.HTTPException:
             await ctx.reply("That image is too large.", mention_author=False)
             return
@@ -236,9 +229,7 @@ class ImageMagic(commands.Cog):
             except ImageFindError as e:
                 return await ctx.reply(e, mention_author=False)
 
-            await self._command_body(
-                ctx, args=(self._distortion, img, "implode", (amount * intensity,))
-            )
+            await self._command_body(ctx, args=(self._distortion, img, "implode", (amount * intensity,)))
 
     @distort.command()
     async def swirl(self, ctx, intensity: Optional[float] = 10, *, link: str = None):
@@ -267,9 +258,7 @@ class ImageMagic(commands.Cog):
             except ImageFindError as e:
                 return await ctx.reply(e, mention_author=False)
 
-            await self._command_body(
-                ctx, args=(self._distortion, img, "swirl", (intensity,))
-            )
+            await self._command_body(ctx, args=(self._distortion, img, "swirl", (intensity,)))
 
     @distort.command()
     async def charcoal(self, ctx, intensity: Optional[float], *, link: str = None):
@@ -283,9 +272,7 @@ class ImageMagic(commands.Cog):
             except ImageFindError as e:
                 return await ctx.reply(e, mention_author=False)
 
-            await self._command_body(
-                ctx, args=(self._distortion, img, "charcoal", (1.5, 0.5))
-            )
+            await self._command_body(ctx, args=(self._distortion, img, "charcoal", (1.5, 0.5)))
 
     @distort.command()
     async def sketch(self, ctx, intensity: Optional[float], *, link: str = None):
@@ -299,9 +286,7 @@ class ImageMagic(commands.Cog):
             except ImageFindError as e:
                 return await ctx.reply(e, mention_author=False)
 
-            await self._command_body(
-                ctx, args=(self._distortion, img, "sketch", (0.5, 0.0, 98.0))
-            )
+            await self._command_body(ctx, args=(self._distortion, img, "sketch", (0.5, 0.0, 98.0)))
 
     @distort.command()
     async def zoom(self, ctx, intensity: Optional[float], *, link: str = None):

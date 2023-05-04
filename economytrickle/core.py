@@ -56,7 +56,6 @@ class EconomyTrickle(commands.Cog):
             self.recordhandler.proccess_message(message)
 
     async def main_loop(self):
-
         minutes = defaultdict(int)
 
         while self is self.bot.get_cog(self.__class__.__name__):
@@ -74,7 +73,6 @@ class EconomyTrickle(commands.Cog):
                         self.extra_tasks.append(tsk)
 
     async def do_rewards_for(self, guild: discord.Guild, now: datetime, data: dict):
-
         after = now - timedelta(minutes=data["interval"], seconds=10)
         voice_mem = await self.config.guild(guild).min_voice_members()
         if data["mode"] == "blacklist":

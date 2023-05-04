@@ -37,7 +37,6 @@ class Schedule:
 
     @classmethod
     async def convert(cls, ctx: Context, argument: str):
-
         start: datetime
         command: Optional[str] = None
         recur: Optional[timedelta] = None
@@ -100,7 +99,6 @@ class TempMute(NamedTuple):
 
     @classmethod
     async def convert(cls, ctx: Context, argument: str):
-
         start: datetime
         reason: str
 

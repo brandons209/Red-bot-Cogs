@@ -175,7 +175,6 @@ class Memeify(commands.Cog):
         text_arr = text.split(" ")
 
         for key, word in enumerate(text_arr):
-
             if self.__compare_format(word) == "hello":
                 text_arr[key] = "'allo 'allo"
             elif self.__compare_format(word) == "hi":
