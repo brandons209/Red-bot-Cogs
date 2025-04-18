@@ -3,7 +3,9 @@ import datetime
 import discord
 import logging
 import random
+import aiohttp
 from typing import Optional, Union, Literal
+from io import BytesIO
 
 from redbot.core import Config, checks, commands
 from redbot.core.utils.chat_formatting import box, pagify, humanize_list
@@ -81,7 +83,7 @@ class Welcome(commands.Cog):
     async def welcomeset(self, ctx: commands.Context) -> None:
         """Change Welcome settings."""
 
-        await ctx.trigger_typing()
+        await ctx.typing()
 
         if ctx.invoked_subcommand is None:
             guild: discord.Guild = ctx.guild
@@ -313,6 +315,7 @@ class Welcome(commands.Cog):
           `{plural}` is an 's' if `count` is not 1, and nothing if it is
           `{stats}` to include user stats (if using activitylog cog)
           `{roles}` to show member roles at time of event
+          `{attach_pfp}` This will have the bot attach the member's pfp to the message, it will be removed from the message text.
 
         For example:
           {member.mention}... What are you doing here???
@@ -344,7 +347,7 @@ class Welcome(commands.Cog):
           `{server}` is the server
           `{count}` is the number of members who have joined today
           `{plural}` is an 's' if `count` is not 1, and nothing if it is
-
+          `{attach_pfp}` This will have the bot attach the member's pfp to the message, it will be removed from the message text.
 
         For example:
           {bot.mention} beep boop.
@@ -408,6 +411,7 @@ class Welcome(commands.Cog):
           `{stats}` to include user stats (if using activitylog cog)
           `{roles}` to show member roles at time of event
           `{joined_on}` is the Discord formated time the user joined the server
+          `{attach_pfp}` This will have the bot attach the member's pfp to the message, it will be removed from the message text.
 
         For example:
           {member.name}... Why did you leave???
@@ -479,6 +483,7 @@ class Welcome(commands.Cog):
           `{plural}` is an 's' if `count` is not 1, and nothing if it is
           `{stats}` to include user stats (if using activitylog cog)
           `{roles}` to show member roles at time of event
+          `{attach_pfp}` This will have the bot attach the member's pfp to the message, it will be removed from the message text.
 
         For example:
           {member.name} was banned... What did you do???
@@ -548,6 +553,7 @@ class Welcome(commands.Cog):
           `{server}` is the server
           `{count}` is the number of members who have been unbanned today
           `{plural}` is an 's' if `count` is not 1, and nothing if it is
+          `{attach_pfp}` This will have the bot attach the member's pfp to the message, it will be removed from the message text.
 
         For example:
           {member.name} was unbanned... Did you learn your lesson???
@@ -708,7 +714,12 @@ class Welcome(commands.Cog):
             await ctx.send(box(page))
 
     async def __handle_event(
-        self, guild: discord.guild, user: Union[discord.Member, discord.User], event: str, *, message_format=None
+        self,
+        guild: discord.guild,
+        user: Union[discord.Member, discord.User],
+        event: str,
+        *,
+        message_format=None,
     ) -> None:
         """Handler for actual events."""
 
@@ -779,11 +790,25 @@ class Welcome(commands.Cog):
             log.warning("Failed to delete message (ID {message_id})")
 
     async def __send_notice(
-        self, guild: discord.guild, user: Union[discord.Member, discord.User], event: str, *, message_format=None
+        self,
+        guild: discord.guild,
+        user: Union[discord.Member, discord.User],
+        event: str,
+        *,
+        message_format=None,
     ) -> Optional[discord.Message]:
         """Sends the notice for the event."""
 
         format_str = message_format or await self.__get_random_message_format(guild, event)
+        attachment = None
+        if "{attach_pfp}" in format_str:
+            format_str = format_str.replace("{attach_pfp}", "")
+            url = user.display_avatar.url
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url) as resp:
+                    if resp.status == 200:
+                        attachment = BytesIO(await resp.read())
+                        attachment.seek(0)
 
         count = await self.config.guild(guild).get_attr(event).counter()
         plural = ""
@@ -806,6 +831,10 @@ class Welcome(commands.Cog):
         else:
             stats = ""
 
+        attach_file = None
+        if attachment is not None:
+            attach_file = discord.File(attachment, filename=f"{user.name}_avatar.png")
+
         try:
             return await channel.send(
                 format_str.format(
@@ -818,6 +847,7 @@ class Welcome(commands.Cog):
                     stats=stats,
                     joined_on=f"<t:{int(user.joined_at.astimezone(tzlocal()).timestamp())}>",
                 ),
+                file=attach_file,
                 allowed_mentions=discord.AllowedMentions.all(),
             )
         except discord.Forbidden:

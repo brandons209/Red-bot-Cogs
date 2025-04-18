@@ -1,32 +1,3 @@
-import re
-import discord
-from datetime import timedelta
-
-TIME_RE_STRING = r"\s?".join(
-    [
-        r"((?P<weeks>\d+?)\s?(weeks?|w))?",
-        r"((?P<days>\d+?)\s?(days?|d))?",
-        r"((?P<hours>\d+?)\s?(hours?|hrs|hr?))?",
-        r"((?P<minutes>\d+?)\s?(minutes?|mins?|m(?!o)))?",  # prevent matching "months"
-        r"((?P<seconds>\d+?)\s?(seconds?|secs?|s))?",
-    ]
-)
-
-TIME_RE = re.compile(TIME_RE_STRING, re.I)
-
-
-def parse_timedelta(argument: str) -> timedelta:
-    """
-    Parses a string that contains a time interval and converts it to a timedelta object.
-    """
-    matches = TIME_RE.match(argument)
-    if matches:
-        params = {k: int(v) for k, v in matches.groupdict().items() if v}
-        if params:
-            return timedelta(**params)
-    return None
-
-
 def parse_seconds(seconds: int) -> str:
     """
     Take seconds and converts it to larger units
@@ -53,12 +24,3 @@ def parse_seconds(seconds: int) -> str:
         msg.append(f"{int(seconds)} {'seconds' if seconds > 1 else 'second'}")
 
     return ", ".join(msg)
-
-
-def role_from_string(guild, role_name):
-    role = discord.utils.find(lambda r: r.name == role_name, guild.roles)
-    # if couldnt find by role name, try to find by role id
-    if role is None:
-        role = discord.utils.find(lambda r: r.id == role_name, guild.roles)
-
-    return role

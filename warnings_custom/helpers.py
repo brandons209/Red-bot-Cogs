@@ -1,4 +1,6 @@
 from copy import copy
+from datetime import timedelta
+from dateutil import parser
 import asyncio
 import discord
 
@@ -8,6 +10,60 @@ from redbot.core.i18n import Translator
 from redbot.core.utils.predicates import MessagePredicate
 
 _ = Translator("Warnings", __file__)
+
+
+def calculate_total_points(warnings: dict, expiration_time: int = 0) -> int:
+    """
+    Calculates total warning points taking into account the expiration time set.
+    Warnings that don't have a date set (warnings made before switching to custom cog) will not be added.
+
+    Args:
+        warnings (dict): Dictionary of user's warnings
+        expiration_time (int): expiration time delta in seconds.
+
+    Returns:
+        int: The adjusted points
+    """
+    if expiration_time == 0:
+        return sum([w["points"] for w in warnings.values()])
+
+    delta = timedelta(seconds=expiration_time)
+    now = discord.utils.utcnow()
+    total = 0
+    for w in warnings.values():
+        if not w.get("date", None):
+            continue
+        date = parser.parse(w["date"])
+        if date > (now - delta):
+            total += w["points"]
+    return total
+
+
+def check_warning_expired(warning: dict, expiration_time: int = 0) -> bool:
+    """
+    Returns whether the specified warning was expired.
+
+    Args:
+        warning (dict): Dictionary representing the warning
+        expiration_time (int, optional): Expiration time set for guild. Defaults to 0.
+
+    Returns:
+        bool: If the warning has expired or not
+    """
+    if expiration_time == 0:
+        return False
+    delta = timedelta(seconds=expiration_time)
+    now = discord.utils.utcnow()
+    # if date doesn't exist, assume expired
+    try:
+        date = parser.parse(warning.get("date", ""))
+    except:
+        return True
+
+    if date > (now - delta):
+        return False
+    else:
+        return True
 
 
 async def warning_points_add_check(config: Config, ctx: commands.Context, user: discord.Member, points: int):

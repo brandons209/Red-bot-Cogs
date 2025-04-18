@@ -1,0 +1,17 @@
+{
+  "author": [
+    "Brandons209"
+  ],
+  "install_msg": "Thanks for install.",
+  "short": "Manage roles for Patreon subscribers, allowing assigning roles base on subscription length.",
+  "description": "Personal roles for members",
+  "min_bot_version": "3.5.0",
+  "tags": [
+    "patreon",
+    "roles"
+  ],
+  "requirements": [
+    "tabulate"
+  ],
+  "end_user_data_statement": "This cog will save data about patreon's subscription history for each user"
+}

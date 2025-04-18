@@ -1,0 +1,19 @@
+{
+  "author": [
+    "Brandons209"
+  ],
+  "min_bot_version": "3.5.0",
+  "description": "Adds extra functionalities to the built in warnings cog.",
+  "hidden": false,
+  "install_msg": "Thank you for using this cog! Make sure to unload the build in warnings cog before loading this cog.",
+  "requirements": [
+    "dateutil"
+  ],
+  "short": "Better warnings cog.",
+  "tags": [
+    "brandons209",
+    "redbot",
+    "warnings"
+  ],
+  "end_user_data_statement": "This will store warnings for users."
+}

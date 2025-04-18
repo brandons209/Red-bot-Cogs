@@ -1,24 +1,19 @@
 # redbot/discord
-from concurrent.futures import thread
 from redbot.core.utils.chat_formatting import *
-from redbot.core.utils import mod
 from redbot.core.utils.menus import menu, DEFAULT_CONTROLS
 from redbot.core import Config, checks, commands, modlog
 import discord
 
 from .utils import *
 from .memoizer import Memoizer
-from .discord_thread_feature import add_user_thread, create_thread
 
 # general
 import asyncio
-from datetime import datetime
+from datetime import timedelta
 from typing import Literal
-import inspect
 import logging
 import time
-import textwrap
-from typing import Union
+from typing import Union, Optional
 
 log = logging.getLogger("red.punish")
 
@@ -27,10 +22,21 @@ __version__ = "3.3.0"
 PURGE_MESSAGES = 1  # for cpunish
 
 DEFAULT_ROLE_NAME = "Punished"
-DEFAULT_TEXT_OVERWRITE = discord.PermissionOverwrite(send_messages=False, send_tts_messages=False, add_reactions=False)
+DEFAULT_TEXT_OVERWRITE = discord.PermissionOverwrite(
+    send_messages=False,
+    send_tts_messages=False,
+    add_reactions=False,
+    send_messages_in_threads=False,
+    create_public_threads=False,
+    create_private_threads=False,
+)
 DEFAULT_VOICE_OVERWRITE = discord.PermissionOverwrite(speak=False, connect=False)
 DEFAULT_TIMEOUT_OVERWRITE = discord.PermissionOverwrite(
-    send_messages=True, read_messages=True, read_message_history=True
+    send_messages=True,
+    read_messages=True,
+    read_message_history=True,
+    send_messages_in_threads=True,
+    view_channel=True,
 )
 
 QUEUE_TIME_CUTOFF = 30
@@ -72,7 +78,7 @@ class Punish(commands.Cog):
         self.pending = {}
         self.enqueued = set()
 
-        self.task = asyncio.create_task(self.on_load())
+        self.task = asyncio.create_task(self.load_loop())
 
     def cog_unload(self):
         self.task.cancel()
@@ -94,10 +100,17 @@ class Punish(commands.Cog):
         except RuntimeError:
             pass
 
-    @commands.group(invoke_without_command=True)
+    @commands.hybrid_group(invoke_without_command=True)
     @commands.guild_only()
     @checks.mod()
-    async def punish(self, ctx, user: discord.Member, duration: str = None, *, reason: str = None):
+    async def punish(
+        self,
+        ctx: commands.Context,
+        user: discord.Member,
+        duration: Optional[str] = None,
+        *,
+        reason: Optional[str] = None,
+    ):
         """
         Puts a user into timeout for a specified time, with optional reason.
 
@@ -109,10 +122,31 @@ class Punish(commands.Cog):
         elif user:
             await self._punish_cmd_common(ctx, user, duration, reason)
 
+    @punish.command(name="start")
+    async def punish_start(
+        self,
+        ctx: commands.Context,
+        user: discord.Member,
+        duration: Optional[str] = None,
+        *,
+        reason: Optional[str] = None,
+    ):
+        """
+        Same as running [p]punish without any subcommand - for slash user support
+        """
+        await self._punish_cmd_common(ctx, user, duration, reason)
+
     @punish.command(name="cstart")
     @commands.guild_only()
     @checks.mod()
-    async def punish_cstart(self, ctx, user: discord.Member, duration: str = None, *, reason: str = None):
+    async def punish_cstart(
+        self,
+        ctx: commands.Context,
+        user: discord.Member,
+        duration: Optional[str] = None,
+        *,
+        reason: Optional[str] = None,
+    ):
         """
         Same as [p]punish start, but cleans up the target's last message.
         """
@@ -142,8 +176,7 @@ class Punish(commands.Cog):
         """
 
         guild = ctx.guild
-        guild_id = guild.id
-        now = time.time()
+        now = discord.utils.utcnow().timestamp()
         headers = ["Member", "Remaining", "Moderator", "Reason"]
         punished = await self.config.guild(guild).PUNISHED()
 
@@ -155,7 +188,6 @@ class Punish(commands.Cog):
             moderator = getmname(data["by"], guild)
             reason = data["reason"]
             until = data["until"]
-            sort = until or float("inf")
             remaining = generate_timespec(until - now, short=True) if until else "forever"
 
             row = [member_name, remaining, moderator, reason or "No reason set."]
@@ -176,7 +208,7 @@ class Punish(commands.Cog):
     @punish.command(name="clean")
     @commands.guild_only()
     @checks.mod()
-    async def punish_clean(self, ctx, clean_pending: bool = False):
+    async def punish_clean(self, ctx, clean_pending: Optional[bool] = False):
         """
         Removes absent members from the punished list.
 
@@ -190,7 +222,7 @@ class Punish(commands.Cog):
         """
 
         count = 0
-        now = time.time()
+        now = discord.utils.utcnow().timestamp()
         guild = ctx.guild
         data = await self.config.guild(guild).PUNISHED()
 
@@ -222,7 +254,7 @@ class Punish(commands.Cog):
         bans = await guild.bans()
         ban_ids = {ban.user.id for ban in bans}
 
-        for mid, mdata in data.copy().items():
+        for mid in data.copy().keys():
             intid = int(mid)
             if guild.get_member(intid):
                 continue
@@ -237,7 +269,7 @@ class Punish(commands.Cog):
     @punish.command(name="warn")
     @commands.guild_only()
     @checks.mod_or_permissions(manage_messages=True)
-    async def punish_warn(self, ctx, user: discord.Member, *, reason: str = None):
+    async def punish_warn(self, ctx, user: discord.Member, *, reason: Optional[str] = None):
         """
         Warns a user with boilerplate about the rules
         """
@@ -260,11 +292,10 @@ class Punish(commands.Cog):
         This is the same as removing the role directly.
         """
 
-        role = await self.get_role(user.guild, quiet=True)
-        sid = user.guild.id
+        role = await self.get_role(user.guild, ctx=ctx, quiet=True)
         guild = user.guild
         moderator = ctx.author
-        now = time.time()
+        now = discord.utils.utcnow().timestamp()
         punished = await self.config.guild(guild).PUNISHED()
         data = punished.get(str(user.id), {})
         removed_roles_parsed = resolve_role_list(guild, data.get("removed_roles", []))
@@ -303,8 +334,8 @@ class Punish(commands.Cog):
                 msg += "\n\n(failed to send punishment end notification DM)"
 
             await ctx.send(msg)
-        elif data:  # This shouldn't happen, but just in case
-            now = time.time()
+        elif data and role:  # This shouldn't happen, but just in case
+            now = discord.utils.utcnow().timestamp()
             until = data.get("until")
             remaining = until and generate_timespec(round(until - now)) or "forever"
 
@@ -391,12 +422,6 @@ class Punish(commands.Cog):
 
         These threads are private and will be seen by moderators with the Manage Threads permission and the punished user.
         """
-        if "PRIVATE_THREADS" not in ctx.guild.features and use_threads:
-            await ctx.send(
-                error("Your guild must be boosted to Level 2 to use private threads, which this feature requires.")
-            )
-            return
-
         await self.config.guild(ctx.guild).use_threads.set(use_threads)
         await ctx.tick()
 
@@ -425,7 +450,7 @@ class Punish(commands.Cog):
 
         found_roles = set()
         notfound_names = set()
-        punish_role = await self.get_role(guild, quiet=True)
+        punish_role = await self.get_role(guild, ctx=ctx, quiet=True)
 
         for lookup in rolelist:
             if not isinstance(lookup, str):
@@ -623,7 +648,7 @@ class Punish(commands.Cog):
             await self.config.guild(guild).ROLE_ID.set(role.id)
 
     @punishset.command(name="channel")
-    async def punishset_channel(self, ctx, channel: discord.TextChannel = None):
+    async def punishset_channel(self, ctx, channel: Optional[discord.TextChannel] = None):
         """
         Sets or shows the punishment "timeout" channel.
 
@@ -654,7 +679,7 @@ class Punish(commands.Cog):
 
             await self.config.guild(guild).CHANNEL_ID.set(channel.id)
 
-            role = await self.get_role(guild, create=True)
+            role = await self.get_role(guild, ctx=ctx, create=True)
             update_msg = "{} to the %s role" % role
             grants = []
             denies = []
@@ -712,7 +737,7 @@ class Punish(commands.Cog):
             await self.config.guild(guild).CHANNEL_ID.set(None)
 
             if current.permissions_for(guild.me).manage_roles:
-                role = await self.get_role(guild, quiet=True)
+                role = await self.get_role(guild, ctx=ctx, quiet=True)
                 await self.setup_channel(current, role)
                 msg = " and its permissions reset"
             else:
@@ -767,7 +792,7 @@ class Punish(commands.Cog):
         """
 
         guild = ctx.guild
-        role = await self.get_role(guild, quiet=True)
+        role = await self.get_role(guild, ctx=ctx, quiet=True)
         timeout_channel_id = await self.config.guild(guild).CHANNEL_ID()
         confirm_msg = None
         channel = guild.get_channel(channel_id)
@@ -870,7 +895,7 @@ class Punish(commands.Cog):
 
         await ctx.send("\n\n".join(msg))
 
-    async def get_role(self, guild, quiet=False, create=False):
+    async def get_role(self, guild, ctx=None, quiet=False, create=False) -> Union[discord.Role, None]:
         role_id = await self.config.guild(guild).ROLE_ID()
 
         if role_id:
@@ -932,11 +957,11 @@ class Punish(commands.Cog):
 
         await channel.set_permissions(role, overwrite=perms, reason="punish cog")
 
-    async def on_load(self):
+    async def load_loop(self):
         await self.bot.wait_until_ready()
-
         _guilds = [g for g in self.bot.guilds if g.large and not (g.chunked or g.unavailable)]
-        await self.bot.request_offline_members(*_guilds)
+        for g in _guilds:
+            await g.chunk()
 
         for guild in self.bot.guilds:
             me = guild.me
@@ -953,7 +978,7 @@ class Punish(commands.Cog):
                 until = data["until"]
                 member = guild.get_member(int(member_id))
 
-                if until and (until - time.time()) < 0:
+                if until and (until - discord.utils.utcnow().timestamp()) < 0:
                     if member:
                         reason = "Punishment removal overdue, maybe the bot was offline. "
 
@@ -983,11 +1008,24 @@ class Punish(commands.Cog):
                             apply_roles = True
 
                     if apply_roles:
-                        await member.edit(roles=member_roles, reason="punish ending")
+                        await member.edit(roles=apply_roles, reason="punish ending")
 
                     if until:
                         await self.schedule_unpunish(until, member)
 
+        while True:
+            try:
+                await self.loop()
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                import traceback
+
+                traceback.print_exc()
+                log.error(f"Internal loop crashed, restarting in 10s. {e}")
+                await asyncio.sleep(10)
+
+    async def loop(self):
         while True:
             try:
                 async with self.queue_lock:
@@ -995,11 +1033,8 @@ class Punish(commands.Cog):
                         pass
 
                 await asyncio.sleep(5)
-
             except asyncio.CancelledError:
                 break
-            except Exception:
-                pass
 
         log.debug("queue manager dying")
 
@@ -1033,7 +1068,8 @@ class Punish(commands.Cog):
             return removed is not None
 
     async def put_queue_event(self, run_at: float, *args):
-        diff = run_at - time.time()
+        now = discord.utils.utcnow().timestamp()
+        diff = run_at - now
 
         if args in self.enqueued:
             return False
@@ -1042,8 +1078,8 @@ class Punish(commands.Cog):
 
         if diff < 0:
             await self.execute_queue_event(0, *args)
-        elif run_at - time.time() < QUEUE_TIME_CUTOFF:
-            self.pending[args] = asyncio.create_task(self.execute_queue_event(diff, *args))
+        elif run_at - now < QUEUE_TIME_CUTOFF:
+            self.pending[tuple(args)] = asyncio.create_task(self.execute_queue_event(diff, *args))
         else:
             await self.queue.put((run_at, *args))
 
@@ -1051,7 +1087,7 @@ class Punish(commands.Cog):
         if self.queue.empty():
             return False
 
-        now = time.time()
+        now = discord.utils.utcnow().timestamp()
         item = await self.queue.get()
         next_time, *args = item
 
@@ -1061,7 +1097,7 @@ class Punish(commands.Cog):
             if await self.execute_queue_event(0, *args):
                 return
         elif diff < QUEUE_TIME_CUTOFF:
-            self.pending[args] = asyncio.create_task(self.execute_queue_event(diff, *args))
+            self.pending[tuple(args)] = asyncio.create_task(self.execute_queue_event(diff, *args))
             return True
 
         await self.queue.put(item)
@@ -1101,22 +1137,6 @@ class Punish(commands.Cog):
             await ctx.send("You can't punish the bot.")
             return
 
-        # check if user is isolated, fix conflict with isolate cog
-        isolate = self.bot.get_cog("Isolate")
-
-        if isolate:
-            isolated = await isolate.config.guild(guild).ISOLATED()
-            if str(member.id) in isolated:
-                await ctx.send(
-                    warning("This person is isolated, I will remove it now before punishing to avoid conflicts.")
-                )
-                await ctx.invoke(isolate.isolate_end, user=member, reason="Conflict with punish cog.")
-            # double check it actually worked
-            isolated = await isolate.config.guild(guild).ISOLATED()
-            if str(member.id) in isolated:
-                await ctx.send(error("Couldn't remove isolation from user, please do so manually."))
-                return
-
         if duration and duration.lower() in ["forever", "inf", "infinite"]:
             duration = None
         else:
@@ -1141,13 +1161,12 @@ class Punish(commands.Cog):
             return
 
         # Call time() after getting the role due to potential creation delay
-        now = time.time()
-        until = (now + duration + 0.5) if duration else None
+        now = discord.utils.utcnow()
+        until = (now + timedelta(seconds=duration + 0.5)) if duration else None
         duration_ok = (case_min_length is not None) and ((duration is None) or duration >= case_min_length)
-
+        case_number = "?"
         if duration_ok:
-            now_date = datetime.utcfromtimestamp(now)
-            mod_until = until and datetime.utcfromtimestamp(until)
+            mod_until = until
 
             try:
                 if current:
@@ -1183,7 +1202,7 @@ class Punish(commands.Cog):
                     case = await modlog.create_case(
                         self.bot,
                         guild,
-                        now_date,
+                        discord.utils.utcnow(),
                         "Timed Mute",
                         member,
                         moderator=ctx.author,
@@ -1226,6 +1245,8 @@ class Punish(commands.Cog):
         elif case_number:
             verb = "updated" if updating_case else "created"
             msg += " I also %s case #%i in the modlog." % (verb, case_number)
+        else:
+            case_number = "?"
 
         voice_overwrite = await self.config.guild(guild).VOICE_OVERWRITE()
 
@@ -1271,29 +1292,30 @@ class Punish(commands.Cog):
         else:
             muted = False
 
+        thread = None
         if use_threads:
             # create thread for user to talk in, if this is a new case
-            thread_name = f"Case {case_number} - {member.name}"
+            thread_name = f"Case {case_number if case_number else '?'} - {member.name}"
             thread_name = thread_name[:101]  # 100 character name limit
 
             channel = await self.config.guild(guild).CHANNEL_ID()
             channel = guild.get_channel(channel)
-            thread_id = None
+            thread = None
             if channel is None:
                 await ctx.send(error("Punish channel not found!"))
             else:
                 try:
-                    thread_id = await create_thread(self.bot, channel, thread_name, archive=10080)
-                    # add punished user to thread
-                    await add_user_thread(self.bot, thread_id, member)
-                    # add moderator who sanctioned the action to the thread
-                    await add_user_thread(self.bot, thread_id, ctx.author)
-                except AttributeError:
-                    await ctx.send(
-                        error(
-                            "Your guild no longer has Level 2 boost, private threads and punish threads will not function."
-                        )
+                    thread = await channel.create_thread(
+                        name=thread_name,
+                        auto_archive_duration=10080,
+                        type=None,
+                        reason=f"Punished thread for Case {case_number} and member {member.name}.",
+                        invitable=False,
                     )
+                    # add punished user to thread
+                    await thread.add_user(member)
+                    # add moderator who sanctioned the action to the thread
+                    await thread.add_user(ctx.author)
                 except Exception as e:
                     await ctx.send(
                         error(
@@ -1302,9 +1324,9 @@ class Punish(commands.Cog):
                     )
 
             # modify case to include mention to thread channel for easy access
-            if thread_id is not None:
+            if thread is not None and case:
                 try:
-                    new_reason = reason + f"\n\n<#{thread_id}>" if reason is not None else f"<#{thread_id}>"
+                    new_reason = reason + f"\n\n<#{thread.id}>" if reason is not None else f"<#{thread.id}>"
                     edits = {"reason": new_reason}
                     await case.edit(edits)
                 except Exception as e:
@@ -1312,16 +1334,16 @@ class Punish(commands.Cog):
 
         async with self.config.guild(guild).PUNISHED() as punished:
             punished[str(member.id)] = {
-                "start": current.get("start") or now,  # don't override start time if updating
-                "until": until,
+                "start": current.get("start") or now.timestamp(),  # don't override start time if updating
+                "until": until.timestamp() if until else None,
                 "by": current.get("by") or ctx.author.id,  # don't override original moderator
                 "reason": reason,
                 "unmute": overwrite_denies_speak and not muted,
                 "caseno": case_number,
                 "removed_roles": [r.id for r in removed_roles],
             }
-            if use_threads and thread_id is not None:
-                punished[str(member.id)]["thread"] = thread_id
+            if use_threads and thread is not None:
+                punished[str(member.id)]["thread"] = thread.id
 
         if member.voice and overwrite_denies_speak:
             if member.voice.channel:
@@ -1329,7 +1351,7 @@ class Punish(commands.Cog):
 
         # schedule callback for role removal
         if until:
-            await self.schedule_unpunish(until, member)
+            await self.schedule_unpunish(until.timestamp(), member)
 
         if not quiet:
             await ctx.send(msg)
@@ -1394,14 +1416,14 @@ class Punish(commands.Cog):
                 moderator = moderator or guild.get_member(int(member_data.get("by"))) or guild.me
 
                 if until:
-                    until = datetime.utcfromtimestamp(until).timestamp()
+                    until = discord.utils.utcnow().fromtimestamp(until).timestamp()
 
                 edits = {"reason": reason}
 
                 if moderator.id != data.get("by"):
                     edits["amended_by"] = moderator
 
-                edits["modified_at"] = time.time()
+                edits["modified_at"] = discord.utils.utcnow().timestamp()
                 edits["until"] = until
 
                 try:
@@ -1430,7 +1452,7 @@ class Punish(commands.Cog):
             if removed_roles:
                 msg += "\n\nRestored roles: {}.".format(format_list(*(r.name for r in removed_roles)))
 
-                if too_high_to_restore:
+                if apply_roles and too_high_to_restore:
                     fmt_list = format_list(*(r.name for r in too_high_to_restore))
                     msg += "\n" + warning(
                         "These roles were too high for me to restore: {}. " "Ask a mod for help.".format(fmt_list)
@@ -1510,7 +1532,7 @@ class Punish(commands.Cog):
         role = await self.get_role(member.guild, quiet=True)
 
         until = data["until"]
-        duration = until - time.time()
+        duration = until - discord.utils.utcnow().timestamp()
 
         if role and duration > 0:
             await self.schedule_unpunish(until, member)

@@ -1,26 +1,29 @@
 import asyncio
 import contextlib
 from datetime import timezone
+from dateutil import parser, tz
 from collections import namedtuple
 from copy import copy
-from typing import Union, Optional, Literal
+from typing import Union, Literal
 
 import discord
 
-from redbot.cogs.warnings.helpers import (
+from .helpers import (
     warning_points_add_check,
     get_command_for_exceeded_points,
     get_command_for_dropping_points,
     warning_points_remove_check,
+    calculate_total_points,
+    check_warning_expired,
 )
 from redbot.core import Config, checks, commands, modlog
 from redbot.core.bot import Red
 from redbot.core.commands import UserInputOptional
 from redbot.core.i18n import Translator, cog_i18n
-from redbot.core.utils import AsyncIter
 from redbot.core.utils.chat_formatting import warning, pagify, error
 from redbot.core.utils.menus import menu, DEFAULT_CONTROLS, start_adding_reactions
 from redbot.core.utils.predicates import MessagePredicate, ReactionPredicate
+from redbot.core.commands.converter import parse_timedelta
 
 _ = Translator("Warnings", __file__)
 
@@ -39,6 +42,7 @@ class Warnings_Custom(commands.Cog):
         "show_mod": False,
         "warn_channel": None,
         "toggle_channel": False,
+        "expiration_time": 0,
     }
 
     default_member = {"total_points": 0, "status": "", "warnings": {}}
@@ -107,6 +111,11 @@ class Warnings_Custom(commands.Cog):
             await modlog.register_casetypes(casetypes_to_register)
         except RuntimeError:
             pass
+
+    async def get_warnining_points(self, member: discord.Member):
+        warnings = await self.config.member(member).warnings()
+        expiration = await self.config.guild(member.guild).expiration_time()
+        return calculate_total_points(warnings, expiration)
 
     @commands.group()
     @commands.guild_only()
@@ -177,7 +186,9 @@ class Warnings_Custom(commands.Cog):
 
     @warningset.command()
     @commands.guild_only()
-    async def warnchannel(self, ctx: commands.Context, channel: discord.TextChannel = None):
+    async def warnchannel(
+        self, ctx: commands.Context, channel: Union[discord.TextChannel, discord.VoiceChannel, discord.Thread] = None
+    ):
         """Set the channel where warnings should be sent to.
 
         Leave empty to use the channel `[p]warn` command was called in.
@@ -205,6 +216,28 @@ class Warnings_Custom(commands.Cog):
                 await ctx.send(_("Warnings will now be sent in the channel command was used in."))
         else:
             await ctx.send(_("Toggle channel has been disabled."))
+
+    @warningset.command()
+    @commands.guild_only()
+    async def expiration(self, ctx: commands.Context, *, expiration: str):
+        """
+        Set expiration time for warning points.
+        This will not remove warnings for a user, but will affect their total number of points as warnings expire, which will affect things such as warning actions
+
+        Pass `disable` to disable this setting.
+        """
+        if expiration.lower() == "disable":
+            await self.config.guild(ctx.guild).expiration_time.set(0)
+            await ctx.tick()
+            return
+
+        interval = parse_timedelta(expiration)
+        if not interval:
+            await ctx.send(error("Invalid threshold!"), delete_after=30, reference=ctx.message)
+            return
+
+        await self.config.guild(ctx.guild).expiration_time.set(int(interval.total_seconds()))
+        await ctx.tick()
 
     @commands.group()
     @commands.guild_only()
@@ -315,7 +348,7 @@ class Warnings_Custom(commands.Cog):
             else:
                 await ctx.send(_("That is not a registered reason name."))
 
-    @commands.command()
+    @commands.hybrid_command()
     @commands.guild_only()
     @checks.admin_or_permissions(ban_members=True)
     async def reasonlist(self, ctx: commands.Context):
@@ -324,26 +357,28 @@ class Warnings_Custom(commands.Cog):
         guild_settings = self.config.guild(guild)
         msg_list = []
         async with guild_settings.reasons() as registered_reasons:
-            for r, v in registered_reasons.items():
+            num_reasons = len(registered_reasons)
+            for i, (r, v) in enumerate(registered_reasons.items()):
                 if await ctx.embed_requested():
                     em = discord.Embed(
                         title=_("Reason: {name}").format(name=r),
                         description=v["description"],
                     )
                     em.add_field(name=_("Points"), value=str(v["points"]))
+                    em.set_footer(text=f"Page {i+1}/{num_reasons}")
                     msg_list.append(em)
                 else:
                     msg_list.append(
-                        _("Name: {reason_name}\nPoints: {points}\nDescription: {description}").format(
-                            reason_name=r, **v
-                        )
+                        _(
+                            "Name: {reason_name}\nPoints: {points}\nDescription: {description}\n\nPage{p}/{total}"
+                        ).format(reason_name=r, p=i + 1, total=num_reasons, **v)
                     )
         if msg_list:
             await menu(ctx, msg_list, DEFAULT_CONTROLS)
         else:
             await ctx.send(_("There are no reasons configured!"))
 
-    @commands.command()
+    @commands.hybrid_command()
     @commands.guild_only()
     @checks.admin_or_permissions(ban_members=True)
     async def actionlist(self, ctx: commands.Context):
@@ -352,7 +387,8 @@ class Warnings_Custom(commands.Cog):
         guild_settings = self.config.guild(guild)
         msg_list = []
         async with guild_settings.actions() as registered_actions:
-            for r in registered_actions:
+            num_actions = len(registered_actions)
+            for i, r in enumerate(registered_actions):
                 if await ctx.embed_requested():
                     em = discord.Embed(title=_("Action: {name}").format(name=r["action_name"]))
                     em.add_field(name=_("Points"), value="{}".format(r["points"]), inline=False)
@@ -362,20 +398,21 @@ class Warnings_Custom(commands.Cog):
                         inline=False,
                     )
                     em.add_field(name=_("Drop command"), value=r["drop_command"], inline=False)
+                    em.set_footer(text=f"Page {i+1}/{num_actions}")
                     msg_list.append(em)
                 else:
                     msg_list.append(
                         _(
                             "Name: {action_name}\nPoints: {points}\n"
-                            "Exceed command: {exceed_command}\nDrop command: {drop_command}"
-                        ).format(**r)
+                            "Exceed command: {exceed_command}\nDrop command: {drop_command}\n\nPage {p}/{total}"
+                        ).format(p=i + 1, total=num_actions, **r)
                     )
         if msg_list:
             await menu(ctx, msg_list, DEFAULT_CONTROLS)
         else:
             await ctx.send(_("There are no actions configured!"))
 
-    @commands.command()
+    @commands.hybrid_command()
     @commands.guild_only()
     @checks.admin_or_permissions(ban_members=True)
     async def warn(
@@ -482,6 +519,12 @@ class Warnings_Custom(commands.Cog):
         current_point_count += reason_type["points"]
         await member_settings.total_points.set(current_point_count)
 
+        # calculate expiration if set
+        current_point_count = (
+            calculate_total_points(await member_settings.warnings(), guild_settings["expiration_time"])
+            + reason_type["points"]
+        )
+
         await warning_points_add_check(self.config, ctx, user, current_point_count)
         dm = guild_settings["toggle_dm"]
         showmod = guild_settings["show_mod"]
@@ -576,10 +619,10 @@ class Warnings_Custom(commands.Cog):
         async with member_settings.warnings() as user_warnings:
             user_warnings.update(warning_to_add)
 
-    @commands.command()
+    @commands.hybrid_command()
     @commands.guild_only()
     @checks.admin()
-    async def warnings(self, ctx: commands.Context, user: Union[discord.Member, int]):
+    async def warnings(self, ctx: commands.Context, user: discord.Member):
         """List the warnings for the specified user."""
 
         try:
@@ -589,8 +632,10 @@ class Warnings_Custom(commands.Cog):
             user = ctx.guild.get_member(userid)
             user = user or namedtuple("Member", "id guild")(userid, ctx.guild)
 
-        msg = ""
         member_settings = self.config.member(user)
+        expiration_time = await self.config.guild(ctx.guild).expiration_time()
+        total_points = calculate_total_points(await member_settings.warnings(), expiration_time=expiration_time)
+        msg = _("## Warnings for {user}, total points: {total_points}\n").format(user=user, total_points=total_points)
         async with member_settings.warnings() as user_warnings:
             if not user_warnings.keys():  # no warnings for the user
                 await ctx.send(_("That user has no warnings!"))
@@ -606,30 +651,36 @@ class Warnings_Custom(commands.Cog):
                         "date", None
                     )  # not all warnings may have date if switched from using warnings cog by red
                     num = user_warnings[key].get("caseno", None)  # same as above
+                    is_expired = check_warning_expired(user_warnings[key], expiration_time)
                     msg += _(
-                        "{num}{num_points} point warning {reason_name} issued by {user} for " "{description}{date}\n"
+                        "- {num}**{num_points}** point{expired}warning `{reason_name}` issued by {user} for "
+                        "**{description}**{date}\n"
                     ).format(
                         num_points=user_warnings[key]["points"],
                         reason_name=key,
                         user=mod,
                         description=user_warnings[key]["description"],
-                        date=" at {}".format(date) if date else "",
+                        date=(
+                            " on <t:{}>".format(int(parser.parse(date).astimezone(tz.tzlocal()).timestamp()))
+                            if date
+                            else ""
+                        ),
                         num=f"Case #{num}: " if num else "",
+                        expired=" **expired** " if is_expired else " ",
                     )
-                await ctx.send_interactive(
-                    pagify(msg, shorten_by=58),
-                    box_lang=_("Warnings for {user}").format(user=user),
-                )
+                await ctx.send_interactive(pagify(msg, shorten_by=58))
 
-    @commands.command()
+    @commands.hybrid_command()
     @commands.guild_only()
     async def mywarnings(self, ctx: commands.Context):
         """List warnings for yourself."""
 
         user = ctx.author
 
-        msg = ""
         member_settings = self.config.member(user)
+        expiration_time = await self.config.guild(ctx.guild).expiration_time()
+        total_points = calculate_total_points(await member_settings.warnings(), expiration_time=expiration_time)
+        msg = _("## Warnings for {user}, total points: {total_points}\n").format(user=user, total_points=total_points)
         async with member_settings.warnings() as user_warnings:
             if not user_warnings.keys():  # no warnings for the user
                 await ctx.send(_("You have no warnings!"))
@@ -644,19 +695,23 @@ class Warnings_Custom(commands.Cog):
                     date = user_warnings[key].get(
                         "date", None
                     )  # not all warnings may have date if switched from using warnings cog by red
+                    is_expired = check_warning_expired(user_warnings[key], expiration_time)
                     msg += _(
-                        "{num_points} point warning {reason_name} issued by {user} for " "{description}{date}\n"
+                        "**{num_points}** point{expired}warning `{reason_name}` issued by {user} for "
+                        "**{description}**{date}\n"
                     ).format(
                         num_points=user_warnings[key]["points"],
                         reason_name=key,
                         user=mod,
                         description=user_warnings[key]["description"],
-                        date=" at {}".format(date) if date else "",
+                        date=(
+                            " on <t:{}>".format(int(parser.parse(date).astimezone(tz.tzlocal()).timestamp()))
+                            if date
+                            else ""
+                        ),
+                        expired=" **expired** " if is_expired else " ",
                     )
-                await ctx.send_interactive(
-                    pagify(msg, shorten_by=58),
-                    box_lang=_("Warnings for {user}").format(user=user),
-                )
+                await ctx.send_interactive(pagify(msg, shorten_by=58))
 
     @commands.command()
     @commands.guild_only()
@@ -685,7 +740,8 @@ class Warnings_Custom(commands.Cog):
             return await ctx.send(_("You cannot remove warnings from yourself."))
 
         member_settings = self.config.member(member)
-        current_point_count = await member_settings.total_points()
+        expiration_time = await self.config.guild(guild).expiration_time()
+        current_point_count = calculate_total_points(await member_settings.warnings(), expiration_time=expiration_time)
         await warning_points_remove_check(self.config, ctx, member, current_point_count)
         async with member_settings.warnings() as user_warnings:
             if warn_id not in user_warnings.keys():

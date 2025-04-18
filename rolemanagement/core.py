@@ -791,7 +791,7 @@ class RoleManagement(
         await ctx.tick()
 
     @rgroup.command(name="sticky")
-    async def setsticky(self, ctx: GuildContext, role: discord.Role, sticky: bool = None):
+    async def setsticky(self, ctx: GuildContext, role: discord.Role, sticky: Optional[bool] = None):
         """
         sets a role as sticky if used without a settings, gets the current ones
         """
@@ -834,7 +834,7 @@ class RoleManagement(
         await ctx.tick()
 
     @rgroup.command(name="selfrem")
-    async def selfrem(self, ctx: GuildContext, role: discord.Role, removable: bool = None):
+    async def selfrem(self, ctx: GuildContext, role: discord.Role, removable: Optional[bool] = None):
         """
         Sets if a role is self-removable (default False)
 
@@ -851,7 +851,7 @@ class RoleManagement(
         await ctx.tick()
 
     @rgroup.command(name="selfadd")
-    async def selfadd(self, ctx: GuildContext, role: discord.Role, assignable: bool = None):
+    async def selfadd(self, ctx: GuildContext, role: discord.Role, assignable: Optional[bool] = None):
         """
         Sets if a role is self-assignable via command
 
