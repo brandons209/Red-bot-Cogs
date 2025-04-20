@@ -1,10 +1,12 @@
 {
   "author": [
+    "brandons209",
+    "Som3thing",
     "TheBluekr"
   ],
   "bot_version": [
     3,
-    4,
+    5,
     0
   ],
   "description": "Roleplay commands for booping, hugging, etc.",

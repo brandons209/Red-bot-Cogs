@@ -1,24 +1,20 @@
 import discord
-from redbot.core.utils.chat_formatting import italics, pagify, box
+from redbot.core.utils.chat_formatting import italics, pagify, box, warning
 from redbot.core import Config, checks, commands
 import random
 from random import choice
-from typing import Literal
+from typing import Literal, Optional
 
-import asyncio
-import os
-import json
 import re
 
-mention = re.compile("<@(\d{18})>")
-mention_bang = re.compile("<@!(\d{18})>")
+mention = re.compile(r"<@!?(\d{18})>")  # This will handle both <@user_id> and <@!user_id>
 
 
 class RolePlay(commands.Cog):
     def __init__(self, bot):
         super().__init__()
 
-        mass_mentions = True
+        self.mass_mentions = True
         self.config = Config.get_conf(self, identifier=3674895735)
         self.bot = bot
         self.default_guild = {
@@ -64,66 +60,557 @@ class RolePlay(commands.Cog):
     def get_user_and_intensity(self, guild: discord.Guild, target: str):
         target = target.strip()
         user = None
-        intensity = 1
-        # mentions can be <@! or <@
-        user_ment = mention.match(target)
-        user_ment_b = mention_bang.match(target)
+        intensity = 1  # Default intensity
 
-        # try with no intensity specified and not a mention
-        if not user_ment or not user_ment_b:
+        # Check if the target contains intensity and mention or just the name with intensity
+        args = target.split()
+
+        # If the last part of the target is a digit, treat it as intensity
+        if args[-1].isdigit():
+            intensity = int(args[-1])
+            target = " ".join(args[:-1])  # Everything before the last part is the user name
+
+        # Try matching the mention format first
+        user_ment = mention.match(target)
+
+        if user_ment:
+            # If it's a mention, extract the user by ID
+            user = guild.get_member(int(user_ment.group(1)))
+        else:
+            # If not a mention, try to get the member by name
             user = guild.get_member_named(target)
 
-        # has intensity, could be a mention/text
+        # If the user wasn't found by name, try again by matching the mention format
         if not user:
-            try:
-                args = target.split()
-                intensity = int(args[-1])
-                name = " ".join(args[:-1])
-                # not a mention
-                user = guild.get_member_named(name)
-                # parse mention
-                if not user:
-                    user_ment = mention.match(name)
-                    user_ment_b = mention_bang.match(name)
-            except:
-                pass
-
-        if not user:
+            user_ment = mention.match(target)
             if user_ment:
                 user = guild.get_member(int(user_ment.group(1)))
-            elif user_ment_b:
-                user = guild.get_member(int(user_ment_b.group(1)))
-            else:
-                user = None
 
         return user, intensity
 
-    @commands.command(usage="<hug_target> <intensity>")
+    @commands.hybrid_command(usage="<hug_target> <intensity>")
     @commands.guild_only()
-    async def hug(self, ctx, *, hug_target: str):
+    async def hug(self, ctx, *, input: str):
         """Hugs a user with optional intensity!
         Example: .hug *username* 4
 
         Up to 10 intensity levels."""
-        user, intensity = self.get_user_and_intensity(ctx.guild, hug_target)
+        user, intensity = self.get_user_and_intensity(ctx.guild, input)
+        if user is None:
+            await ctx.send(warning(f"I can't see {input}!"))
+            return
 
-        if user is not None:
-            name = italics(user.display_name)
-            if intensity <= 0:
-                msg = "(っ˘̩╭╮˘̩)っ" + name
-            elif intensity <= 3:
-                msg = "(っ´▽｀)っ" + name
-            elif intensity <= 6:
-                msg = "╰(*´︶`*)╯" + name
-            elif intensity <= 9:
-                msg = "(つ≧▽≦)つ" + name
-            elif intensity >= 10:
-                msg = "(づ￣ ³￣)づ {} ⊂(´・ω・｀⊂)".format(name)
-            await ctx.send(msg)
+        name = italics(user.display_name)
+        msg = ""
+        if intensity <= 0:
+            msg = "(っ˘̩╭╮˘̩)っ" + name
+        elif intensity <= 3:
+            msg = "(っ´▽｀)っ" + name
+        elif intensity <= 6:
+            msg = "╰(*´︶`*)╯" + name
+        elif intensity <= 9:
+            msg = "(つ≧▽≦)つ" + name
+        elif intensity >= 10:
+            msg = "(づ￣ ³￣)づ {} ⊂(´・ω・｀⊂)".format(name)
+        await ctx.send(msg)
+
+    @commands.hybrid_command(usage="<snug_target> <intensity>")
+    async def snug(self, ctx, *, input: str):
+        """Snugs a user with optional intensity!
+        Example: .snug *username* 4
+
+        Up to 10 intensity levels."""
+        user, intensity = self.get_user_and_intensity(ctx.guild, input)
+        if user is None:
+            await ctx.send(warning(f"I can't see {input}!"))
+            return
+
+        name = italics(user.display_name)
+        msg = ""
+        if intensity <= 0:
+            msg = "(>^w^)> {} <('w'<)".format(name)
+        elif intensity <= 3:
+            msg = "(づ｡◕‿‿◕｡)づ {} <( ‘ w ‘ )>".format(name)
+        elif intensity <= 6:
+            msg = "(∩˃̣̣̣̣̣̣̣̣̣̣̣̣̣̣̣̣̣̣̣̣̣̣̣̣̣̣̣̣̣̣˃̣̣̣̣̣̣̣̣̣̣̣̣̣̣̣̣̣˂){} <( ‘ w ‘ )>".format(name)
+        elif intensity <= 9:
+            msg = "(っ´∀｀)っ {} (´∇｀*)".format(name)
+        elif intensity >= 10:
+            msg = "(づ｡◕‿‿◕｡)づ {} ٩(◕‿◕｡)۶".format(name)
+
+        await ctx.send(msg)
+
+    @commands.hybrid_command(usage="<snuzz_target> <intensity>")
+    async def snuzz(self, ctx, *, input: str):
+        """Snuzzles a user with optional intensity!
+        Example: .snuzz username 4
+
+        Up to 10 intensity levels."""
+        user, intensity = self.get_user_and_intensity(ctx.guild, input)
+        if user is None:
+            await ctx.send(warning(f"I can't see {input}!"))
+            return
+
+        name = italics(user.display_name)
+        msg = ""
+        if intensity <= 0:
+            # Almost no snuzz
+            msg = f"{name} gently snuzzles the air... (˘ω˘ )"
+        elif intensity <= 3:
+            # Light snuzz
+            msg = f"{name} gets their fluff nuzzled lovingly~ >w<"
+        elif intensity <= 6:
+            # Medium snuzz
+            msg = f"{name} receives a cozy nuzzle! (๑˘︶˘๑)¨*"
+        elif intensity <= 9:
+            # Big snuzz
+            msg = f"{name} is enveloped in snuggly snuzzles! (づ｡◕‿‿◕｡)づ"
         else:
-            await ctx.send("Member not found.")
+            # Maximum snuzz
+            msg = f"{name} is overwhelmed by non-stop snuzzling!!! (≧◡≦) ♡"
+
+        await ctx.send(msg)
+
+    @commands.hybrid_command(usage="<pat_target> <intensity>")
+    async def pat(self, ctx, *, input: str):
+        """Pats a user with optional intensity!
+        Example: .pat username 4
+
+        Up to 10 intensity levels."""
+        user, intensity = self.get_user_and_intensity(ctx.guild, input)
+        if user is None:
+            await ctx.send(warning(f"I can't see {input}!"))
+            return
+
+        name = italics(user.display_name)
+
+        if intensity <= 0:
+            # Almost no pat
+            msg = f"(・_・)つ {name}"
+        elif intensity <= 3:
+            # Gentle pat
+            msg = f"(；^＿^)/)☆(　゜o゜) **pats {name}**"
+        elif intensity <= 6:
+            # Medium pat
+            msg = f"(＾・ω・＾)つ**pats {name}**"
+        elif intensity <= 9:
+            # Big pat
+            msg = f"ヽ(≧∀≦)ﾉ **big pats for  {name}!**"
+        else:
+            # Maximum pat attack
+            msg = f"(((o(*ﾟ▽ﾟ*)o))) **pat attack on   {name}!**"
+
+        await ctx.send(msg)
+
+    @commands.hybrid_command(usage="<glomp_target> <intensity>")
+    async def glomp(self, ctx, *, input: str):
+        """Glomps a user with optional intensity!
+        Example: .glomp username 4
+
+        Up to 10 intensity levels."""
+        user, intensity = self.get_user_and_intensity(ctx.guild, input)
+        if user is None:
+            await ctx.send(warning(f"I can't see {input}!"))
+            return
+
+        author = italics(ctx.author.display_name)
+        name = italics(user.display_name)
+        msg = ""
+
+        if intensity <= 0:
+            # Barely a glomp
+            msg = f"{author} tiptoes up to {name} and gives a little nudgy glomp. (*´ω｀*)"
+        elif intensity <= 3:
+            # Gentle glomp
+            msg = f"{author} glomps {name} gently! (っ´▽｀)っ"
+        elif intensity <= 6:
+            # Big old glomp
+            msg = f"{author} charges at {name} and gives a big old glomp! ╰(*´︶`*)╯"
+        elif intensity <= 9:
+            # Enthusiastic tackle-glomp
+            msg = f"{author} tackles {name} in a super enthusiastic glomp! (つ≧▽≦)つ"
+        else:
+            # Maximum, full-power glomp
+            msg = f"{author} FULL-POWER GLOMP GLOMP glomps {name} with all their might!!! (^з^)-☆"
+
+        await ctx.send(msg)
+
+    @commands.hybrid_command(usage="<wuv_target> <intensity>")
+    async def wuv(self, ctx, *, input: str):
+        """Sends cutesy wuv to a user with optional intensity!
+        Example: .wuv username 4
+
+        Up to 10 intensity levels."""
+        user, intensity = self.get_user_and_intensity(ctx.guild, input)
+        if user is None:
+            await ctx.send(warning(f"I can't see {input}!"))
+            return
+
+        name = italics(user.display_name)
+        msg = ""
+
+        if intensity <= 0:
+            # A tiny bit of wuv
+            msg = f"❤️ {name} ❤️"
+        elif intensity <= 3:
+            # Light wuv
+            msg = f"💖 Sending soft wuv to {name} 💖"
+        elif intensity <= 6:
+            # Medium wuv
+            msg = f"💘 {name}, you are so loved! 💘"
+        elif intensity <= 9:
+            # Big wuv
+            msg = f"💝 Overflowing wuv for {name}! 💝"
+        else:
+            # Maximum, heart‑explosion wuv
+            msg = f"💓💓💓 {name} is absolutely showered in wuv!!! 💓💓💓"
+
+        await ctx.send(msg)
+
+    @commands.hybrid_command(usage="<smooch_target> <intensity>")
+    async def smooch(self, ctx, *, input: str):
+        """Smooches a user with optional intensity!
+        Example: .smooch username 4
+
+        Up to 10 intensity levels."""
+        user, intensity = self.get_user_and_intensity(ctx.guild, input)
+        if user is None:
+            await ctx.send(warning(f"I can't see {input}!"))
+            return
+
+        author = italics(ctx.author.display_name)
+        name = italics(user.display_name)
+        msg = ""
+
+        if intensity <= 0:
+            # Almost no smooch
+            msg = f"{author} air-kisses {name}... *teehee*"
+        elif intensity <= 3:
+            # Light peck
+            msg = f"{author} gives {name} a sweet little smooch on the cheek! 😘"
+        elif intensity <= 6:
+            # Classic kiss
+            msg = f"{author} plants a soft kiss on {name}’s cheek! 😚"
+        elif intensity <= 9:
+            # Passionate smooch
+            msg = f"{author} showers {name} with kisses! 😙💋"
+        else:
+            # Full smoochfest
+            msg = f"{author} launches into a full-on smoochfest with {name}!!! 💋💋💋"
+
+        await ctx.send(msg)
+
+    @commands.hybrid_command(usage="<lick_target> <intensity>")
+    async def lick(self, ctx, *, input: str):
+        """Licks a user with optional intensity!
+        Example: .lick username 4
+
+        Up to 10 intensity levels. Pony‑themed!"""
+        user, intensity = self.get_user_and_intensity(ctx.guild, input)
+        if user is None:
+            await ctx.send(warning(f"I can't see {input}!"))
+            return
+
+        name = italics(user.display_name)
+        msg = ""
+
+        if intensity <= 0:
+            # Tiny, tentative pony poke
+            msg = f"OwO What's this? **pretends to lick {name}**"
+        elif intensity <= 3:
+            # Light lick
+            msg = f"UwU licks    {name} softly! :3"
+        elif intensity <= 6:
+            # Cozy pony nuzzle‐lick
+            msg = f"(◕‿◕✿) Lick for {name}! *nom nom*"
+        elif intensity <= 9:
+            # Rainbow dash lick
+            msg = f"(*￣3￣)ちゅっ licks {name}!"
+        else:
+            # Full‑on pony lick attack!
+            msg = f"(✧ω✧) LICK ATTACK on {name}!!! /ᐠ｡‸｡ᐟ\\"
+
+        await ctx.send(msg)
+
+    @commands.hybrid_command(usage="<mlem_target> <intensity>")
+    async def mlem(self, ctx, *, input: str):
+        """Mlems a user with optional intensity!
+        Example: .mlem username 4
+
+        Up to 10 intensity levels."""
+        user, intensity = self.get_user_and_intensity(ctx.guild, input)
+        if user is None:
+            await ctx.send(warning(f"I can't see {input}!"))
+            return
+
+        author = italics(ctx.author.display_name)
+        name = italics(user.display_name)
+        emoji = "<a:aureliamlem:662860677769330688>"
+        msg = ""
+
+        if intensity <= 0:
+            # Barely a mlem
+            msg = f"{author} barely mlems at {name}... {emoji}"
+        elif intensity <= 3:
+            # Gentle mlem
+            msg = f"{author} gives {name} a soft little mlem! {emoji}"
+        elif intensity <= 6:
+            # Proper mlem
+            msg = f"{author} leans in and mlems {name} lovingly! {emoji}"
+        elif intensity <= 9:
+            # Big mlem
+            msg = f"{author} goes for a big, enthusiastic mlem on {name}! {emoji}"
+        else:
+            # Maximum mlem assault
+            msg = f"{author} unleashes a MLEM OVERDRIVE on {name}!!! {emoji}{emoji}{emoji}"
+
+        await ctx.send(msg)
+
+    @commands.hybrid_command(usage="<scritch_target> <intensity>")
+    async def scritch(self, ctx, *, input: str):
+        """Scritches a user with optional intensity!
+        Example: .scritch username 4
+
+        Up to 10 intensity levels."""
+        user, intensity = self.get_user_and_intensity(ctx.guild, input)
+        if user is None:
+            await ctx.send(warning(f"I can't see {input}!"))
+            return
+
+        author = italics(ctx.author.display_name)
+        name = italics(user.display_name)
+        msg = ""
+
+        if intensity <= 0:
+            # Barely a scritch
+            msg = f"{author} scritches the air near {name}... (^.^)"
+        elif intensity <= 3:
+            # Light scritch
+            msg = f"{author} scritch-scratches along the back of {name} comfortingly~"
+        elif intensity <= 6:
+            # Medium scritch
+            msg = f"{author} gives {name} a soothing scritch down their spine! (⌒‿⌒)"
+        elif intensity <= 9:
+            # Big scritch
+            msg = f"{author} practically rakes scritches across {name}! (≧◡≦)"
+        else:
+            # Maximum scritch storm
+            msg = f"{author} unleashes a full scritch-storm on {name}!!! (*ﾉ>ω<)"
+
+        await ctx.send(msg)
+
+    @commands.hybrid_command(usage="<nibble_target> <intensity>")
+    async def nibble(self, ctx, *, input: str):
+        """Nibbles a user with optional intensity!
+        Example: .nibble username 4
+
+        Up to 10 intensity levels."""
+        user, intensity = self.get_user_and_intensity(ctx.guild, input)
+        if user is None:
+            await ctx.send(warning(f"I can't see {input}!"))
+            return
+
+        author = italics(ctx.author.display_name)
+        name = italics(user.display_name)
+        msg = ""
+
+        if intensity <= 0:
+            # Just a gentle nuzzle
+            msg = f"{author} softly nuzzles {name}'s neck... (~˘▾˘)~"
+        elif intensity <= 3:
+            # Light nibble
+            msg = f"{author} grabs and nibbles the neck of {name} softly~ (｡>ω<｡)"
+        elif intensity <= 6:
+            # Playful nibble
+            msg = f"{author} playfully nibbles at {name}'s ear and neck! (๑>ᴗ<๑)"
+        elif intensity <= 9:
+            # Enthusiastic nibble
+            msg = f"{author} chomps on {name} with plenty of adorable nibbles! (≧ω≦)"
+        else:
+            # Full nibble blitz
+            msg = f"{author} goes full nibble blitz on {name}! nom nom nom!!! (≧ڡ≦)"
+
+        await ctx.send(msg)
+
+    @commands.hybrid_command(usage="<bite_target> <intensity>")
+    async def bite(self, ctx, *, input: str):
+        """Bites a user with optional intensity!
+        Example: .bite username 4
+
+        Up to 10 intensity levels."""
+        user, intensity = self.get_user_and_intensity(ctx.guild, input)
+        if user is None:
+            await ctx.send(warning(f"I can't see {input}!"))
+            return
+
+        author = italics(ctx.author.display_name)
+        name = italics(user.display_name)
+        msg = ""
+
+        if intensity <= 0:
+            # Sniff but no bite
+            msg = f"*sniffs* {name} but decides not to bite... 🐾"
+        elif intensity <= 3:
+            # Gentle nom
+            msg = f"{author} ***noms*** {name} gently! (＾• ω •＾)"
+        elif intensity <= 6:
+            # Playful chomp
+            msg = f"{author} ***chomps*** {name} playfully! (๑•̀ㅁ•́๑)"
+        elif intensity <= 9:
+            # Gusto bite
+            msg = f"{author} bites {name} with gusto! (ง˃̵ᴗ˂̵)ง"
+        else:
+            # Full bite attack
+            msg = f"{author} unleashes a full bite attack on {name}! ***NOM NOM NOM*** (≧ω≦)⊃━☆"
+
+        await ctx.send(msg)
+
+    @commands.hybrid_command(usage="<kiss_target> <intensity>")
+    async def kiss(self, ctx, *, input: str):
+        """Kisses a user with optional intensity!
+        Example: .kiss username 4
+
+        Up to 10 intensity levels."""
+        user, intensity = self.get_user_and_intensity(ctx.guild, input)
+        if user is None:
+            await ctx.send(warning(f"I can't see {input}!"))
+            return
+
+        author = italics(ctx.author.display_name)
+        name = italics(user.display_name)
+        msg = ""
+
+        if intensity <= 0:
+            # Just a token kiss
+            msg = f"💋 {name}"
+        elif intensity <= 3:
+            # Gentle peck
+            msg = f"{author} gives {name} a gentle peck! 😘"
+        elif intensity <= 6:
+            # Sweet kiss
+            msg = f"{author} blows a sweet kiss to {name}! 😚"
+        elif intensity <= 9:
+            # Kiss fest
+            msg = f"{author} peppers {name} with kisses! 😙💋"
+        else:
+            # All-out kiss barrage
+            msg = f"{author} unleashes a full-on kiss barrage at {name}!!! 💋💋💋"
+
+        await ctx.send(msg)
+
+    @commands.hybrid_command(usage="<winghug_target> <intensity>")
+    async def winghug(self, ctx, *, input: str):
+        """Gives a winghug with optional intensity!
+        Example: .winghug username 4
+
+        Up to 10 intensity levels."""
+        user, intensity = self.get_user_and_intensity(ctx.guild, input)
+        if user is None:
+            await ctx.send(warning(f"I can't see {input}!"))
+            return
+
+        author = italics(ctx.author.display_name)
+        name = italics(user.display_name)
+        msg = ""
+
+        if intensity <= 0:
+            # A light wing gesture
+            msg = f"{author} flutters their wings near {name}... 🪽"
+        elif intensity <= 3:
+            # Gentle winghug
+            msg = f"{name} is gently dragged and wrapped in {author}'s wings. 🪽🤍"
+        elif intensity <= 6:
+            # Cozy winghug
+            msg = f"{author} wraps {name} in a warm, cozy winghug! 🪽✨"
+        elif intensity <= 9:
+            # Embracing winghug
+            msg = f"{author} envelops {name} completely in a protective winghug! 🪽🛡️"
+        else:
+            # Majestic full‑power winghug
+            msg = (
+                f"{author} unfurls their majestic wings and sweeps {name} into a glorious, "
+                "all-encompassing winghug!!! 🪽🌟"
+            )
+
+        await ctx.send(msg)
+
+    @commands.hybrid_command(usage="<steal_target> <intensity>")
+    async def steal(self, ctx, *, input: str):
+        """“Steals” a user with optional intensity!
+        Example: .steal username 4
+
+        Up to 10 intensity levels."""
+        user, intensity = self.get_user_and_intensity(ctx.guild, input)
+        if user is None:
+            await ctx.send(warning(f"I can't find {input}!"))
+            return
+
+        name = italics(user.display_name)
+        author = italics(ctx.author.display_name)
+
+        # Base ASCII art template with placeholder for the target’s name in the brackets
+        base = [
+            "wot",
+            f"[ {name} ]",
+            "                /\\   /\\",
+            "               (' w ')",
+        ]
+
+        # Suffix line depends on intensity
+        if intensity <= 0:
+            # Just a curious glance
+            suffix = "    Huh? What’s this…?"
+        elif intensity <= 3:
+            # Light steal
+            suffix = "    Dis is mine now~"
+        elif intensity <= 6:
+            # More possessive
+            suffix = "    Hands off—moi treasure!"
+        elif intensity <= 9:
+            # Aggressive snatch
+            suffix = "    ALL MINE!!! Muahaha!"
+        else:
+            # Full-on raid
+            suffix = "    BOW DOWN! EVERYTHING IS MINE!!!"
+
+        # Combine and send
+        art = "\n".join(base + [suffix])
+        await ctx.send(art)
+
+    @commands.hybrid_command(usage="<drag_target> <intensity>")
+    async def drag(self, ctx, *, input: str):
+        """Drags a user with optional intensity!
+        Example: .drag username 4
+
+        Up to 10 intensity levels."""
+        user, intensity = self.get_user_and_intensity(ctx.guild, input)
+        if user is None:
+            await ctx.send(warning(f"I can't see {input}!"))
+            return
+
+        name = italics(user.display_name)
+        msg = ""
+
+        if intensity <= 0:
+            # Almost no drag
+            msg = f"*barely nudges {name} over...*"
+        elif intensity <= 3:
+            # Gentle drag
+            msg = f"**Drags** {name} **over here**"
+        elif intensity <= 6:
+            # Medium drag
+            msg = f"**Yanks** {name} **closer**"
+        elif intensity <= 9:
+            # Strong drag
+            msg = f"**Hauls** {name} **towards me**"
+        else:
+            # Maximum drag
+            msg = f"**PILES** {name} **into place with unstoppable force!**"
+
+        await ctx.send(msg)
 
     @commands.command()
+    @commands.guild_only()
     async def grouphug(self, ctx, intensity: int, *users: discord.Member):
         """
         Give a group hug to multiple users!
@@ -151,8 +638,8 @@ class RolePlay(commands.Cog):
 
         await ctx.send(msg)
 
-    @commands.group(invoke_without_command=True)
-    async def slap(self, ctx, *, user: discord.Member = None):
+    @commands.hybrid_command()
+    async def slap(self, ctx, *, user: Optional[discord.Member] = None):
         """Slap a user"""
         guild = ctx.guild
         slap_items = await self.config.guild(guild).slap_items()
@@ -170,9 +657,16 @@ class RolePlay(commands.Cog):
         else:
             await ctx.send("`-slaps " + user.display_name + " with " + (choice(slap_items) + "-`"))
 
-    @slap.command(name="add")
+    @commands.group(name="slapset")
     @checks.admin()
-    async def _add_slap(self, ctx, *, slap_item):
+    async def slapset(self, ctx):
+        """
+        Manage slaps
+        """
+        pass
+
+    @slapset.command(name="add")
+    async def slapset_add(self, ctx, *, slap_item):
         """Adds an item to use for slaps!"""
         guild = ctx.guild
         slap_items = await self.config.guild(guild).slap_items()
@@ -183,8 +677,7 @@ class RolePlay(commands.Cog):
         else:
             await ctx.send("Item '{}' is already in the server's slap item list.".format(slap_item))
 
-    @slap.command(name="remove")
-    @checks.admin()
+    @slapset.command(name="remove")
     async def _remove_slap(self, ctx, slap_item: str = ""):
         """Removes item to use for slaps!"""
         guild = ctx.guild
@@ -196,8 +689,7 @@ class RolePlay(commands.Cog):
         else:
             await ctx.send("Item '{}' does not exist in the server's slap items list.".format(slap_item))
 
-    @slap.command(name="list")
-    @checks.admin()
+    @slapset.command(name="list")
     async def _list_slap(self, ctx):
         """Prints list of slaps"""
         guild = ctx.guild
@@ -210,29 +702,7 @@ class RolePlay(commands.Cog):
         for page in pages:
             await ctx.send(box(page, lang="diff"))
 
-    @slap.command(name="import")
-    @checks.is_owner()
-    async def _import_slap(self, ctx, path_to_import):
-        """Imports slaps from jsons.
-
-        Specifiy the **path** to the json to import slaps from.
-
-        *i.e.: /path/containing/json/*"""
-        bot = ctx.bot
-        guild = ctx.guild
-        path_to_slaps = os.path.join(path_to_import, "items.json")
-
-        try:
-            with open(path_to_slaps) as raw_slaps:
-                import_slaps = json.load(raw_slaps)
-                await self.config.guild(guild).slap_items.set(import_slaps)
-                await ctx.send("Slaps imported.")
-        except FileNotFoundError:
-            await ctx.send("Invalid path to json file.")
-        except json.decoder.JSONDecodeError:
-            await ctx.send("Invalid or malformed json file.")
-
-    @commands.group(invoke_without_command=True)
+    @commands.command()
     async def iq(self, ctx, *users: discord.Member):
         """
         Gets IQ of a user. Use multiple users to compare IQs
@@ -263,8 +733,15 @@ class RolePlay(commands.Cog):
 
         await ctx.send(msg)
 
-    @iq.command(name="list")
+    @commands.group(name="iqset")
     @checks.admin()
+    async def iqset(self, ctx):
+        """
+        Manage iq messages
+        """
+        pass
+
+    @iqset.command(name="list")
     async def _list_iq(self, ctx):
         """Prints a list of all IQ phrases."""
         guild = ctx.guild
@@ -287,8 +764,7 @@ class RolePlay(commands.Cog):
         for low_page in low_pages:
             await ctx.send(box(low_page, lang="diff"))
 
-    @iq.command(name="addhigh")
-    @checks.admin()
+    @iqset.command(name="addhigh")
     async def _addhigh_iq(self, ctx, *, new_high_iq_msg: str):
         """Adds a postive phrase for high IQ results!"""
         guild = ctx.guild
@@ -300,8 +776,7 @@ class RolePlay(commands.Cog):
         else:
             await ctx.send("Phrase '{}' is already in the server's High IQ list.".format(new_high_iq_msg))
 
-    @iq.command(name="addlow")
-    @checks.admin()
+    @iqset.command(name="addlow")
     async def _addlow_iq(self, ctx, *, new_low_iq_msg: str):
         """Adds a derogatory phrase for low IQ results!"""
         guild = ctx.guild
@@ -313,8 +788,7 @@ class RolePlay(commands.Cog):
         else:
             await ctx.send("Phrase '{}' is already in the server's Low IQ list.".format(new_low_iq_msg))
 
-    @iq.command(name="removehigh")
-    @checks.admin()
+    @iqset.command(name="removehigh")
     async def _removehigh_iq(self, ctx, high_phrase: str = ""):
         """Removes phrases for high IQ's!"""
         guild = ctx.guild
@@ -332,8 +806,7 @@ class RolePlay(commands.Cog):
         else:
             await ctx.send("Phrase '{}' does not exist in the server's high IQ messages.".format(high_phrase))
 
-    @iq.command(name="removelow")
-    @checks.admin()
+    @iqset.command(name="removelow")
     async def _removelow_iq(self, ctx, low_phrase: str = ""):
         """Removes phrases for low IQ's!"""
         guild = ctx.guild
@@ -351,14 +824,14 @@ class RolePlay(commands.Cog):
         else:
             await ctx.send("Phrase '{}' does not exist in the server's low IQ messages.".format(low_phrase))
 
-    @commands.command()
+    @commands.hybrid_command()
     @commands.cooldown(1, 6, commands.BucketType.guild)
     async def army(self, ctx, horses: int):
         """
-        Summon an army of Aurelias. Max 20
+        Summon an army of Aurelias. Max 50
         """
         army_emoji = "<a:trottingaurelia:568577886164877312>"
-        if horses > 20:
+        if horses > 50:
             await ctx.send("Too many Aurelias!")
             return
         msg = ""
@@ -377,35 +850,36 @@ class RolePlay(commands.Cog):
             for _ in range(largest_factor):
                 msg += "{} ".format(army_emoji)
             msg += "\n"
-            if len(msg) + len(army_emoji) + 20 > 2000:
+            if len(msg) + len(army_emoji) + 50 > 2000:
                 await ctx.send(msg)
                 msg = ""
 
         if msg != "":
             await ctx.send(msg)
 
-    @commands.command(usage="<boop_target> <intensity>")
+    @commands.hybrid_command(usage="<boop_target> <intensity>")
     @commands.guild_only()
-    async def boop(self, ctx, *, boop_target: str):
+    async def boop(self, ctx, *, input: str):
         """
         Boops a user. 10 intensity levels.
         """
-        user, intensity = self.get_user_and_intensity(ctx.guild, boop_target)
-        if user is not None:
-            name = italics(user.display_name)
-            if intensity <= 3:
-                msg = "/) {}".format(name)
-            elif intensity <= 6:
-                msg = "**/)** {}".format(name)
-            elif intensity <= 9:
-                msg = "**__/)__** {}".format(name)
-            elif intensity >= 10:
-                msg = "**__/)__** {} **__(\\\__**".format(name)
-            await ctx.send(msg)
-        else:
-            await ctx.send("Can't boop what I can't see!")
+        user, intensity = self.get_user_and_intensity(ctx.guild, input)
+        if user is None:
+            await ctx.send(warning(f"I can't see {input}!"))
+            return
 
-    @commands.command()
+        name = italics(user.display_name)
+        if intensity <= 3:
+            msg = "/) {}".format(name)
+        elif intensity <= 6:
+            msg = "**/)** {}".format(name)
+        elif intensity <= 9:
+            msg = "**__/)__** {}".format(name)
+        elif intensity >= 10:
+            msg = "**__/)__** {} **__(\\\__**".format(name)
+        await ctx.send(msg)
+
+    @commands.hybrid_command()
     @commands.guild_only()
     async def bap(self, ctx, *, user: discord.Member):
         """
@@ -419,8 +893,8 @@ class RolePlay(commands.Cog):
             else:
                 await ctx.send(":newspaper2: " + italics(user.display_name))
 
-    @commands.command()
-    async def flip(self, ctx, *, user: discord.Member = None):
+    @commands.hybrid_command()
+    async def flip(self, ctx, *, user: Optional[discord.Member] = None):
         """Flip a coin... or a user.
         Defaults to a coin.
         """

@@ -1,5 +1,4 @@
 # redbot/discord
-from optparse import Option
 from tokenize import String
 from discord.user import User
 from discord.member import Member
@@ -25,6 +24,7 @@ from .data import (
 )
 from datetime import datetime, timedelta
 from dateutil.tz import tzlocal
+from glob import glob
 import time
 import os
 import asyncio
@@ -32,9 +32,11 @@ from typing import Literal, Optional, Union, Any, Sequence, List, Deque
 from collections import deque
 from io import BytesIO, StringIO
 import csv
+import re
 
 AUDIT_QUEUE_LEN = 100
 LOG_MSG = "[Activitylog] {}"
+ID_FINDER = re.compile(r"\(id\s*(\d+)\)")
 
 
 class ActivityLogger(commands.Cog):
@@ -476,7 +478,7 @@ class ActivityLogger(commands.Cog):
         self,
         action: str,
         category: str,
-        author: Union[discord.Member, discord.User],
+        author: Union[discord.Member, discord.User, int],
         attribute: str,
         before: Any,
         after: Any,
@@ -488,7 +490,7 @@ class ActivityLogger(commands.Cog):
             "datetime": audit.created_at if audit else discord.utils.utcnow(),
             "action": action,
             "category": category,
-            "author_id": author.id,
+            "author_id": author if isinstance(author, int) else author.id,
             "attribute": attribute,
             "before": before,
             "after": after,
@@ -793,7 +795,7 @@ class ActivityLogger(commands.Cog):
     @checks.bot_has_permissions(administrator=True)
     async def sync_guild(self, ctx: commands.Context):
         """
-        Sync all channels to the internal database. Audit logs are NOT synced, this will come in a future update.
+        Sync all channels to the internal database. Audit logs are NOT synced, this will come in a future update. This will also pull some data from the older version logs.
         """
         await ctx.send(
             warning(
@@ -810,7 +812,7 @@ class ActivityLogger(commands.Cog):
 
         guild = ctx.guild
         await ctx.send(f"🔄 Starting full sync for **{guild.name}**...")
-        update_message = info("Processing {}/{} channels...")
+        update_message = info("Processing {} channels... \nProgress: {}")
 
         ## helper functions
         async def sync_channel(channel: Union[discord.TextChannel, discord.VoiceChannel, discord.Thread]):
@@ -830,7 +832,9 @@ class ActivityLogger(commands.Cog):
             except Exception as e:
                 print(f"Error fetching {channel.name}: {e}")
 
-        update_m = await ctx.send(update_message.format(1, len(guild.channels)))
+        update_m = await ctx.send(update_message.format(len(guild.channels), "N/A"))
+        start = time.perf_counter()
+        total = len(guild.channels)
         for i, channel in enumerate(guild.channels):
             if isinstance(channel, discord.TextChannel) or isinstance(channel, discord.VoiceChannel):
                 await sync_channel(channel)
@@ -850,11 +854,57 @@ class ActivityLogger(commands.Cog):
                 for thread in threads:
                     await sync_channel(thread)
 
-            if i % 5 == 0:
-                try:
-                    await update_m.edit(content=update_message.format(i + 1, len(guild.channels)))
-                except:
-                    update_m = await ctx.send(update_message.format(i + 1, len(guild.channels)))
+            now = time.perf_counter()
+            elapsed = now - start
+            avg = elapsed / i if i > 0 else 0
+            remaining = (total - i) * avg
+
+            hrs, rem = divmod(remaining, 3600)
+            mins, secs = divmod(rem, 60)
+            eta_str = f"{int(hrs)}:{int(mins):02d}:{secs:04.1f}"
+            progress_string = f"Iter {i+1}/{total} — elapsed {elapsed:.1f}s — ETA {eta_str}"
+
+            try:
+                await update_m.edit(content=update_message.format(total, progress_string))
+            except:
+                update_m = await ctx.send(update_message.format(total, progress_string))
+
+        # sync member join/leaves from old files
+        files = sorted(glob(os.path.join(self.data_path, str(guild.id), "*guild.log")))
+        for path in files:
+            with open(path, "r") as f:
+                data = f.readlines()
+            for line in data:
+                if "Member join" in line or "Member leave" in line:
+                    id = re.search(ID_FINDER, line)
+                    if id:
+                        uid = int(id.group(1))
+                        if "Member join" in line:
+                            await self.log(
+                                "audit",
+                                guild=guild,
+                                update=False,
+                                audit=None,
+                                action="member_join",
+                                category="create",
+                                author=uid,
+                                attribute="join",
+                                before=None,
+                                after=uid,
+                            )
+                        else:
+                            await self.log(
+                                "audit",
+                                guild=guild,
+                                update=False,
+                                audit=None,
+                                action="member_leave",
+                                category="create",
+                                author=uid,
+                                attribute="leave",
+                                before=uid,
+                                after=None,
+                            )
 
         await ctx.send("✅ Full guild sync complete!")
 

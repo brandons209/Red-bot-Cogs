@@ -3,8 +3,9 @@ from redbot.core import Config, commands
 from wand.image import Image
 from io import BytesIO
 from typing import Optional, Tuple, Literal
-import asyncio, functools, urllib
+import asyncio, functools
 from PIL import Image as PILImage
+from PIL import ImageEnhance
 
 MAX_SIZE = 8 * 1024 * 1024
 
@@ -23,7 +24,7 @@ class ImageMagic(commands.Cog):
         self.config = Config.get_conf(self, identifier=4928034571, force_registration=True)
         self.bot = bot
 
-    async def _get_image(self, ctx, link: str = None) -> Image:
+    async def _get_image(self, ctx, link: Optional[str] = None) -> Image:
         if ctx.guild:
             max_filesize = ctx.guild.filesize_limit
         else:
@@ -38,14 +39,12 @@ class ImageMagic(commands.Cog):
                     msg = await ctx.channel.fetch_message(ctx.message.reference.message_id)
                 if msg and msg.attachments:
                     for a in msg.attachments:
-                        path = urllib.parse.urlparse(a.url).path
                         link = a.url
                         break
 
             if not link:
                 async for msg in ctx.channel.history(limit=10):
                     for a in msg.attachments:
-                        path = urllib.parse.urlparse(a.url).path
                         link = a.url
                         break
                     if link:
@@ -53,7 +52,6 @@ class ImageMagic(commands.Cog):
             if not link:
                 raise ImageFindError("Please provide an attachment.")
         if link:  # linked image
-            path = urllib.parse.urlparse(link).path
             async with aiohttp.ClientSession() as session:
                 try:
                     async with session.get(link) as response:
@@ -65,7 +63,6 @@ class ImageMagic(commands.Cog):
                 except (OSError, aiohttp.ClientError):
                     raise ImageFindError("An image could not be found. Make sure you provide a direct link.")
         else:  # attached image
-            path = urllib.parse.urlparse(ctx.message.attachments[0].url).path
             if ctx.message.attachments[0].size > max_filesize:
                 raise ImageFindError("That image is too large.")
             temp_orig = BytesIO()
@@ -87,6 +84,145 @@ class ImageMagic(commands.Cog):
         intensity /= 10
         return intensity
 
+    @staticmethod
+    def _fry(img):
+        e = ImageEnhance.Sharpness(img)
+        img = e.enhance(100)
+        e = ImageEnhance.Contrast(img)
+        img = e.enhance(100)
+        e = ImageEnhance.Brightness(img)
+        img = e.enhance(0.27)
+        r, b, g = img.split()
+        e = ImageEnhance.Brightness(r)
+        r = e.enhance(4)
+        e = ImageEnhance.Brightness(g)
+        g = e.enhance(1.75)
+        e = ImageEnhance.Brightness(b)
+        b = e.enhance(0.6)
+        img = Image.merge("RGB", (r, g, b))
+        e = ImageEnhance.Brightness(img)
+        img = e.enhance(1.5)
+        temp = BytesIO()
+        temp.name = "deepfried.png"
+        img.save(temp)
+        temp.seek(0)
+        return temp, temp.name
+
+    @staticmethod
+    def _videofry(img, duration):
+        imgs = []
+        frame = 0
+        while img:
+            i = img.copy()
+            i = i.convert("RGB")
+            e = ImageEnhance.Sharpness(i)
+            i = e.enhance(100)
+            e = ImageEnhance.Contrast(i)
+            i = e.enhance(100)
+            e = ImageEnhance.Brightness(i)
+            i = e.enhance(0.27)
+            r, g, b = i.split()
+            e = ImageEnhance.Brightness(r)
+            r = e.enhance(4)
+            e = ImageEnhance.Brightness(g)
+            g = e.enhance(1.75)
+            e = ImageEnhance.Brightness(b)
+            b = e.enhance(0.6)
+            e = ImageEnhance.Contrast(b)
+            i = Image.merge("RGB", (r, g, b))
+            e = ImageEnhance.Brightness(i)
+            i = e.enhance(1.5)
+            imgs.append(i)
+            frame += 1
+            try:
+                img.seek(frame)
+            except EOFError:
+                break
+        temp = BytesIO()
+        temp.name = "deepfried.gif"
+        if duration:
+            imgs[0].save(temp, format="GIF", save_all=True, append_images=imgs[1:], loop=0, duration=duration)
+        else:
+            imgs[0].save(temp, format="GIF", save_all=True, append_images=imgs[1:], loop=0)
+        temp.seek(0)
+        return temp, temp.name
+
+    @staticmethod
+    def _nuke(img):
+        w, h = img.size[0], img.size[1]
+        dx = ((w + 200) // 200) * 2
+        dy = ((h + 200) // 200) * 2
+        img = img.resize(((w + 1) // dx, (h + 1) // dy))
+        e = ImageEnhance.Sharpness(img)
+        img = e.enhance(100)
+        e = ImageEnhance.Contrast(img)
+        img = e.enhance(100)
+        e = ImageEnhance.Brightness(img)
+        img = e.enhance(0.27)
+        r, b, g = img.split()
+        e = ImageEnhance.Brightness(r)
+        r = e.enhance(4)
+        e = ImageEnhance.Brightness(g)
+        g = e.enhance(1.75)
+        e = ImageEnhance.Brightness(b)
+        b = e.enhance(0.6)
+        img = Image.merge("RGB", (r, g, b))
+        e = ImageEnhance.Brightness(img)
+        img = e.enhance(1.5)
+        e = ImageEnhance.Sharpness(img)
+        img = e.enhance(100)
+        img = img.resize((w, h), Image.BILINEAR)
+        temp = BytesIO()
+        temp.name = "nuke.jpg"
+        img.save(temp, quality=1)
+        temp.seek(0)
+        return temp, temp.name
+
+    @staticmethod
+    def _videonuke(img, duration):
+        imgs = []
+        frame = 0
+        while img:
+            i = img.copy()
+            i = i.convert("RGB")
+            w, h = i.size[0], i.size[1]
+            dx = ((w + 200) // 200) * 2
+            dy = ((h + 200) // 200) * 2
+            i = i.resize(((w + 1) // dx, (h + 1) // dy))
+            e = ImageEnhance.Sharpness(i)
+            i = e.enhance(100)
+            e = ImageEnhance.Contrast(i)
+            i = e.enhance(100)
+            e = ImageEnhance.Brightness(i)
+            i = e.enhance(0.27)
+            r, g, b = i.split()
+            e = ImageEnhance.Brightness(r)
+            r = e.enhance(4)
+            e = ImageEnhance.Brightness(g)
+            g = e.enhance(1.75)
+            e = ImageEnhance.Brightness(b)
+            b = e.enhance(0.6)
+            i = Image.merge("RGB", (r, g, b))
+            e = ImageEnhance.Brightness(i)
+            i = e.enhance(1.5)
+            e = ImageEnhance.Sharpness(i)
+            i = e.enhance(100)
+            i = i.resize((w, h), Image.BILINEAR)
+            imgs.append(i)
+            frame += 1
+            try:
+                img.seek(frame)
+            except EOFError:
+                break
+        temp = BytesIO()
+        temp.name = "nuke.gif"
+        if duration:
+            imgs[0].save(temp, save_all=True, append_images=imgs[1:], loop=0, duration=duration)
+        else:
+            imgs[0].save(temp, save_all=True, append_images=imgs[1:], loop=0)
+        temp.seek(0)
+        return temp, temp.name
+
     def _jpeg_compress(self, img: Image, quality: int) -> Image:
         # save image to temp variable to load it as a PIL image
         temp_file = BytesIO()
@@ -94,21 +230,21 @@ class ImageMagic(commands.Cog):
         temp_file.seek(0)
 
         # load as PIL image
-        img = PILImage.open(temp_file)
+        img_file = PILImage.open(temp_file)
 
         # if its gif, compress each image
         temp_files = [BytesIO() for _ in range(getattr(img, "n_frames", 1))]
         duration = []
         for temp_file in temp_files:
             try:
-                duration += [img.info["duration"]]
+                duration += [img_file.info["duration"]]
             except KeyError:
                 pass
             # compress
-            img.convert("RGB").save(temp_file, "JPEG", quality=(1 - quality))
+            img_file.convert("RGB").save(temp_file, "JPEG", quality=(1 - quality))
             temp_file.seek(0)
             try:
-                img.seek(img.tell() + 1)
+                img_file.seek(img_file.tell() + 1)
             except:
                 pass
 
@@ -160,12 +296,15 @@ class ImageMagic(commands.Cog):
             return
 
         try:
-            await ctx.reply(file=discord.File(BytesIO(img.make_blob()), name), mention_author=False)
+            if isinstance(img, Image):
+                await ctx.reply(file=discord.File(BytesIO(img.make_blob()), name), mention_author=False)
+            else:
+                await ctx.reply(file=discord.File(img, filename=name), mention_author=False)
         except discord.errors.HTTPException:
             await ctx.reply("That image is too large.", mention_author=False)
             return
 
-    @commands.group()
+    @commands.hybrid_command()
     @commands.bot_has_permissions(attach_files=True)
     async def distort(self, ctx):
         """
@@ -176,7 +315,7 @@ class ImageMagic(commands.Cog):
         pass
 
     @distort.command()
-    async def jpeg(self, ctx, intensity: Optional[float] = 10, *, link: str = None):
+    async def jpeg(self, ctx, intensity: Optional[float] = 10, *, link: Optional[str] = None):
         """
         Applies JPEG compression to image
         """
@@ -191,7 +330,7 @@ class ImageMagic(commands.Cog):
             await self._command_body(ctx, args=(self._jpeg_compress, img, quality))
 
     @distort.command()
-    async def barrel(self, ctx, intensity: Optional[float] = 10, *, link: str = None):
+    async def barrel(self, ctx, intensity: Optional[float] = 10, *, link: Optional[str] = None):
         """
         Bulges the center of the image outward
         """
@@ -217,7 +356,7 @@ class ImageMagic(commands.Cog):
             )
 
     @distort.command()
-    async def implode(self, ctx, intensity: Optional[float] = 10, *, link: str = None):
+    async def implode(self, ctx, intensity: Optional[float] = 10, *, link: Optional[str] = None):
         """
         Pinches in the center of the image
         """
@@ -232,7 +371,7 @@ class ImageMagic(commands.Cog):
             await self._command_body(ctx, args=(self._distortion, img, "implode", (amount * intensity,)))
 
     @distort.command()
-    async def swirl(self, ctx, intensity: Optional[float] = 10, *, link: str = None):
+    async def swirl(self, ctx, intensity: Optional[float] = 10, *, link: Optional[str] = None):
         """
         Swirls the center of the image
         """
@@ -261,7 +400,7 @@ class ImageMagic(commands.Cog):
             await self._command_body(ctx, args=(self._distortion, img, "swirl", (intensity,)))
 
     @distort.command()
-    async def charcoal(self, ctx, intensity: Optional[float], *, link: str = None):
+    async def charcoal(self, ctx, intensity: Optional[float], *, link: Optional[str] = None):
         """
         Makes the image look somewhat like it was drawn with charcoal
         """
@@ -275,7 +414,7 @@ class ImageMagic(commands.Cog):
             await self._command_body(ctx, args=(self._distortion, img, "charcoal", (1.5, 0.5)))
 
     @distort.command()
-    async def sketch(self, ctx, intensity: Optional[float], *, link: str = None):
+    async def sketch(self, ctx, intensity: Optional[float], *, link: Optional[str] = None):
         """
         Makes the image look like it is a sketch
         """
@@ -289,7 +428,7 @@ class ImageMagic(commands.Cog):
             await self._command_body(ctx, args=(self._distortion, img, "sketch", (0.5, 0.0, 98.0)))
 
     @distort.command()
-    async def zoom(self, ctx, intensity: Optional[float], *, link: str = None):
+    async def zoom(self, ctx, intensity: Optional[float], *, link: Optional[str] = None):
         """
         Zooms in on the center of an image
         """
@@ -313,6 +452,42 @@ class ImageMagic(commands.Cog):
                     (f"{w/1.5}x{h/1.5}+{w/2}+{h/2}",),
                 ),
             )
+
+    @distort.command(name="deepfry")
+    async def deepfry(self, ctx: commands.Context, link: Optional[str] = None):
+        """
+        Deepfry image
+        """
+        async with ctx.typing():
+            try:
+                img = await self._get_image(ctx, link)
+            except ImageFindError as e:
+                return await ctx.reply(e, mention_author=False)
+
+            # convert to PIL Image for this one
+            pilimage = PILImage.open(BytesIO(img.make_blob("png")))
+            if "duration" in pilimage.info:
+                await self._command_body(ctx, args=(self._videofry, pilimage, pilimage.info["duration"]))
+            else:
+                await self._command_body(ctx, args=(self._fry, pilimage))
+
+    @distort.command(name="nuke")
+    async def nuke(self, ctx: commands.Context, link: Optional[str] = None):
+        """
+        Deepfry image
+        """
+        async with ctx.typing():
+            try:
+                img = await self._get_image(ctx, link)
+            except ImageFindError as e:
+                return await ctx.reply(e, mention_author=False)
+
+            # convert to PIL Image for this one
+            pilimage = PILImage.open(BytesIO(img.make_blob("png")))
+            if "duration" in pilimage.info:
+                await self._command_body(ctx, args=(self._videonuke, pilimage, pilimage.info["duration"]))
+            else:
+                await self._command_body(ctx, args=(self._nuke, pilimage))
 
 
 async def red_delete_data_for_user(

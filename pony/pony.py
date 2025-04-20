@@ -2,7 +2,7 @@ import discord
 from redbot.core.utils.chat_formatting import *
 from redbot.core import Config, checks, commands
 from urllib import parse
-from typing import Literal
+from typing import Literal, Optional
 import aiohttp
 import os
 import traceback
@@ -41,20 +41,20 @@ class Pony(commands.Cog):
         for guild in self.bot.guilds:
             self.cooldowns[guild.id] = {}
 
-    @commands.command()
+    @commands.hybrid_command()
     @commands.guild_only()
     async def pony(self, ctx, *, text: str = ""):
         """Retrieves the latest result from Derpibooru"""
         await self.fetch_image(ctx, randomize=False, tags=text)
 
-    @commands.command()
+    @commands.hybrid_command()
     @commands.guild_only()
     async def ponyr(self, ctx, *, text: str = ""):
         """Retrieves a random result from Derpibooru"""
         await self.fetch_image(ctx, randomize=True, tags=text)
 
     # needed because derpi was having trouble getting a random image from our derpi page with the filters we have
-    @commands.command()
+    @commands.hybrid_command()
     @commands.guild_only()
     async def mascot(self, ctx):
         """
@@ -181,7 +181,7 @@ class Pony(commands.Cog):
 
     @ponyset.command(name="maxfilters")
     @checks.is_owner()
-    async def _maxfilters_ponyset(self, ctx, new_max_filters: int):
+    async def _maxfilters_ponyset(self, ctx, new_max_filters: Optional[int] = None):
         """Sets the global tag limit for the filter list.
 
         Leave blank to get current max filters.

@@ -6,8 +6,9 @@
   "hidden": false,
   "install_msg": "Thanks for using my cog! Use [p]time to get started.",
   "requirements": [
-    "dateparser",
-    "tzdata"
+    "python-dateutil",
+    "pytz",
+    "dateparser"
   ],
   "tags": [
     "brandons209",
@@ -15,5 +16,6 @@
     "timezone",
     "time"
   ],
+  "min_bot_version": "3.5.0",
   "end_user_data_statement": "This cog stores a user's timezone, if set by the user."
 }

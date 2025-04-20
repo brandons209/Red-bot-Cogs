@@ -1,0 +1,18 @@
+{
+    "NAME": "EveryoneEmoji",
+    "AUTHOR": "Brandons209",
+    "SHORT": "Uploads emoji, can be used for non-nitro people to send animated emojis.",
+    "DESCRIPTION": "Uploads emoji, can be used for non-nitro people to send animated emojis.",
+    "INSTALL_MSG": "Thanks for installing EveryoneEmoji.",
+    "REQUIREMENTS": [
+        "emoji"
+    ],
+    "TAGS": [
+        "emoji",
+        "EveryoneEmoji",
+        "everyone"
+    ],
+    "DISABLED": false,
+    "min_bot_version": "3.5.0",
+    "end_user_data_statement": "This cog stores no data."
+}
