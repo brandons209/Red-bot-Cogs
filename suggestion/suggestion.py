@@ -11,7 +11,6 @@ from redbot.core.utils.menus import start_adding_reactions
 from redbot.core.utils.antispam import AntiSpam
 
 from redbot.core.bot import Red
-from .discord_thread_feature import create_thread, add_user_thread
 
 
 class Suggestion(commands.Cog):
@@ -56,7 +55,7 @@ class Suggestion(commands.Cog):
             num_down=0,
         )
 
-    @commands.command()
+    @commands.hybrid_command()
     @commands.guild_only()
     @checks.bot_has_permissions(add_reactions=True)
     async def suggest(self, ctx: commands.Context, *, suggestion: str):
@@ -83,9 +82,9 @@ class Suggestion(commands.Cog):
         embed = discord.Embed(color=await ctx.embed_colour(), description=suggestion)
         embed.set_author(
             name=f"Suggestion by {ctx.author.display_name}",
-            icon_url=ctx.author.avatar_url,
+            icon_url=ctx.author.display_avatar.url,
         )
-        embed.set_footer(text=f"Suggested by {ctx.author.name}#{ctx.author.discriminator} ({ctx.author.id})")
+        embed.set_footer(text=f"Suggested by {ctx.author.name} ({ctx.author.id})")
 
         if not suggest_id:
             if await self.config.toggle():
@@ -120,14 +119,15 @@ class Suggestion(commands.Cog):
         if await self.config.guild(ctx.guild).delete_suggest():
             await ctx.message.delete()
         else:
+            await ctx.send("Done!", delete_after=30)
             await ctx.tick()
 
         if await self.config.guild(ctx.guild).create_threads():
             # always use max archive, function will clip it if needed
             try:
-                thread = await create_thread(self.bot, channel, msg, name=content, archive=10080)
-                await add_user_thread(self.bot, thread, ctx.author)
-            except:
+                thread = await channel.create_thread(name=content, auto_archive_duration=10080, message=msg)
+                await thread.add_user(ctx.author)
+            except (discord.Forbidden, discord.HTTPException):
                 await ctx.send("Error in creating a thread for this suggestion, please check permissions!")
 
         try:
@@ -172,7 +172,7 @@ class Suggestion(commands.Cog):
             if await self.config.custom("SUGGESTION", server, suggestion_id).finished():
                 return await ctx.send("This suggestion has been finished already.")
         try:
-            oldmsg = await oldchannel.fetch_message(id=msg_id)
+            oldmsg = await oldchannel.fetch_message(msg_id)
         except discord.NotFound:
             return await ctx.send("Uh oh, message with this ID doesn't exist.")
         if not oldmsg:
@@ -185,10 +185,10 @@ class Suggestion(commands.Cog):
         op_id = int(op_info[0])
         op = await self.bot.fetch_user(op_id)
         op_name = op.name
-        op_avatar = op.avatar_url
+        op_avatar = op.display_avatar.url
         if not op:
             op_name = str(op_info[1])
-            op_avatar = ctx.guild.icon_url
+            op_avatar = ctx.guild.icon.url
         embed.set_author(name=f"Approved suggestion by {op_name}", icon_url=op_avatar)
         # get number of reactions for approved / denied
         up_emoji = self.bot.get_emoji(await self.config.guild(ctx.guild).up_emoji())
@@ -281,7 +281,7 @@ class Suggestion(commands.Cog):
             if await self.config.custom("SUGGESTION", server, suggestion_id).finished():
                 return await ctx.send("This suggestion has been finished already.")
         try:
-            oldmsg = await oldchannel.fetch_message(id=msg_id)
+            oldmsg = await oldchannel.fetch_message(msg_id)
         except discord.NotFound:
             return await ctx.send("Uh oh, message with this ID doesn't exist.")
         if not oldmsg:
@@ -294,10 +294,10 @@ class Suggestion(commands.Cog):
         op_id = int(op_info[0])
         op = await self.bot.fetch_user(op_id)
         op_name = op.name
-        op_avatar = op.avatar_url
+        op_avatar = op.display_avatar.url
         if not op:
             op_name = str(op_info[1])
-            op_avatar = ctx.guild.icon_url
+            op_avatar = ctx.guild.icon.url
         embed.set_author(name=f"Rejected suggestion by {op_name}", icon_url=op_avatar)
 
         # get number of reactions for approved / denied
@@ -396,7 +396,7 @@ class Suggestion(commands.Cog):
                 return await ctx.send("This suggestion already has a reason.")
             content, embed = await self._build_suggestion(ctx, ctx.author.id, ctx.guild.id, suggestion_id, is_global)
             embed.add_field(name="Reason:", value=reason, inline=False)
-            msg = await channel.fetch_message(id=msg_id)
+            msg = await channel.fetch_message(msg_id)
             if msg:
                 await msg.edit(content=content, embed=embed)
         await self.config.custom("SUGGESTION", server, suggestion_id).reason.set(True)
@@ -600,7 +600,7 @@ class Suggestion(commands.Cog):
 
     @checks.bot_has_permissions(add_reactions=True)
     @setsuggest.command(name="upemoji")
-    async def setsuggest_upemoji(self, ctx: commands.Context, up_emoji: discord.Emoji = None):
+    async def setsuggest_upemoji(self, ctx: commands.Context, up_emoji: Optional[discord.Emoji] = None):
         """Set custom reactions emoji instead of ✅."""
         if not up_emoji:
             await self.config.guild(ctx.guild).up_emoji.set(None)
@@ -614,7 +614,7 @@ class Suggestion(commands.Cog):
 
     @checks.bot_has_permissions(add_reactions=True)
     @setsuggest.command(name="downemoji")
-    async def setsuggest_downemoji(self, ctx: commands.Context, down_emoji: discord.Emoji = None):
+    async def setsuggest_downemoji(self, ctx: commands.Context, down_emoji: Optional[discord.Emoji] = None):
         """Set custom reactions emoji instead of ❎."""
         if not down_emoji:
             await self.config.guild(ctx.guild).up_emoji.set(None)
@@ -628,7 +628,7 @@ class Suggestion(commands.Cog):
 
     @checks.bot_has_permissions(manage_messages=True)
     @setsuggest.command(name="autodelete")
-    async def setsuggest_autodelete(self, ctx: commands.Context, on_off: bool = None):
+    async def setsuggest_autodelete(self, ctx: commands.Context, on_off: Optional[bool] = None):
         """
         Toggle whether after `[p]suggest`, the bot deletes the message.
         """
@@ -650,7 +650,7 @@ class Suggestion(commands.Cog):
         pass
 
     @setglobal.command(name="toggle")
-    async def setsuggest_setglobal_toggle(self, ctx: commands.Context, on_off: bool = None):
+    async def setsuggest_setglobal_toggle(self, ctx: commands.Context, on_off: Optional[bool] = None):
         """Toggle global suggestions.
         If `on_off` is not provided, the state will be flipped."""
         target_state = on_off if on_off else not (await self.config.toggle())
@@ -664,8 +664,8 @@ class Suggestion(commands.Cog):
     async def setsuggest_setglobal_channel(
         self,
         ctx: commands.Context,
-        server: discord.Guild = None,
-        channel: discord.TextChannel = None,
+        server: Optional[discord.Guild] = None,
+        channel: Optional[discord.TextChannel] = None,
     ):
         """Add channel where global suggestions should be sent."""
         if not server:
@@ -677,7 +677,7 @@ class Suggestion(commands.Cog):
         await ctx.send(f"{channel.mention} has been saved for global suggestions.")
 
     @setglobal.command(name="ignore")
-    async def setsuggest_setglobal_ignore(self, ctx: commands.Context, server: discord.Guild = None):
+    async def setsuggest_setglobal_ignore(self, ctx: commands.Context, server: Optional[discord.Guild] = None):
         """Ignore suggestions from the server."""
         if not server:
             server = ctx.guild
@@ -689,7 +689,7 @@ class Suggestion(commands.Cog):
             await ctx.send(f"{server.name} is already in the ignored list.")
 
     @setglobal.command(name="unignore")
-    async def setsuggest_setglobal_unignore(self, ctx: commands.Context, server: discord.Guild = None):
+    async def setsuggest_setglobal_unignore(self, ctx: commands.Context, server: Optional[discord.Guild] = None):
         """Remove server from the ignored list."""
         if not server:
             server = ctx.guild
@@ -724,7 +724,7 @@ class Suggestion(commands.Cog):
         if op:
             op_name = op.name
             op_discriminator = op.discriminator
-            op_avatar = op.avatar_url
+            op_avatar = op.display_avatar.url
         else:
             op_name = str(op_info[1])
             op_discriminator = int(op_info[2])

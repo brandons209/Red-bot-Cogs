@@ -1,12 +1,13 @@
 from redbot.core.utils.chat_formatting import *
-from redbot.core import Config, checks, commands, bank
-from redbot.core.data_manager import cog_data_path
-from typing import Literal
+from redbot.core import Config, checks, commands
+from redbot.core.utils.predicates import MessagePredicate
+from typing import Literal, Union, Optional
 import discord
-
+import asyncio
 import aiohttp
 import PIL
-import os
+from PIL import Image
+from io import BytesIO
 
 
 class NitroEmoji(commands.Cog):
@@ -21,7 +22,7 @@ class NitroEmoji(commands.Cog):
         self.config = Config.get_conf(self, identifier=123859659843, force_registration=True)
         # roles maps: role id (str) -> number of allowed emojis (int)
         default_guild = {"channel": None, "disabled": False, "roles": {}}
-        default_member = {"emojis": []}
+        default_member = {"emojis": [], "reaction": None}
         self.config.register_guild(**default_guild)
         self.config.register_member(**default_member)
 
@@ -56,34 +57,37 @@ class NitroEmoji(commands.Cog):
 
         return num_emojis
 
-    def find_emoji(self, guild, name):
+    def find_emoji(self, guild: discord.Guild, name: Union[str, int]):
         emoji = self.bot.get_emoji(name)
         # find by name:
         if not emoji:
             emoji = discord.utils.get(guild.emojis, name=name)
         return emoji
 
-    async def add_emoji(self, member, name, attachment_or_url, reason=None):
-        path = str(cog_data_path(cog_instance=self))
-        path = os.path.join(path, str(member.id) + name)
+    async def add_emoji(
+        self,
+        member: discord.Member,
+        name: str,
+        attachment_or_url: Union[str, discord.Attachment],
+        reason: Optional[str] = None,
+    ):
+        emoji_bytes = BytesIO()
         if isinstance(attachment_or_url, discord.Attachment):
-            await attachment_or_url.save(path)
+            await attachment_or_url.save(emoji_bytes)
         elif isinstance(attachment_or_url, str):
             async with aiohttp.ClientSession(loop=self.bot.loop) as session:
                 async with session.get(attachment_or_url) as r:
                     if r.status == 200:
-                        with open(path, "wb") as f:
-                            f.write(await r.read())
+                        emoji_bytes.write(await r.read())
 
+        emoji_bytes.seek(0)
         # verify image
-        im = PIL.Image.open(path)
+        im = Image.open(emoji_bytes)
         im.verify()
+        emoji_bytes.seek(0)
 
         # upload emoji
-        with open(path, "rb") as f:
-            emoji = await member.guild.create_custom_emoji(name=name, image=f.read())
-
-        os.remove(path)
+        emoji = await member.guild.create_custom_emoji(name=name, image=emoji_bytes.read(), reason=reason)
 
         async with self.config.member(member).emojis() as e:
             e.append(emoji.id)
@@ -94,7 +98,7 @@ class NitroEmoji(commands.Cog):
             return
 
         embed = discord.Embed(title="Custom Emoji Added", colour=member.colour)
-        embed.set_footer(text="User ID:{}".format(member.id))
+        embed.set_footer(text="User ID: {}".format(member.id))
 
         embed.set_author(name=str(member), url=emoji.url)
         embed.set_thumbnail(url=emoji.url)
@@ -104,12 +108,17 @@ class NitroEmoji(commands.Cog):
 
         await channel.send(embed=embed)
 
-    async def del_emoji(self, guild, member, emoji=None, reason=None):
+    async def del_emoji(
+        self,
+        member: discord.Member,
+        emoji: discord.Emoji,
+        reason: Optional[str] = None,
+    ):
         channel = await self.config.guild(member.guild).channel()
         channel = member.guild.get_channel(channel)
         if channel:
             embed = discord.Embed(title="Custom Emoji Removed", colour=member.colour)
-            embed.set_footer(text="User ID:{}".format(member.id))
+            embed.set_footer(text="User ID: {}".format(member.id))
 
             embed.set_author(name=str(member), url=emoji.url)
             embed.set_thumbnail(url=emoji.url)
@@ -120,13 +129,12 @@ class NitroEmoji(commands.Cog):
 
             await channel.send(embed=embed)
 
-        if emoji:
-            try:
-                await emoji.delete()
-            except:
-                pass
-            async with self.config.member(member).emojis() as e:
-                e.remove(emoji.id)
+        try:
+            await emoji.delete()
+        except:
+            pass
+        async with self.config.member(member).emojis() as e:
+            e.remove(emoji.id)
 
     @commands.group(name="nitroset")
     @commands.guild_only()
@@ -147,7 +155,7 @@ class NitroEmoji(commands.Cog):
         await ctx.tick()
 
     @nitroset.command(name="disable")
-    async def nitroset_disable(self, ctx, *, on_off: bool = None):
+    async def nitroset_disable(self, ctx, *, on_off: Optional[bool] = None):
         """
         Disable users from adding more emojis.
 
@@ -156,7 +164,7 @@ class NitroEmoji(commands.Cog):
         if on_off is None:
             curr = await self.config.guild(ctx.guild).disabled()
             msg = "enabled" if not curr else "disabled"
-            await ctx.send(f"Nitro emojis is {msg}.")
+            await ctx.reply(info(f"Nitro emojis is {msg}."), mention_author=False, delete_after=30)
             return
 
         await self.config.guild(ctx.guild).disabled.set(on_off)
@@ -174,7 +182,12 @@ class NitroEmoji(commands.Cog):
                 try:
                     del roles[str(role.id)]
                 except:
-                    pass
+                    await ctx.reply(
+                        warning(f"`{role.name}` is not configured with nitroemoji."),
+                        delete_after=30,
+                        mention_author=False,
+                    )
+                    return
             else:
                 roles[str(role.id)] = num_emojis
 
@@ -210,8 +223,44 @@ class NitroEmoji(commands.Cog):
         """
         pass
 
+    @nitroemoji.command(name="reaction")
+    async def nitroemoji_reaction(self, ctx: commands.Context, reaction: Optional[Union[discord.Emoji, str]] = None):
+        """
+        Add a reaction for when people mention you (using @).
+
+        Run with no emoji to remove your emoji
+        """
+        # allow anyone who has a boost or special role to add a reaction
+        boosts = await self.get_boosts(ctx.author)
+        if not boosts:
+            return await ctx.send(
+                warning("Sorry, you need to be a nitro booster or have a special role to add a custom reaction!")
+            )
+        if isinstance(reaction, str):
+            return await ctx.reply(warning("I don't have access to that emoji."), delete_after=30, mention_author=False)
+        curr = await self.config.member(ctx.author).reaction()
+        curr = self.bot.get_emoji(curr)
+        if not reaction and not curr:
+            return await ctx.reply(
+                info("You do not have a custom reaction set."), delete_after=30, mention_author=False
+            )
+        elif not reaction:
+            await ctx.reply(info(f"Your current reaction emoji is {curr}, do you want to remove it?"))
+            pred = MessagePredicate.yes_or_no(ctx)
+            try:
+                await self.bot.wait_for("message", check=pred, timeout=60)
+            except asyncio.TimeoutError:
+                return await ctx.send(warning("Timed out, cancelling."))
+            if not pred.result:
+                return await ctx.send(info("Cancelling."))
+            await self.config.member(ctx.author).reaction.clear()
+            return await ctx.send(info("Done."))
+
+        await self.config.member(ctx.author).reaction.set(reaction.id)
+        await ctx.tick()
+
     @nitroemoji.command(name="add")
-    async def nitroemoji_add(self, ctx, name: str, *, url: str = None):
+    async def nitroemoji_add(self, ctx, name: str, *, url: Optional[str] = None):
         """
         Add an emoji to the server, if you boosted or have a special role
 
@@ -219,7 +268,9 @@ class NitroEmoji(commands.Cog):
         """
         disabled = await self.config.guild(ctx.guild).disabled()
         if disabled:
-            await ctx.send("Sorry, adding emojis is currently disabled right now.")
+            await ctx.reply(
+                info("Sorry, adding emojis is currently disabled right now."), delete_after=30, mention_author=False
+            )
             return
 
         curr = await self.config.member(ctx.author).emojis()
@@ -234,17 +285,21 @@ class NitroEmoji(commands.Cog):
             except discord.errors.HTTPException as e:
                 await ctx.send(e.text)
             except PIL.UnidentifiedImageError:
-                await ctx.send("That is not a valid picture! Pictures must be in PNG, JPEG, or GIF format.")
+                await ctx.reply(error("That is not a valid picture! Pictures must be in PNG, JPEG, or GIF format."))
             except:
                 await ctx.send(
-                    "Something went wrong, make sure to add a valid picture (PNG, JPG, or GIF) of the right size (256KB) and a valid name."
+                    error(
+                        "Something went wrong, make sure to add a valid picture (PNG, JPG, or GIF) of the right size (256KB) and a valid name."
+                    )
                 )
                 return
         elif not boosts:
-            await ctx.send("Sorry, you need to be a nitro booster or have a special role to add an emoji!")
+            await ctx.send(warning("Sorry, you need to be a nitro booster or have a special role to add an emoji!"))
         elif curr:
             await ctx.send(
-                "You already have the maximum number of custom emojis, please delete one first before adding another one."
+                warning(
+                    "You already have the maximum number of custom emojis, please delete one first before adding another one."
+                )
             )
 
     @nitroemoji.command(name="rem")
@@ -256,10 +311,10 @@ class NitroEmoji(commands.Cog):
         emoji = self.find_emoji(ctx.guild, name)
         if emoji:
             if emoji.id in curr:
-                await self.del_emoji(ctx.guild, ctx.author, emoji=emoji, reason="Removed by user.")
+                await self.del_emoji(ctx.author, emoji=emoji, reason="Removed by user.")
                 await ctx.tick()
             else:
-                await ctx.send("That isn't your custom emoji.")
+                await ctx.send(error("That isn't your custom emoji."))
         else:
             await ctx.send(warning("Emoji not found."))
 
@@ -311,7 +366,24 @@ class NitroEmoji(commands.Cog):
                         removed = broles - aroles
                         reason += f"\nLost roles: {humanize_list(list(removed))}"
 
-                    await self.del_emoji(after.guild, after, emoji=emoji, reason=reason)
+                    await self.del_emoji(after, emoji=emoji, reason=reason)
+
+    @commands.Cog.listener()
+    async def on_message(self, message: discord.Message):
+        if not message.guild:
+            return
+        mentions = message.mentions
+        for member in mentions:
+            reaction = await self.config.member(member).reaction()
+            if reaction is None:
+                return
+            reaction = self.bot.get_emoji(reaction)
+            if not reaction:
+                return
+            try:
+                await message.add_reaction(reaction)
+            except:  # maybe dont have perms
+                return
 
     @commands.Cog.listener()
     async def on_member_leave(self, member):
@@ -323,7 +395,7 @@ class NitroEmoji(commands.Cog):
             emoji = self.find_emoji(member.guild, emoji)
             if not emoji:
                 continue
-            await self.del_emoji(member.guild, member, emoji=emoji, reason="Member left.")
+            await self.del_emoji(member, emoji=emoji, reason="Member left.")
 
         await self.config.member(member).clear()
 
@@ -355,7 +427,7 @@ class NitroEmoji(commands.Cog):
                         async with self.config.member(member).emojis() as curr:
                             curr.remove(e.id)
                         await self.del_emoji(
-                            guild, member, emoji=e, reason=f"Manually deleted by admin {user.name} (id: {user.id})"
+                            member, emoji=e, reason=f"Manually deleted by admin {user.name} (id: {user.id})"
                         )
                         break
                     except ValueError:

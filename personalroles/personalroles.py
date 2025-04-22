@@ -1,3 +1,5 @@
+from io import BytesIO
+from multiprocessing import Value
 from textwrap import shorten
 from asyncio import TimeoutError as AsyncTimeoutError
 from typing import Union
@@ -12,16 +14,13 @@ from redbot.core.utils.menus import menu, DEFAULT_CONTROLS
 from redbot.core.utils.mod import get_audit_reason
 from redbot.core.utils.predicates import ReactionPredicate
 from tabulate import tabulate
-from typing import Literal, List
+from typing import Literal, Optional
+from emoji import demojize
 import asyncio
 import aiohttp
 
-try:
-    from redbot import json  # support of Draper's branch
-except ImportError:
-    import json
+import json
 
-from .discord_new_features import edit_role_icon
 
 _ = Translator("PersonalRoles", __file__)
 
@@ -375,7 +374,7 @@ class PersonalRoles(commands.Cog):
 
     @icon.command(name="emoji")
     @commands.cooldown(1, 30, commands.BucketType.user)
-    async def icon_emoji(self, ctx, *, emoji: Union[discord.Emoji, discord.PartialEmoji] = None):
+    async def icon_emoji(self, ctx, *, emoji: Optional[Union[discord.Emoji, discord.PartialEmoji, str]] = None):
         """Change icon of personal role using emoji"""
         role = await self.config.member(ctx.author).role()
         role = ctx.guild.get_role(role)
@@ -400,43 +399,26 @@ class PersonalRoles(commands.Cog):
             else:
                 await ctx.send_help()
                 return
+        emoji_bytes = BytesIO()
         try:
-            if isinstance(emoji, discord.Emoji):
-                await edit_role_icon(
-                    self.bot,
-                    role,
-                    icon=await emoji.url_as(format="png").read(),
-                    reason=get_audit_reason(ctx.author, _("Personal Role")),
-                )
-            elif isinstance(emoji, discord.PartialEmoji):
-                if emoji.is_custom_emoji():
-                    await edit_role_icon(
-                        self.bot,
-                        role,
-                        icon=await emoji.url_as(format="png").read(),
-                        reason=get_audit_reason(ctx.author, _("Personal Role")),
-                    )
-                else:
-                    # unicode emoji
-                    await edit_role_icon(
-                        self.bot,
-                        role,
-                        unicode_emoji=emoji.name,
-                        reason=get_audit_reason(ctx.author, _("Personal Role")),
-                    )
-            else:
-                await edit_role_icon(
-                    self.bot,
-                    role,
-                    unicode_emoji=emoji,
-                    reason=get_audit_reason(ctx.author, _("Personal Role")),
-                )
+            if isinstance(emoji, discord.Emoji) or isinstance(emoji, discord.PartialEmoji):
+                await emoji.save(emoji_bytes)
+                emoji_bytes.seek(0)
+                await role.edit(display_icon=emoji_bytes)
+            elif emoji is not None:
+                emoji = emoji.split()[0]
+                if demojize(emoji) == emoji:
+                    raise ValueError("No emoji found.")
+                await role.edit(display_icon=emoji)
         except discord.Forbidden:
             ctx.command.reset_cooldown(ctx)
             await ctx.send(chat.error(_("Unable to edit role.\nRole must be lower than my top role")))
         except discord.InvalidArgument:
             await ctx.send(chat.error(_("This image type is unsupported, or link is incorrect")))
         except discord.HTTPException as e:
+            ctx.command.reset_cooldown(ctx)
+            await ctx.send(chat.error(_("Unable to edit role: {}").format(e)))
+        except ValueError as e:
             ctx.command.reset_cooldown(ctx)
             await ctx.send(chat.error(_("Unable to edit role: {}").format(e)))
         else:
@@ -464,16 +446,13 @@ class PersonalRoles(commands.Cog):
                 await ctx.send(chat.error(_("Unable to get image: {}").format(e.message)))
                 return
         try:
-            await edit_role_icon(
-                self.bot,
-                role,
-                icon=image,
-                reason=get_audit_reason(ctx.author, _("Personal Role")),
-            )
+            await role.edit(display_icon=image)
         except discord.Forbidden:
             ctx.command.reset_cooldown(ctx)
             await ctx.send(chat.error(_("Unable to edit role.\nRole must be lower than my top role")))
-        except discord.InvalidArgument:
+        except TypeError:
+            await ctx.send(chat.error(_("This image type is unsupported, or link is incorrect")))
+        except ValueError:
             await ctx.send(chat.error(_("This image type is unsupported, or link is incorrect")))
         except discord.HTTPException as e:
             ctx.command.reset_cooldown(ctx)
@@ -492,13 +471,7 @@ class PersonalRoles(commands.Cog):
             return
 
         try:
-            await edit_role_icon(
-                self.bot,
-                role,
-                icon=None,
-                unicode_emoji=None,
-                reason=get_audit_reason(ctx.author, _("Personal Role")),
-            )
+            await role.edit(display_icon=None)
             await ctx.send(_("Removed icon of {user}'s personal role").format(user=ctx.message.author.name))
         except discord.Forbidden:
             ctx.command.reset_cooldown(ctx)

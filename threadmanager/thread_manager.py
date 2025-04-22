@@ -1,12 +1,9 @@
-import asyncio
 import discord
 
-from typing import Optional, Literal
+from typing import Literal
 from redbot.core import Config, checks, commands
 from redbot.core.utils.chat_formatting import *
 from redbot.core.utils.menus import menu, DEFAULT_CONTROLS
-
-from .discord_thread_feature import create_thread, add_user_thread, get_active_threads
 
 
 class ThreadManager(commands.Cog):
@@ -64,16 +61,13 @@ class ThreadManager(commands.Cog):
             await menu(ctx, pages, DEFAULT_CONTROLS)
 
     @threadset.command(name="archive")
-    async def threadset_archive(self, ctx, archive: int):
+    async def threadset_archive(self, ctx, archive: Literal[60, 1440, 4320, 10080]):
         """
         Set the archive duration of user created threads
 
         Must be one of: 60, 1440, 4320, and 10080
         If your guild doesn't have longer thread archival features, the archive value is clipped to the highest value available.
         """
-        if archive not in [60, 1440, 4320, 10080]:
-            return await ctx.send("Invalid archive time, try again.", delete_after=30)
-
         await self.config.guild(ctx.guild).archive.set(archive)
         await ctx.tick()
 
@@ -101,9 +95,9 @@ class ThreadManager(commands.Cog):
 
         await ctx.tick()
 
-    @commands.command()
+    @commands.hybrid_command()
     @commands.guild_only()
-    async def thread(self, ctx, *, name: str):
+    async def thread(self, ctx: commands.Context, *, name: str):
         """
         Create a new thread from this channel
 
@@ -112,6 +106,10 @@ class ThreadManager(commands.Cog):
         channel = ctx.channel
         guild = ctx.guild
         user = ctx.author
+
+        if not isinstance(channel, discord.TextChannel):
+            await ctx.reply(info("Sorry, this command only works in regular text channels."))
+            return
 
         allowed_roles = await self.config.channel(channel).allowed_roles()
         roles = {int(r) for r in allowed_roles.keys()}
@@ -125,37 +123,36 @@ class ThreadManager(commands.Cog):
         possible_roles = roles & u_roles
         num_threads = sorted([allowed_roles[str(r)] for r in possible_roles])[-1]
 
-        threads = await self.config.channel(channel).threads()
-        if str(user.id) not in threads:
-            threads[str(user.id)] = []
+        async with self.config.channel(channel).threads() as channel_threads:
+            if str(user.id) not in channel_threads:
+                channel_threads[str(user.id)] = []
 
-        user_threads = threads[str(user.id)]
-        if len(user_threads) >= num_threads:
-            # first, need to update active threads for this channel
-            activate_threads = set(await get_active_threads(self.bot, guild))
-            still_active = set(user_threads) & activate_threads
-
-            # remove not active threads
-            user_threads = [t for t in user_threads if t in still_active]
-            # update config
-            threads[str(user.id)] = user_threads
-            await self.config.channel(channel).threads.set(threads)
-
-        if len(user_threads) >= num_threads:
-            return await ctx.send(
-                f"You have reached the maximum number ({num_threads}) of threads you can create for this channel. Please have a staff member archive one of your threads.",
-                delete_after=15,
+            user_threads = set(
+                [
+                    channel.get_thread(tid)
+                    for tid in channel_threads[str(user.id)]
+                    if channel.get_thread(tid) is not None
+                ]
             )
 
-        # now we can create a thread
-        archive = await self.config.guild(guild).archive()
-        try:
-            thread = await create_thread(self.bot, channel, ctx.message, name=name, archive=archive)
-            await add_user_thread(self.bot, thread, user)
-        except:
-            return await ctx.send(
-                "Something went wrong, most likely a permissions issue. Please contact a staff member.", delete_after=30
-            )
+            user_threads = [t for t in user_threads if not t.archived or t.locked]
 
-        threads[str(user.id)].append(thread)
-        await self.config.channel(channel).threads.set(threads)
+            if len(user_threads) >= num_threads:
+                return await ctx.send(
+                    f"You have reached the maximum number ({num_threads}) of threads you can create for this channel. Please have a staff member archive one of your threads.",
+                    delete_after=15,
+                )
+
+            # now we can create a thread
+            archive = await self.config.guild(guild).archive()
+            try:
+                thread = await channel.create_thread(
+                    name=name, message=ctx.message, auto_archive_duration=archive, reason="Thread cog"
+                )
+                await thread.add_user(ctx.guild.me)
+                channel_threads[str(user.id)].append(thread.id)
+            except:
+                return await ctx.send(
+                    "Something went wrong, most likely a permissions issue. Please contact a staff member.",
+                    delete_after=30,
+                )

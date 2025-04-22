@@ -1,12 +1,16 @@
 {
-    "NAME" : "SmartReact",
-    "AUTHOR" : "FlapJack",
-    "SHORT" : "Create automatic reactions when trigger words are typed in chat",
-    "DESCRIPTION" : "Create automatic reactions when trigger words are typed in chat.\n\nDependencies: None",
-    "INSTALL_MSG" : "Thanks for installing SmartReact.",
-    "REQUIREMENTS" : [],
-    "TAGS" : ["reaction", "smart", "auto"],
-    "DISABLED" : false,
-    "min_bot_version": "3.4.0",
+    "NAME": "SmartReact",
+    "AUTHOR": "FlapJack",
+    "SHORT": "Create automatic reactions when trigger words are typed in chat",
+    "DESCRIPTION": "Create automatic reactions when trigger words are typed in chat.\n\nDependencies: None",
+    "INSTALL_MSG": "Thanks for installing SmartReact.",
+    "REQUIREMENTS": [],
+    "TAGS": [
+        "reaction",
+        "smart",
+        "auto"
+    ],
+    "DISABLED": false,
+    "min_bot_version": "3.5.0",
     "end_user_data_statement": "This doesn't store any user data."
 }

@@ -100,7 +100,7 @@ class Punish(commands.Cog):
         except RuntimeError:
             pass
 
-    @commands.hybrid_group(invoke_without_command=True)
+    @commands.group(invoke_without_command=True)
     @commands.guild_only()
     @checks.mod()
     async def punish(

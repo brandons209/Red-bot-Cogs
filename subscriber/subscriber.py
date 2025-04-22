@@ -1,29 +1,14 @@
+from zoneinfo import ZoneInfo
 from redbot.core import commands, Config, checks
-from redbot.core.commands import Context, Cog
+from redbot.core.commands.converter import parse_timedelta
 from redbot.core.utils.chat_formatting import *
 from redbot.core.utils.menus import menu, DEFAULT_CONTROLS
-
+from redbot.core.utils.predicates import MessagePredicate
 import discord
 
-import re
 import asyncio
-from dateutil.relativedelta import relativedelta
-from datetime import datetime, timezone
-from typing import Literal, Optional
-
-TIME_RE_STRING = r"\s?".join(
-    [
-        r"((?P<years>\d+?)\s?(years?|y))?",
-        r"((?P<months>\d+?)\s?(months?|mt))?",
-        r"((?P<weeks>\d+?)\s?(weeks?|w))?",
-        r"((?P<days>\d+?)\s?(days?|d))?",
-        r"((?P<hours>\d+?)\s?(hours?|hrs|hr?))?",
-        r"((?P<minutes>\d+?)\s?(minutes?|mins?|m(?!o)))?",  # prevent matching "months"
-        r"((?P<seconds>\d+?)\s?(seconds?|secs?|s))?",
-    ]
-)
-
-TIME_RE = re.compile(TIME_RE_STRING, re.I)
+from dateutil.tz import tzlocal
+from typing import Literal, Optional, List
 
 
 class Subscriber(commands.Cog):
@@ -48,77 +33,75 @@ class Subscriber(commands.Cog):
         self.config.register_guild(**default_guild)
         self.config.register_member(**default_member)
 
-        self.task = asyncio.create_task(self.initialize())
-
-    @staticmethod
-    def parse_timedelta(argument: str) -> Optional[relativedelta]:
-        matches = TIME_RE.match(argument)
-        if matches:
-            params = {k: int(v) for k, v in matches.groupdict().items() if v}
-            if params:
-                return relativedelta(**params)
-        return None
+        self.task = asyncio.create_task(self.watch_loop())
 
     def cog_unload(self):
         self.task.cancel()
 
-    async def initialize(self):
+    async def watch_loop(self):
         await self.bot.wait_until_ready()
-        _guilds = [g for g in self.bot.guilds if g.large and not (g.chunked or g.unavailable)]
-        await self.bot.request_offline_members(*_guilds)
-
         while True:
-            now = datetime.now(tz=timezone.utc)
+            try:
+                await self.subscriber_loop()
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                print(f"[Subscriber] Internal loop crashed, restarting in 10s... {e}")
+                await asyncio.sleep(10)
+
+    async def subscriber_loop(self):
+        while True:
+            now = discord.utils.utcnow()
             for guild in self.bot.guilds:
                 members = await self.config.guild(guild).subscribers()
-                remind_time = self.parse_timedelta(await self.config.guild(guild).reminder_time())
+                remind_time = parse_timedelta(await self.config.guild(guild).reminder_time())
                 dm = await self.config.guild(guild).dm_message()
-                rm_members = []
-                for member in members:
-                    member = guild.get_member(member)
+                rm_members: List[int] = []
+                for member_id in members:
+                    member = guild.get_member(member_id)
                     if not member:
-                        rm_members.append(member)
+                        rm_members.append(member_id)
                         continue
 
                     roles = await self.config.member(member).roles()
                     reminders = await self.config.member(member).reminded()
 
-                    to_remove = []
+                    to_remove: List[str] = []
                     for role, end_date in roles.items():
                         role = guild.get_role(int(role))
-                        end_date = datetime.fromtimestamp(end_date).astimezone(tz=timezone.utc)
+                        end_date = discord.utils.utcnow().fromtimestamp(end_date).astimezone(ZoneInfo("UTC"))
                         if not role:
                             continue
 
                         if now > end_date:
                             try:
                                 await member.remove_roles(role)
-                            except discord.Forbidden:
-                                continue
+                            except:
+                                continue  # TODO: send error to guild owner?
 
                             try:
                                 await member.send(
                                     info(
-                                        f"Your subscription to the role `{role}` in `{guild}` has expired and been removed."
+                                        f"Subscription Notice\nYour subscription to the role `{role}` in `{guild}` has expired and been removed."
                                     )
                                 )
                             except:
                                 pass
                             to_remove.append(str(role.id))
                             del reminders[str(role.id)]
-                        elif (now + remind_time) > end_date and not reminders[str(role.id)]:
+                        elif remind_time is not None and (now + remind_time) > end_date and not reminders[str(role.id)]:
                             dm = dm.format(
                                 role=role,
-                                end_date=f"<t:{int(end_date.timestamp())}>",
+                                end_date=f"<t:{int(end_date.astimezone(tzlocal()).timestamp())}>",
                                 member=member.mention,
                                 guild=guild,
                             )
                             try:
-                                await member.send(f"**Role Expiration Notice for {guild}**\n\n{dm}")
+                                await member.send(f"# **Role Expiration Notice for {guild}**\n\n{dm}")
                                 reminders[str(role.id)] = True
                             except:
                                 pass
-                        elif (now + remind_time) < end_date:
+                        elif remind_time is not None and (now + remind_time) < end_date:
                             reminders[str(role.id)] = False
 
                     await self.config.member(member).reminded.set(reminders)
@@ -126,27 +109,30 @@ class Subscriber(commands.Cog):
                         for role in to_remove:
                             del roles[role]
                         await self.config.member(member).roles.set(roles)
+                    # if they are subscribed to no more roles, remove them from the list
+                    if not roles:
+                        rm_members.append(member_id)
 
                 if rm_members:
                     for mem in rm_members:
                         members.remove(mem)
                     await self.config.guild(guild).subscribers.set(members)
 
-            # sleep for 30 minutes
-            await asyncio.sleep(1800)
+            # sleep for 5 minutes
+            await asyncio.sleep(300)
             # await asyncio.sleep(15)
 
-    @commands.group(name="subset")
-    @checks.admin_or_permissions(administrator=True)
+    @commands.hybrid_group(name="subscriber")
     @commands.guild_only()
-    async def subset(self, ctx):
+    async def subscriber(self, ctx: commands.Context):
         """
-        Set subscription settings
+        Manage your server role subscriptions.
         """
         pass
 
-    @subset.command(name="message")
-    async def subset_message(self, ctx, *, msg: str = None):
+    @subscriber.command(name="message")
+    @checks.admin_or_permissions(administrator=True)
+    async def subset_message(self, ctx, *, msg: Optional[str] = None):
         """
         Sets the reminder message sent to users when their subscription is about to end.
 
@@ -166,7 +152,8 @@ class Subscriber(commands.Cog):
         await self.config.guild(ctx.guild).dm_message.set(msg)
         await ctx.tick()
 
-    @subset.command(name="reminder")
+    @subscriber.command(name="reminder")
+    @checks.admin_or_permissions(administrator=True)
     async def subset_reminder(self, ctx, *, interval: str):
         """
         Set the time before the end of a user's subscription to remind them.
@@ -181,51 +168,70 @@ class Subscriber(commands.Cog):
             - 2 years
             (etc)
         """
-        if not self.parse_timedelta(interval):
-            await ctx.send(error("The interval is invalid, please try again."))
+        if not parse_timedelta(interval):
+            await ctx.reply(error("The interval is invalid, please try again."), delete_after=30, mention_author=False)
             return
 
         await self.config.guild(ctx.guild).reminder_time.set(interval)
         await ctx.tick()
 
-    @commands.command(name="subadd")
+    @subscriber.command(name="add")
     @checks.admin_or_permissions(administrator=True)
     @checks.bot_has_permissions(manage_roles=True)
-    @commands.guild_only()
-    async def subadd(self, ctx, role: discord.Role, member: discord.Member, *, duration: str):
+    async def subadd(self, ctx: commands.Context, role: discord.Role, member: discord.Member, *, duration: str):
         """
-        Add a role and subscription to a member for the specified duration.
+        Add or renew a role subscription to a member for the specified duration.
         """
-        now = datetime.now(tz=timezone.utc)
-        duration = self.parse_timedelta(duration)
-        if not duration:
-            await ctx.send(error("The duration is invalid, please try again."))
+        now = discord.utils.utcnow()
+        parsed_duration = parse_timedelta(duration)
+        if not parsed_duration:
+            await ctx.reply(error("The duration is invalid, please try again."), delete_after=30, mention_author=False)
             return
 
-        end_time = now + duration
-
+        end_time = now + parsed_duration
+        msg = ""
         async with self.config.member(member).roles() as roles:
             if str(role.id) not in roles:
                 try:
                     await member.add_roles(role)
                 except discord.Forbidden:
-                    await ctx.send(
+                    await ctx.reply(
                         error(
                             "I do not have permission to add this role, make sure the role is lower in the hierarchy then my top role."
-                        )
+                        ),
+                        delete_after=30,
+                        mention_author=False,
                     )
                     return
                 # role is converted to string since redbot will do it, so make it explict its a string
                 roles[str(role.id)] = end_time.timestamp()
+                msg = info(
+                    f"Subscription Notice\nYou have been subscribed to the role `{role}` in `{ctx.guild}`.\nThe subscription will end on <t:{int(end_time.astimezone(tzlocal()).timestamp())}>."
+                )
             else:
+                # already subscribed, ask to renew
                 await ctx.send(
-                    error(
-                        "The user is already subscribed to this role, please renew their subscription instead using `subrenew`."
+                    info(
+                        f"{member.mention} is already subscribed to `{role.name}`, would you like to renew this subscription?"
                     )
                 )
-                return
+                pred = MessagePredicate.yes_or_no(ctx)
+                try:
+                    await self.bot.wait_for("message", check=pred, timeout=60)
+                except asyncio.TimeoutError:
+                    await ctx.reply(warning("Timed out, cancelling renewal."), mention_author=False)
+                    return
+                if not pred.result:
+                    await ctx.reply(info("Cancelling renewal"), mention_author=False)
+                    return
+                # renew role
+                roles[str(role.id)] = end_time.timestamp()
+                msg = info(
+                    f"Subscription Notice\nYour subscription to `{role.name}` in `{ctx.guild}` has been renewed.\nThe subscription will now end on <t:{int(end_time.astimezone(tzlocal()).timestamp())}>."
+                )
 
         async with self.config.guild(ctx.guild).subscribers() as subs:
+            # user's first subscription
             if member.id not in subs:
                 subs.append(member.id)
 
@@ -233,21 +239,19 @@ class Subscriber(commands.Cog):
             reminded[str(role.id)] = False
 
         try:
-            await member.send(
-                info(
-                    f"You have been subscribed to the role `{role}` in `{ctx.guild}`.\nThe subscription will end on <t:{int(end_time.timestamp())}>"
-                )
-            )
+            await member.send(msg)
         except:
-            pass
+            await ctx.reply(
+                warning(f"I could not DM the user, make sure to tell them they have acquired `{role.name}`."),
+                mention_author=False,
+            )
 
         await ctx.tick()
 
-    @commands.command(name="subrem")
+    @subscriber.command(name="rem", alias="del")
     @checks.admin_or_permissions(administrator=True)
     @checks.bot_has_permissions(manage_roles=True)
-    @commands.guild_only()
-    async def subrem(self, ctx, role: discord.Role, member: discord.Member):
+    async def subrem(self, ctx: commands.Context, role: discord.Role, member: discord.Member):
         """
         Manually remove a subscribed role from a member.
         """
@@ -257,61 +261,46 @@ class Subscriber(commands.Cog):
                 try:
                     await member.remove_roles(role)
                 except discord.Forbidden:
-                    await ctx.send(
+                    await ctx.reply(
                         error(
                             "I do not have permission to remove this role, make sure the role is lower in the hierarchy then my top role."
-                        )
+                        ),
+                        delete_after=30,
+                        mention_author=False,
                     )
                     return
                 del roles[str(role.id)]
             else:
-                await ctx.send(error("The user is not subscribed to this role."))
+                await ctx.reply(
+                    error("The user is not subscribed to this role."), delete_after=30, mention_author=False
+                )
                 return
 
+            # if they have no other subscriptions, remove them from the subscriber list
             if not roles:
                 async with self.config.guild(ctx.guild).subscribers() as subs:
                     subs.remove(member.id)
+                    subs = list(set(subs))
 
         async with self.config.member(member).reminded() as reminded:
             del reminded[str(role.id)]
 
         try:
             await member.send(
-                info(f"Your subscription to the role `{role}` in `{ctx.guild}` has been manually removed.")
+                info(
+                    f"Subscription Notice\nYour subscription to the role `{role}` in `{ctx.guild}` has been manually removed. If you believe this is an error, please contact a staff member in the server."
+                )
             )
         except:
-            pass
+            await ctx.reply(
+                warning(f"I could not DM the user, make sure to tell them they have lost `{role.name}`."),
+                mention_author=False,
+            )
 
         await ctx.tick()
 
-    @commands.command(name="subrenew")
+    @subscriber.command(name="viewall")
     @checks.admin_or_permissions(administrator=True)
-    @commands.guild_only()
-    async def subrenew(self, ctx, role: discord.Role, member: discord.Member, *, duration: str):
-        """
-        Renew's a user's role subscription for the specified duration.
-        """
-        now = datetime.now(tz=timezone.utc)
-        duration = self.parse_timedelta(duration)
-        if not duration:
-            await ctx.send(error("The duration is invalid, please try again."))
-            return
-
-        end_time = now + duration
-
-        async with self.config.member(member).roles() as roles:
-            if str(role.id) in roles:
-                # role is converted to string since redbot will do it, so make it explict its a string
-                roles[str(role.id)] = end_time.timestamp()
-            else:
-                await ctx.send(error("The user is not subscribed to this role."))
-                return
-
-        await ctx.tick()
-
-    @commands.command(name="subviewall")
-    @checks.admin_or_permissions(administrator=True)
-    @commands.guild_only()
     async def subview_all(self, ctx):
         """
         View all subscriptions in the server
@@ -327,8 +316,10 @@ class Subscriber(commands.Cog):
             if not member:
                 continue
 
-            msg += f"{member.mention}:\n"
             roles = await self.config.member(member).roles()
+            if not roles:
+                continue
+            msg += f"{member.mention}:\n"
             for role, end_date in roles.items():
                 role = ctx.guild.get_role(int(role))
                 if not role:
@@ -350,8 +341,7 @@ class Subscriber(commands.Cog):
         else:
             await menu(ctx, pages, DEFAULT_CONTROLS)
 
-    @commands.command(name="subview")
-    @commands.guild_only()
+    @subscriber.command(name="view")
     async def subview(self, ctx):
         """
         View your current subscriptions
@@ -360,15 +350,18 @@ class Subscriber(commands.Cog):
         roles = await self.config.member(member).roles()
 
         if not roles:
-            await ctx.send(info("You are not subscribed to any roles!"))
+            await ctx.reply(info("You are not subscribed to any roles!"), delete_after=60, mention_author=False)
             return
 
         embeds = []
         embed = discord.Embed(title=f"Subscribed Roles", colour=member.colour)
         cnt = 0
         for role, end_date in roles.items():
-            end_date = datetime.fromtimestamp(end_date).astimezone(tz=timezone.utc)
-            embed.add_field(name=str(ctx.guild.get_role(int(role))), value=f"Ends on <t:{int(end_date.timestamp())}>")
+            end_date = discord.utils.utcnow().fromtimestamp(end_date)
+            embed.add_field(
+                name=str(ctx.guild.get_role(int(role))),
+                value=f"Ends on <t:{int(end_date.astimezone(tzlocal()).timestamp())}>",
+            )
             cnt += 1
 
             # to avoid embed limits

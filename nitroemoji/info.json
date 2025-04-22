@@ -4,14 +4,16 @@
   ],
   "bot_version": [
     3,
-    4,
+    5,
     0
   ],
-  "description": "Allow nitro boosters to add an emoji to the server, with channel logging.",
+  "description": "Allow nitro boosters to add an emoji to the server and custom reactions with channel logging.",
   "hidden": false,
   "install_msg": "Thank you for using this cog! Please make sure to set the log channel using `[p]nitroset`",
-  "requirements": ["aiohttp"],
-  "short": "Allow boosters to have a server emoji.",
+  "requirements": [
+    "aiohttp"
+  ],
+  "short": "Allow boosters to have a server emoji and custom reaction.",
   "tags": [
     "brandons209",
     "nitro",

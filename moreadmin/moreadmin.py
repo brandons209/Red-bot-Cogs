@@ -770,7 +770,7 @@ class MoreAdmin(commands.Cog):
                 await ctx.send("{}".format(escape(message.content, formatting=True, mass_mentions=True)))
             await asyncio.sleep(0.2)
 
-    @commands.hybrid_command()
+    @commands.command()
     @commands.guild_only()
     @checks.admin_or_permissions(ban_members=True)
     @checks.bot_has_permissions(ban_members=True)

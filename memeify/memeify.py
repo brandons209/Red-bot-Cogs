@@ -1,13 +1,13 @@
 from redbot.core import Config, commands
 from redbot.core.utils.chat_formatting import pagify
-from typing import Literal
+from typing import Literal, Optional
 import re
 import random
 import string
 
-mention = re.compile("^@|^#|^&")
-custom_emoji = re.compile("<:[^:]+:\d{18}>")
-vowel = re.compile("^[aeiouAEIOU]")
+mention = re.compile(r"^@|^#|^&")
+custom_emoji = re.compile(r"<:[^:]+:\d{18}>")
+vowel = re.compile(r"^[aeiouAEIOU]")
 
 
 class Memeify(commands.Cog):
@@ -20,11 +20,11 @@ class Memeify(commands.Cog):
         self.config = Config.get_conf(self, identifier=2934875294, force_registration=True)
         self.bot = bot
 
-    async def __get_content(self, ctx, content):
+    async def __get_content(self, ctx: commands.Context, content: Optional[str] = None):
         if not content:
             msg_c = ""
             # gets previous messages
-            msg = await ctx.channel.history(limit=5).flatten()
+            msg = [msg async for msg in ctx.channel.history(limit=5)]
             for i in msg[1:]:
                 if i.clean_content:
                     msg_c = i.clean_content
@@ -32,7 +32,7 @@ class Memeify(commands.Cog):
             if msg_c:
                 return msg_c, False
             else:
-                return
+                return None, False
         else:
             return ctx.message.clean_content, True
 
@@ -42,20 +42,20 @@ class Memeify(commands.Cog):
             await ctx.send(msg)
 
     # ------------ bify ------------
-    @commands.command()
-    async def bify(self, ctx, *, content: str = None):
+    @commands.hybrid_command()
+    async def bify(self, ctx, *, content: Optional[str] = None):
         """Replaces all B's with :b:'s"""
-        msg_c = await self.__get_content(ctx, content)
-        if len(msg_c) != 2:
+        msg_c, cmd = await self.__get_content(ctx, content)
+        if msg_c is None or len(msg_c) == 0:
             await ctx.send("Where's the 🅱️essage?")
         else:
-            await self.__send_pagify(ctx, self.__bify(*msg_c))
+            await self.__send_pagify(ctx, self.__bify(msg_c, cmd))
 
     # takes a clean discord message and replaces all B's and
     # first characters with :b:, unless the word is 1
     # character long, a custon emoji, or a ping. unicode
     # emojis are a bit fucked tho
-    def __bify(self, bify_str, cmd) -> str:
+    def __bify(self, bify_str: str, cmd: bool) -> str:
         bify = bify_str.split(" ")
         # remove first letter if it bifys the command message itself
         if cmd:
@@ -75,7 +75,7 @@ class Memeify(commands.Cog):
             b.append(self.__bify_f(i) + " ")
         return "".join(b)
 
-    def __bify_f(self, bif) -> str:
+    def __bify_f(self, bif: str) -> str:
         if vowel.match(bif) and len(bif) > 1:
             # adds b in front of the word
             bif = "b" + bif
@@ -86,16 +86,16 @@ class Memeify(commands.Cog):
 
     # ------------ frenchify ------------
     # Based heavily on SSPayne's fake french accent translator
-    @commands.command()
-    async def frenchify(self, ctx, *, content: str = None):
+    @commands.hybrid_command()
+    async def frenchify(self, ctx, *, content: Optional[str] = None):
         """Writes a message with a french accent"""
-        msg_c = await self.__get_content(ctx, content)
-        if len(msg_c) != 2:
-            await ctx.send("No message")
+        msg_c, cmd = await self.__get_content(ctx, content)
+        if not msg_c or len(msg_c) == 0:
+            await ctx.send(self.__french_pre_f("Where is the message?", False))
         else:
-            await self.__send_pagify(ctx, self.__french_pre_f(*msg_c))
+            await self.__send_pagify(ctx, self.__french_pre_f(msg_c, cmd))
 
-    def __french_pre_f(self, french, cmd):
+    def __french_pre_f(self, french: str, cmd: bool):
         emoji_list = []
         if cmd:
             french_cmd_fix = french.split(" ")
@@ -119,7 +119,7 @@ class Memeify(commands.Cog):
     # translated from SPPayne's fake french accent translator,
     # as well as __compare_format() and __make_funny_es()
     # https://github.com/SPPayne/fake_french_accent_translator
-    def __french(self, text):
+    def __french(self, text: str):
         text = text.replace("age", "aje")
         text = text.replace("ale", "aile")
         text = text.replace("ant", "ent")
@@ -268,12 +268,12 @@ class Memeify(commands.Cog):
 
         return text
 
-    def __compare_format(self, word):
+    def __compare_format(self, word: str):
         word = word.translate(str.maketrans("", "", string.punctuation))
         word = word.lower()
         return word
 
-    def __make_funny_es(self, text):
+    def __make_funny_es(self, text: str):
         bits = text.split("e")
         text = ""
 
