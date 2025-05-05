@@ -5,10 +5,11 @@ from redbot.core.utils.menus import menu, DEFAULT_CONTROLS
 from redbot.core import Config, checks, commands, modlog
 from redbot.core.commands.converter import parse_timedelta
 import discord
+from redbot.core.utils.predicates import MessagePredicate
 
 from .utils import *
-from typing import List, Union, Optional
-import asyncio
+from typing import List, Union, Optional, Dict
+import asyncio, time
 
 LOG_MSG = "[Moreadmin] {}"
 
@@ -493,7 +494,7 @@ class MoreAdmin(commands.Cog):
 
         await self.note_menu(ctx, member)
 
-    @commands.hybrid_command(name="giverole")
+    @commands.command(name="giverole")
     @checks.mod_or_permissions(manage_roles=True)
     @checks.bot_has_permissions(manage_roles=True)
     async def admin_addrole(self, ctx, user: discord.Member, *, role: discord.Role):
@@ -522,7 +523,7 @@ class MoreAdmin(commands.Cog):
                 error("You do not have the proper roles to add this role."), delete_after=30, reference=ctx.message
             )
 
-    @commands.hybrid_command(name="remrole")
+    @commands.command(name="remrole")
     @checks.mod()
     @checks.bot_has_permissions(manage_roles=True)
     async def admin_remrole(self, ctx, user: discord.Member, *, role: discord.Role):
@@ -551,9 +552,132 @@ class MoreAdmin(commands.Cog):
                 error("You do not have the proper roles to remove this role."), delete_after=30, reference=ctx.message
             )
 
+    @commands.command(name="channelfix")
+    @checks.admin_or_permissions(administrator=True)
+    @checks.bot_has_permissions(manage_channels=True, manage_roles=True)
+    @commands.guild_only()
+    async def channelfix(self, ctx: commands.Context, *channels: discord.abc.GuildChannel):
+        """
+        Fixes newly created channels not being displayed to current users when onboarding is setup
+        You can supply a list of channel mentions to perform this action on multiple channels
+
+        This only needs to be applied to newly created channels under categories that are not set as a default category (i.e channels that require a specific role for access)
+        The fix works by removing access to the members then adding a role that grants access. Simply toggling the view permission a role a user already has will not work.
+        Users who gain the role that grants access to the channel after channel creation will see the channel without explicitly selecting the channel in the `Channels & Roles` section
+
+        New channels that are created are not immeditaly visible to users unless they have the `show all channels` setting enabled.
+        This command fixes this by:
+        1. Setting the channel so only those with the Administrator permission can access it
+        2. Creates a temporary role
+        3. Allow permissions to the channel for the temporary role
+        4. Adds the temporary role to add members
+        5. Restore previous access permissions to the channel
+        6. Deletes the temporary role
+
+        This is a slow process but should show the channel for everyone after completion.
+        **WARNING** if the bot crashes, goes offline, or a Discord outage occurs during this process your permission structure may be left in a locked down state. You can simply remove the temp role created and revert permissions on the affect channels to restore previous permissions.
+        """
+        pred = MessagePredicate.yes_or_no(ctx)
+        await ctx.send(
+            warning(
+                "This is a slow process if you have a large number of members, its better if you supply all channels you want to fix at once. Also note that if the bot crashes, or an error occurs, settings will not be cleaned up, you'll have to delete the temporary role and fix the permissions on the affect channel(s) manually. Continue?"
+            ),
+            delete_after=120,
+        )
+        try:
+            await self.bot.wait_for("message", check=pred, timeout=60)
+        except asyncio.TimeoutError:
+            await ctx.send(info("Timed out, cancelled."), delete_after=30)
+            return
+        if not pred.result:
+            await ctx.send(info("Cancelling command."), delete_after=30)
+            return
+
+        guild = ctx.guild
+        temp_role = await guild.create_role(
+            reason=f"Fixing channel display issues for {humanize_list([c.name for c in channels])}",
+            name="Onboard Channel Fix",
+        )
+
+        channel_permissions: List[
+            Dict[Union[discord.Role, discord.Member, discord.Object], discord.PermissionOverwrite]
+        ] = [c.overwrites for c in channels]
+
+        view_permission = discord.Permissions.none()
+        view_permission.view_channel = True
+
+        deny_overwrite = discord.PermissionOverwrite.from_pair(discord.Permissions.none(), view_permission)
+        allow_overwrite = discord.PermissionOverwrite.from_pair(view_permission, discord.Permissions.none())
+
+        for i, channel in enumerate(channels):
+            overwrites = channel_permissions[i]
+            overwrites = {k: deny_overwrite for k in overwrites.keys()}
+            overwrites[temp_role] = allow_overwrite
+            try:
+                await channel.edit(overwrites=overwrites)
+            except Exception as e:
+                await ctx.reply(
+                    error(
+                        f"There was an error modifying {channel.mention}: {e}\n\nProcess has been cancelled and permissions have NOT been reverted for the channels {humanize_list([c.mention for c in channels])}"
+                    )
+                )
+                return
+
+        # now add the role to every user:
+        start = time.perf_counter()
+        total = len(guild.members)
+        await ctx.send(info("Adding temporary role to all members."))
+        update_message = info("Processing {} members... \nProgress: {}")
+        update_m = await ctx.send(update_message.format(total, "N/A"))
+        for i, member in enumerate(guild.members):
+            try:
+                await member.add_roles(temp_role)
+            except Exception as e:
+                await ctx.reply(warning(f"Failed to edit {member}: {e}"))
+            finally:
+                await asyncio.sleep(0.2)
+
+            now = time.perf_counter()
+            elapsed = now - start
+            avg = elapsed / i if i > 0 else 0
+            remaining = (total - i) * avg
+
+            hrs, rem = divmod(remaining, 3600)
+            mins, secs = divmod(rem, 60)
+            eta_str = f"{int(hrs)}:{int(mins):02d}:{secs:04.1f}"
+            progress_string = f"Iter {i+1}/{total} — elapsed {elapsed:.1f}s — ETA {eta_str}"
+
+            try:
+                update_m = await update_m.edit(content=update_message.format(total, progress_string))
+            except:
+                update_m = await ctx.send(update_message.format(total, progress_string))
+
+        # revert back
+        await ctx.reply(
+            info("All members have been processed, reverting channel permissions and deleting the temporary role.")
+        )
+
+        for i, channel in enumerate(channels):
+            overwrites = channel_permissions[i]
+            try:
+                await channel.edit(overwrites=overwrites)
+            except Exception as e:
+                await ctx.reply(error(f"There was an error reverting permissions for {channel.mention}: {e}"))
+
+        # delete the role
+        try:
+            await temp_role.delete()
+            await ctx.reply(
+                info("Permissions reverted and temporary role deleted, I am finished with the fix!"),
+                mention_author=False,
+            )
+        except Exception as e:
+            await ctx.reply(warning(f"Failed to delete temporary role, please do so manually: {e}"))
+
     @commands.hybrid_command(name="pingable")
     @checks.mod()
     @checks.bot_has_permissions(manage_roles=True)
+    @commands.guild_only()
     async def pingable(self, ctx, seconds: int, *, role: discord.Role):
         """
         Sets a role to be pingable for <seconds> amount of seconds.
@@ -562,8 +686,6 @@ class MoreAdmin(commands.Cog):
 
         Role should be a role name (case sensitive) or role ID.
         """
-        guild = ctx.guild
-
         if seconds < 0:
             await ctx.send(
                 error("Please enter a time greater than or equal to 0."), delete_after=30, reference=ctx.message

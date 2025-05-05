@@ -1,3 +1,4 @@
+from sqlalchemy.sql.schema import Table
 from sqlalchemy import (
     create_engine,
     Column,
@@ -18,7 +19,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.mysql import LONGTEXT
 from sqlalchemy.orm import sessionmaker, scoped_session
 
-import os
+import os, asyncio
 from typing import List, Dict, Any, Optional, Union
 from contextlib import contextmanager
 
@@ -59,7 +60,6 @@ class DatabaseHandler:
         self.metadata = MetaData()
         self.SessionFactory = sessionmaker(bind=self.engine)
         self.scoped_session = scoped_session(self.SessionFactory)
-        self.buffer_session = self.scoped_session()
 
         self.tables = {
             "messages": self.message_columns,
@@ -79,7 +79,6 @@ class DatabaseHandler:
 
     def close(self):
         self.flush_all()
-        self.buffer_session.close()
         self.scoped_session.remove()
         self.engine.dispose()
 
@@ -133,7 +132,8 @@ class DatabaseHandler:
             Column("id", BigInteger, primary_key=True),
             Column("message_id", BigInteger, nullable=False, index=True),
             Column("url", text),
-            Column("filepath", String(500)),
+            Column("attachment_message_id", BigInteger),
+            Column("filepath", text),
         ]
 
     @contextmanager
@@ -199,6 +199,8 @@ class DatabaseHandler:
 
         if buffer == "insert":
             working_buffer = self.insert_buffer
+        elif buffer == "safe_insert":
+            working_buffer = self.safe_insert_buffer
         else:
             working_buffer = self.update_buffer
 
@@ -218,65 +220,67 @@ class DatabaseHandler:
             table_name (str): _description_
             buffer (str, optional): _description_. Defaults to "insert".
         """
-        table = self.metadata.tables[table_name]
-        for buffer, working_buffer in {"insert": self.insert_buffer, "update": self.update_buffer}.items():
+        table: Table = self.metadata.tables[table_name]
+        buffer_session = self.scoped_session()
+        for buffer, working_buffer in {
+            "insert": self.insert_buffer,
+            "update": self.update_buffer,
+            "safe_insert": self.safe_insert_buffer,
+        }.items():
             if table_name not in working_buffer or not working_buffer[table_name]:
                 continue
 
             try:
                 if buffer == "insert":
                     statement = insert(table)
-                    self.buffer_session.execute(statement, working_buffer[table_name])
-                    self.buffer_session.commit()
+                    buffer_session.execute(statement, working_buffer[table_name])
+                    buffer_session.commit()
+                elif buffer == "safe_insert":
+                    insert_stmt = insert(table)
+
+                    # SQLite: ON CONFLICT DO NOTHING
+                    if self.backend == "sqlite":
+                        insert_stmt = insert_stmt.prefix_with("OR IGNORE")
+                    # MySQL / MariaDB:
+                    elif self.backend == "mysql":
+                        insert_stmt = insert_stmt.prefix_with("IGNORE")
+
+                    buffer_session.execute(insert_stmt, working_buffer[table_name])
+                    buffer_session.commit()
+                    self.safe_insert_buffer[table_name] = []
                 else:
                     # pull out primary key from data
                     primary_keys = [col.name for col in table.primary_key.columns]
-                    with self.buffer_session.begin():
+                    with buffer_session.begin():
                         for row in working_buffer[table_name]:
                             where_clause = and_(*[table.c[pk] == row[pk] for pk in primary_keys])
                             # Build values to update (excluding PKs)
                             update_values = {k: v for k, v in row.items() if k not in primary_keys}
 
                             statement = update(table).where(where_clause).values(**update_values)
-                            self.buffer_session.execute(statement)
+                            buffer_session.execute(statement)
                 working_buffer[table_name] = []
             except Exception as e:
-                self.buffer_session.rollback()
+                buffer_session.rollback()
                 print(f"Error during buffered {buffer} to '{table_name}': {e}")
-                print("Deleting buffer.")
+                if "UNIQUE constraint failed" in str(e) and buffer == "insert":
+                    # try saving buffer with safe insert
+                    for row in working_buffer[table_name]:
+                        self.safe_insert(table_name, row)
+                    print("Buffer saved using safe insert.")
+                else:
+                    print("Deleting buffer.")
                 working_buffer[table_name] = []
+            finally:
+                buffer_session.close()
+
+    async def run_in_thread(self, func, *args, **kwargs):
+        return await asyncio.to_thread(func, *args, **kwargs)
 
     def safe_insert(self, table_name: str, data: dict):
         if table_name not in self.tables:
             raise ValueError(f"Table '{table_name}' not found.")
-
-        if table_name not in self.safe_insert_buffer:
-            self.safe_insert_buffer[table_name] = []
-
-        self.safe_insert_buffer[table_name].append(data)
-
-        if len(self.safe_insert_buffer[table_name]) >= self.buffer_threshold:
-            table = self.metadata.tables[table_name]
-
-            insert_stmt = insert(table)
-
-            # SQLite: ON CONFLICT DO NOTHING
-            if self.backend == "sqlite":
-                insert_stmt = insert_stmt.prefix_with("OR IGNORE")
-
-            # MySQL / MariaDB:
-            elif self.backend == "mysql":
-                insert_stmt = insert_stmt.prefix_with("IGNORE")
-
-            try:
-                self.buffer_session.execute(insert_stmt, self.safe_insert_buffer[table_name])
-                self.buffer_session.commit()
-                self.safe_insert_buffer[table_name] = []
-            except Exception as e:
-                self.buffer_session.rollback()
-                print(f"Error during safe buffered insert to '{table_name}': {e}")
-                print("Deleting buffer.")
-                self.safe_insert_buffer[table_name] = []
+        self._buffer_insert(table_name, data, "safe_insert")
 
     def flush_all(self):
         for table_name in list(self.tables.keys()):

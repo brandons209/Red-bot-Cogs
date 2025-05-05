@@ -1,8 +1,9 @@
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 from io import BytesIO
 from datetime import datetime
 import re
 import html
+import base64, mimetypes
 
 import discord
 from jinja2 import Template
@@ -31,7 +32,13 @@ HTML_TEMPLATE = """
     .timestamp { font-size: 0.8em; }
     .edited { font-size: 0.75em; color: #B9BBBE; margin-left: 8px; }
     .attachments img { max-width: 200px; border-radius: 5px; margin-top: 5px; }
-    .reply { border-left: 2px solid #4F545C; padding-left: 8px; margin-bottom: 5px; color: #B9BBBE; font-style: italic; }
+    .attachments { 
+        font-size: 0.73em;
+        margin-top: 8px;
+        padding-top: 4px;
+        border-top: 1px solid #4F545C; /* thin, solid separator */ 
+    }
+    .reply { border-left: 2px solid #4F545C; padding-left: 8px; margin-bottom: 5px; color: #B9BBBE; font-style: italic; font-size: 0.8em; }
     .text {
       white-space: pre-wrap;
       word-wrap: break-word;
@@ -53,6 +60,16 @@ HTML_TEMPLATE = """
     }
     .deleted-text {
         font-style: italic;
+    }
+    .message.highlight {
+        animation: highlightFlash 2s ease-out;
+        border-left: 4px solid #faa61a;
+        background-color: rgba(255, 166, 26, 0.1);
+    }
+
+    @keyframes highlightFlash {
+        0%   { background-color: rgba(255, 166, 26, 0.4); }
+        100% { background-color: transparent; }
     }
   </style>
 </head>
@@ -96,11 +113,20 @@ HTML_TEMPLATE = """
             </div>
         {% endif %}
         <div class="text">{{ msg.content }}</div>
-        <div class="attachments">
-            {% for url in msg.attachments %}
-                <div><a href="{{ url }}" target="_blank">{{ url }}</a></div>
-            {% endfor %}
-         </div>
+        {% if msg.attachments %}
+            <div class="attachments">
+                    <strong>Attachments:</strong></br>
+                    {% for a in msg.attachments %}
+                        {% if a.type == "jump" %}
+                            <a href="{{ a.jump }}">{{ a.label }}</a></br>
+                        {% elif a.type == "embed" %}
+                            <img src="data:{{ a.mime }};base64,{{ a.data }}" alt="attachment"/></br>
+                        {% else %}
+                            <span class="deleted-info">[deleted attachment]<a href="{{ a.url }}">{{ a.url }}</a></span></br>
+                        {% endif %}
+                    {% endfor %}
+            </div>
+         {% endif %}
       </div>
     </div>
   {% endfor %}
@@ -129,13 +155,38 @@ HTML_TEMPLATE = """
         }
 
         document.addEventListener("DOMContentLoaded", () => {
-        const checkbox = document.getElementById("toggleClockStyle");
-        updateAllTimestamps(checkbox?.checked ?? true);
+            const checkbox = document.getElementById("toggleClockStyle");
+            updateAllTimestamps(checkbox?.checked ?? true);
 
-        checkbox?.addEventListener("change", () => {
-            updateAllTimestamps(checkbox.checked);
+            checkbox?.addEventListener("change", () => {
+                updateAllTimestamps(checkbox.checked);
+            });
         });
-        });
+
+        function applyHighlight() {
+            // clear any existing
+            document.querySelectorAll('.message.highlight').forEach(el => {
+                el.classList.remove('highlight');
+            });
+
+            // get the current hash, e.g. "#msg_12345"
+            const hash = window.location.hash;
+            if (!hash) return;
+
+            // find that element and highlight
+            const target = document.querySelector(hash);
+            if (target && target.classList.contains('message')) {
+            target.classList.add('highlight');
+            // scroll into view smoothly (optional)
+            target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+        }
+
+        // run on initial load
+        window.addEventListener('DOMContentLoaded', applyHighlight);
+
+        // run whenever the hash changes (e.g. user clicks a reply link)
+        window.addEventListener('hashchange', applyHighlight);
     </script>
 </body>
 </html>
@@ -158,13 +209,15 @@ class ChatHTMLExporter:
     _TS_RE = re.compile(r"<t:(?P<ts>\d+)(?::[tTdDfR])?>")
 
     _LINK_RE = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
+    _URL_RE = re.compile(r"(?P<url>https?://[^\s<]+)")
     _LIST_BLOCK_RE = re.compile(r"(?:^(?:[\-\+\*]\s+.+\n?)+)", flags=re.MULTILINE)
+    _ATTACHMENT_CHANNEL_ID_RE = re.compile(r"^https?://cdn\.discordapp\.com/attachments/(?P<channel_id>\d+)/\d+/[^?]+")
 
     def __init__(self, bot: discord.Client, guild: discord.Guild):
         self.bot = bot
         self.guild = guild
         self._messages: List[Dict] = []
-        self._attachments: Dict[int, List[str]] = {}
+        self._attachments: Dict[int, List[Dict[Any, Any]]] = {}
         self._by_message: Dict[int, Dict] = {}
 
     # 2) Replace callbacks
@@ -202,6 +255,10 @@ class ChatHTMLExporter:
     def _replace_links(self, text: str) -> str:
         return self._LINK_RE.sub(r'<a href="\2" target="_blank">\1</a>', text)
 
+    def _replace_autolinks(self, text: str) -> str:
+        # Convert bare URLs into clickable links
+        return self._URL_RE.sub(r'<a href="\g<url>" target="_blank">\g<url></a>', text)
+
     def _replace_headers(self, text: str) -> str:
         # from H6 down to H1
         for level in range(6, 0, -1):
@@ -236,6 +293,7 @@ class ChatHTMLExporter:
         txt = self._EMOJI_RE.sub(self._replace_emoji, txt)
         # d) markdown formatting
         txt = self._replace_links(txt)
+        txt = self._replace_autolinks(txt)
         txt = self._replace_lists(txt)
         txt = self._apply_markdown(txt)
         return txt
@@ -248,9 +306,9 @@ class ChatHTMLExporter:
     def ingest_attachments(self, rows: List[Dict]):
         """rows: list of dicts with 'message_id' and 'url'"""
         for a in rows:
-            self._attachments.setdefault(a["message_id"], []).append(a["url"])
+            self._attachments.setdefault(a["message_id"], []).append(a)
 
-    async def export_channel(self, channel_id: int, output_file: BytesIO):
+    async def export_channel(self, channel_id: int) -> List[BytesIO]:
         """Fetches channel & members, renders HTML, and writes to output_file"""
         # 1) Resolve channel
         channel = self.bot.get_channel(channel_id) or self.guild.get_channel_or_thread(channel_id)
@@ -302,7 +360,34 @@ class ChatHTMLExporter:
                 reply_to = {"id": ref, "username": reply_username, "content": reply_content}
 
             # attachments
-            attachments = self._attachments.get(row["message_id"], [])
+            attachments = []
+            for i, a in enumerate(self._attachments.get(row["message_id"], [])):
+                # If logged in a channel, deep-link that message
+                if a["attachment_message_id"]:
+                    new_channel_id = re.match(self._ATTACHMENT_CHANNEL_ID_RE, a["url"])
+                    ch_id = new_channel_id.group("channel_id") if new_channel_id else channel.id
+                    jump = f"https://discord.com/channels/{self.guild.id}/{ch_id}/{a['attachment_message_id']}"
+                    attachments.append({"type": "jump", "jump": jump, "label": f"{i+1}. View in Discord"})
+                # because of file size limit issues, we aren't supporting this for now. Need to figure out the best way to handle this (maybe upload to a temporary channel?)
+                # elif a["filepath"]:
+                #    try:
+                #        data = base64.b64encode(open(a["filepath"], "rb").read()).decode("ascii")
+                #        mime = mimetypes.guess_type(a["filepath"])[0] or "application/octet-stream"
+                #        attachments.append({"type": "embed", "data": data, "mime": mime})
+                #    except FileNotFoundError:  # fallback to attachment url
+                #        if not row.get("deleted_by_id"):
+                #            jump = f"https://discord.com/channels/{self.guild.id}/{channel_id}/{a['message_id']}"
+                #            attachments.append({"type": "jump", "jump": jump, "label": f"{i+1}. View in Discord"})
+                #        # 4) Deleted fallback
+                #        else:
+                #            attachments.append({"type": "deleted", "url": a["url"]})
+                # 3) Else if original message exists, deep-link that
+                elif not row.get("deleted_by_id"):
+                    jump = f"https://discord.com/channels/{self.guild.id}/{channel_id}/{a['message_id']}"
+                    attachments.append({"type": "jump", "jump": jump, "label": f"{i+1}. View in Discord"})
+                # 4) Deleted fallback
+                else:
+                    attachments.append({"type": "deleted", "url": a["url"]})
 
             rendered.append(
                 {
@@ -320,14 +405,20 @@ class ChatHTMLExporter:
                 }
             )
 
-        # 3) Render HTML
         tpl = Template(HTML_TEMPLATE)
-        html = tpl.render(guild=self.guild, channel=channel, messages=rendered)
 
-        # 4) Write out
-        output_file.write(html.encode())
-        output_file.seek(0)
-        return output_file
+        # check file size, and if its too large split into smaller chunks
+        limit = self.guild.filesize_limit  # in bytes
+
+        def recursive_chunk(rendered_chunk) -> List[bytes]:
+            chunk = tpl.render(guild=self.guild, channel=channel, messages=rendered_chunk).encode()
+            if len(chunk) < limit or len(rendered_chunk) <= 1:
+                return [chunk]
+            mid = int(len(rendered_chunk) / 2)
+            return recursive_chunk(rendered_chunk[:mid]) + recursive_chunk(rendered_chunk[mid:])
+
+        chunks = recursive_chunk(rendered)
+        return [BytesIO(c) for c in chunks]
 
     async def export_user(
         self,
@@ -400,7 +491,33 @@ class ChatHTMLExporter:
                 reply_content = parent.get("edited_content") or parent.get("content") or ""
                 reply_to = {"id": ref, "username": reply_username, "content": reply_content}
 
-            attachments = self._attachments.get(row["message_id"], [])
+            attachments = []
+            for i, a in enumerate(self._attachments.get(row["message_id"], [])):
+                # If logged in a channel, deep-link that message
+                if a["attachment_message_id"]:
+                    new_channel_id = re.match(self._ATTACHMENT_CHANNEL_ID_RE, a["url"])
+                    ch_id = new_channel_id.group("channel_id") if new_channel_id else channel.id
+                    jump = f"https://discord.com/channels/{self.guild.id}/{ch_id}/{a['attachment_message_id']}"
+                    attachments.append({"type": "jump", "jump": jump, "label": f"{i+1}. View in Discord"})
+                # because of file size limit issues, we aren't supporting this for now. Need to figure out the best way to handle this (maybe upload to a temporary channel?)
+                # elif a["filepath"]:
+                #    try:
+                #        data = base64.b64encode(open(a["filepath"], "rb").read()).decode("ascii")
+                #        mime = mimetypes.guess_type(a["filepath"])[0] or "application/octet-stream"
+                #        attachments.append({"type": "embed", "data": data, "mime": mime})
+                #    except FileNotFoundError:
+                #        if not row.get("deleted_by_id"):
+                #            jump = f"https://discord.com/channels/{self.guild.id}/{channel.id}/{a['message_id']}"
+                #            attachments.append({"type": "jump", "jump": jump, "label": f"{i+1}. View in Discord"})
+                #        else:
+                #            attachments.append({"type": "deleted", "url": a["url"]})
+                # 3) Else if original message exists, deep-link that
+                elif not row.get("deleted_by_id"):
+                    jump = f"https://discord.com/channels/{self.guild.id}/{channel.id}/{a['message_id']}"
+                    attachments.append({"type": "jump", "jump": jump, "label": f"{i+1}. View in Discord"})
+                # 4) Deleted fallback
+                else:
+                    attachments.append({"type": "deleted", "url": a["url"]})
 
             rendered.append(
                 {
@@ -427,9 +544,16 @@ class ChatHTMLExporter:
         fake_channel = type("FakeChannel", (), {"name": f"Messages from {username}"})
 
         tpl = Template(HTML_TEMPLATE)
-        html = tpl.render(guild=self.guild, channel=fake_channel, messages=rendered)
 
-        # 4) Write out
-        output_file.write(html.encode())
-        output_file.seek(0)
-        return output_file
+        # check file size, and if its too large split into smaller chunks
+        limit = self.guild.filesize_limit  # in bytes
+
+        def recursive_chunk(rendered_chunk) -> List[bytes]:
+            chunk = tpl.render(guild=self.guild, channel=fake_channel, messages=rendered_chunk).encode()
+            if len(chunk) < limit or len(rendered_chunk) <= 1:
+                return [chunk]
+            mid = int(len(rendered_chunk) / 2)
+            return recursive_chunk(rendered_chunk[:mid]) + recursive_chunk(rendered_chunk[mid:])
+
+        chunks = recursive_chunk(rendered)
+        return [BytesIO(c) for c in chunks]

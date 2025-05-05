@@ -101,7 +101,7 @@ class ActivityLogger(commands.Cog):
         self.config.register_user(**default_user)
         self.config.register_member(**default_member)
 
-        self.database_handlers = {}
+        self.database_handlers: Dict[Union[int, str], DatabaseHandler] = {}
         # used to store what we should log to avoid constant config calls
         self.cache = {}
         # used to cache audit log entries seen by the bot for logging purposes
@@ -344,6 +344,7 @@ class ActivityLogger(commands.Cog):
         data = {
             "id": None,
             "message_id": message.id,
+            "attachment_message_id": None,
             "url": None,
             "filepath": None,
         }
@@ -351,6 +352,7 @@ class ActivityLogger(commands.Cog):
         for att in attachments:
             full_path = None
             url = None
+            attachment_message_id = None
             if self.should_download(message):
                 filepath = os.path.join(path, str(guildid), str(channel.id) + "_attachments")
                 os.makedirs(filepath, exist_ok=True)
@@ -369,6 +371,7 @@ class ActivityLogger(commands.Cog):
                         f = await att.to_file()
                         download_msg = await channel.send(file=f)
                         url = download_msg.attachments[0].url
+                        attachment_message_id = download_msg.id
                     except Exception as e:
                         print(LOG_MSG.format(f"Error sending file to guild channel attachment holder! {e}"))
                         url = att.url
@@ -381,6 +384,7 @@ class ActivityLogger(commands.Cog):
             new_data["id"] = att.id
             new_data["url"] = url
             new_data["filepath"] = full_path
+            new_data["attachment_message_id"] = attachment_message_id
             all_data.append(new_data)
         # process stickers
         for sticker in message.stickers:
@@ -531,29 +535,29 @@ class ActivityLogger(commands.Cog):
         if log_type == "message" or (log_type == "global" and global_table == "message"):
             msg_data, att_data = await self.process_message(**kwargs)
             if update:
-                handler.update("messages", msg_data)
+                await handler.run_in_thread(handler.update, "messages", msg_data)
             else:
                 if safe_insert:
-                    handler.safe_insert("messages", msg_data)
+                    await handler.run_in_thread(handler.safe_insert, "messages", msg_data)
                 else:
-                    handler.insert("messages", msg_data)
+                    await handler.run_in_thread(handler.insert, "messages", msg_data)
             for a in att_data:
                 if safe_insert:
-                    handler.safe_insert("attachments", a)
+                    await handler.run_in_thread(handler.safe_insert, "attachments", a)
                 else:
-                    handler.insert("attachments", a)
+                    await handler.run_in_thread(handler.insert, "attachments", a)
         elif log_type == "voice":
             voice_data = await self.process_voice(**kwargs)
             if safe_insert:
-                handler.safe_insert("voice", voice_data)
+                await handler.run_in_thread(handler.safe_insert, "voice", voice_data)
             else:
-                handler.insert("voice", voice_data)
+                await handler.run_in_thread(handler.insert, "voice", voice_data)
         elif log_type == "audit" or (log_type == "global" and global_table == "audit"):
             audit_data = self.process_audit(**kwargs)
             if safe_insert:
-                handler.safe_insert("audit", audit_data)
+                await handler.run_in_thread(handler.safe_insert, "audit", audit_data)
             else:
-                handler.insert("audit", audit_data)
+                await handler.run_in_thread(handler.insert, "audit", audit_data)
 
     ### Configuration Commands ###
     @commands.group()
@@ -795,7 +799,9 @@ class ActivityLogger(commands.Cog):
     @checks.bot_has_permissions(administrator=True)
     async def sync_guild(self, ctx: commands.Context):
         """
-        Sync all channels to the internal database. Audit logs are NOT synced, this will come in a future update. This will also pull some data from the older version logs.
+        Sync all channels to the internal database. Configure what you want to log first before running.
+
+        Audit logs are NOT synced, this will come in a future update. This will also pull some data from the older version logs.
         """
         await ctx.send(
             warning(
@@ -865,7 +871,7 @@ class ActivityLogger(commands.Cog):
             progress_string = f"Iter {i+1}/{total} — elapsed {elapsed:.1f}s — ETA {eta_str}"
 
             try:
-                await update_m.edit(content=update_message.format(total, progress_string))
+                update_m = await update_m.edit(content=update_message.format(total, progress_string))
             except:
                 update_m = await ctx.send(update_message.format(total, progress_string))
 
@@ -1195,7 +1201,8 @@ class ActivityLogger(commands.Cog):
             if not past_names:
                 # query global logs for names
                 handler = self.database_handlers["global"]
-                data = handler.query(
+                data = await handler.run_in_thread(
+                    handler.query,
                     "audit",
                     ["before", "after"],
                     {"action": "user_update", "author_id": user.id, "attribute": "username"},
@@ -1283,7 +1290,7 @@ class ActivityLogger(commands.Cog):
                 filter["datetime"]["gte"] = start_time
             if member:
                 filter["author_id"] = member.id
-            data = handler.query("voice", columns, filters=filter)
+            data = await handler.run_in_thread(handler.query, "voice", columns, filters=filter)
             data = sorted(data, key=lambda r: r["datetime"])
 
             for row in data:
@@ -1349,9 +1356,8 @@ class ActivityLogger(commands.Cog):
                 filter["datetime"]["gte"] = start_time
             if member:
                 filter["author_id"] = member.id
-            data = handler.query("audit", columns, filters=filter)
+            data = await handler.run_in_thread(handler.query, "audit", columns, filters=filter)
             data = sorted(data, key=lambda r: r["datetime"])
-            # TODO: replace IDs with names where applicable
             for row in data:
                 author = self.bot.get_user(row["author_id"])
                 if isinstance(guild, discord.Guild) and author is None:
@@ -1470,7 +1476,9 @@ class ActivityLogger(commands.Cog):
             attach_columns = [
                 "id",
                 "message_id",
+                "attachment_message_id",
                 "url",
+                "filepath",
             ]
 
             filter: Dict[str, Any] = {"datetime": {"lte": end_time}}
@@ -1480,9 +1488,11 @@ class ActivityLogger(commands.Cog):
                 filter["author_id"] = channel_or_member.id
             if start_time:
                 filter["datetime"]["gte"] = start_time
-            messages = handler.query("messages", columns, filters=filter)
+            messages = await handler.run_in_thread(handler.query, "messages", columns, filters=filter)
             attach_filter = {"message_id": {"in": [r["message_id"] for r in messages]}}
-            attachments = handler.query("attachments", attach_columns, filters=attach_filter)
+            attachments = await handler.run_in_thread(
+                handler.query, "attachments", attach_columns, filters=attach_filter
+            )
 
             if not messages:
                 await ctx.send(error("No messages found for that time period!"), delete_after=30, reference=ctx.message)
@@ -1497,11 +1507,14 @@ class ActivityLogger(commands.Cog):
             exporter.ingest_attachments(attachments)
             output = BytesIO()
             if type(channel_or_member) in [discord.TextChannel, discord.VoiceChannel, discord.Thread]:
-                output_io = await exporter.export_channel(channel_or_member.id, output)
+                output_io = await exporter.export_channel(channel_or_member.id)
             else:
                 output_io = await exporter.export_user(channel_or_member.id, output, include_dm_name=True)
-            output_attachment = discord.File(output_io, filename=f"{channel_or_member.name}_export.html")
-            await ctx.send(file=output_attachment, reference=ctx.message)
+            output_attachments = [
+                discord.File(o, filename=f"{channel_or_member.name}_export_{i}.html") for i, o in enumerate(output_io)
+            ]
+            for output_att in output_attachments:
+                await ctx.send(file=output_att, reference=ctx.message)
             try:
                 await wait_msg.edit(content=info("**__Log file Generated!__**"))
             except:
@@ -1760,13 +1773,17 @@ class ActivityLogger(commands.Cog):
         ]
         text_columns = ["message_id", "channel_id", "author_id", "datetime", "reference_id"]
         async with ctx.typing():
-            voice_data = handler.query("voice", voice_columns)
-            text_data = handler.query("messages", text_columns)
+            voice_data = await handler.run_in_thread(handler.query, "voice", voice_columns)
+            text_data = await handler.run_in_thread(handler.query, "messages", text_columns)
             voice_data = sorted(voice_data, key=lambda r: r["datetime"])
             text_data = sorted(text_data, key=lambda r: r["datetime"])
 
-            data_file, analysis_file, summary_file, figure_file = build_interaction_graph(
-                ctx.guild, text_data, voice_data, user_lookup=user_map
+            data_file, analysis_file, summary_file, figure_file = await asyncio.to_thread(
+                build_interaction_graph,
+                ctx.guild,
+                text_data,
+                voice_data,
+                user_lookup=user_map,
             )
 
             files = [
@@ -1783,7 +1800,7 @@ class ActivityLogger(commands.Cog):
         """
         Graph a histogram of how long members have been in the guild
         """
-        data_file, figure_file = plot_retention(ctx.guild.members)
+        data_file, figure_file = await asyncio.to_thread(plot_retention, ctx.guild.members)
         files = [
             discord.File(data_file, filename="retention_graph_data.csv"),
             discord.File(figure_file, filename="retention_voice_graph.png"),
@@ -1846,10 +1863,10 @@ class ActivityLogger(commands.Cog):
             "action_type": {"in": ["join", "leave", "move"]},
         }
         async with ctx.typing():
-            data = handler.query("voice", columns, filters=filters)
+            data = await handler.run_in_thread(handler.query, "voice", columns, filters=filters)
             data = sorted(data, key=lambda r: r["datetime"])
 
-            data_file, figure_file = plot_voice_time_by_channel(data, ctx.guild, member)
+            data_file, figure_file = await asyncio.to_thread(plot_voice_time_by_channel, data, ctx.guild, member)
             if not data_file or not figure_file:
                 await ctx.send(
                     warning("No data found for that user and time period."), delete_after=30, reference=ctx.author
@@ -1917,10 +1934,10 @@ class ActivityLogger(commands.Cog):
             "or": [{"channel_id": channel.id}, {"moved_to_id": channel.id}],
         }
         async with ctx.typing():
-            data = handler.query("voice", columns, filters=filters)
+            data = await handler.run_in_thread(handler.query, "voice", columns, filters=filters)
             data = sorted(data, key=lambda r: r["datetime"])
 
-            data_file, figure_file = plot_users_in_voice_channel(data, self.bot, channel)
+            data_file, figure_file = await asyncio.to_thread(plot_users_in_voice_channel, data, self.bot, channel)
             if not data_file or not figure_file:
                 await ctx.send(
                     warning("No data found for that channel and time period."), delete_after=30, reference=ctx.author
@@ -1986,10 +2003,11 @@ class ActivityLogger(commands.Cog):
             "author_id": member.id,
         }
         async with ctx.typing():
-            data = handler.query("messages", columns, filters=filters)
+            data = await handler.run_in_thread(handler.query, "messages", columns, filters=filters)
             data = sorted(data, key=lambda r: r["datetime"])
 
-            data_file, figure_file = plot_text_activity_over_time(
+            data_file, figure_file = await asyncio.to_thread(
+                plot_text_activity_over_time,
                 data,
                 ctx.guild,
                 member=member,
@@ -2061,9 +2079,9 @@ class ActivityLogger(commands.Cog):
             "action": {"in": ["member_join", "member_leave", "kick", "ban"]},
         }
         async with ctx.typing():
-            data = handler.query("audit", columns, filters=filters)
+            data = await handler.run_in_thread(handler.query, "audit", columns, filters=filters)
             data = sorted(data, key=lambda r: r["datetime"])
-            data_file, figure_file = plot_guild_joins_and_leaves(data, split.lower())
+            data_file, figure_file = await asyncio.to_thread(plot_guild_joins_and_leaves, data, split.lower())
             if not data_file or not figure_file:
                 await ctx.send(
                     warning("No data found for that user and time period."), delete_after=30, reference=ctx.author
@@ -2129,10 +2147,11 @@ class ActivityLogger(commands.Cog):
             "datetime": {"gte": start_time, "lte": end_time},
         }
         async with ctx.typing():
-            data = handler.query("messages", columns, filters=filters)
+            data = await handler.run_in_thread(handler.query, "messages", columns, filters=filters)
             data = sorted(data, key=lambda r: r["datetime"])
 
-            data_file, figure_file = plot_text_activity_over_time(
+            data_file, figure_file = await asyncio.to_thread(
+                plot_text_activity_over_time,
                 data,
                 ctx.guild,
                 top_n_channels=5,
@@ -2208,10 +2227,10 @@ class ActivityLogger(commands.Cog):
             "channel_id": channel.id,
         }
         async with ctx.typing():
-            data = handler.query("messages", columns, filters=filters)
+            data = await handler.run_in_thread(handler.query, "messages", columns, filters=filters)
             data = sorted(data, key=lambda r: r["datetime"])
 
-            data_file, figure_file = plot_hourly_heatmap(data, channel)
+            data_file, figure_file = await asyncio.to_thread(plot_hourly_heatmap, data, channel)
             if not data_file or not figure_file:
                 await ctx.send(warning("No data found for that time period."), delete_after=30, reference=ctx.author)
                 return
@@ -2268,10 +2287,10 @@ class ActivityLogger(commands.Cog):
             "datetime": {"gte": start_time, "lte": end_time},
         }
         async with ctx.typing():
-            data = handler.query("messages", columns, filters=filters)
+            data = await handler.run_in_thread(handler.query, "messages", columns, filters=filters)
             data = sorted(data, key=lambda r: r["datetime"])
 
-            data_file, figure_file = plot_hourly_heatmap(data, ctx.guild)
+            data_file, figure_file = await asyncio.to_thread(plot_hourly_heatmap, data, ctx.guild)
             if not data_file or not figure_file:
                 await ctx.send(warning("No data found for that time period."), delete_after=30, reference=ctx.author)
                 return

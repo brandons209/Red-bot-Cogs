@@ -1027,14 +1027,11 @@ class Punish(commands.Cog):
 
     async def loop(self):
         while True:
-            try:
-                async with self.queue_lock:
-                    while await self.process_queue_event():
-                        pass
+            async with self.queue_lock:
+                while await self.process_queue_event():
+                    pass
 
-                await asyncio.sleep(5)
-            except asyncio.CancelledError:
-                break
+            await asyncio.sleep(5)
 
         log.debug("queue manager dying")
 
