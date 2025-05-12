@@ -2,10 +2,11 @@
 from redbot.core.utils.chat_formatting import *
 from redbot.core import Config, checks, commands
 from redbot.core.commands.converter import parse_timedelta
+from redbot.core.utils.predicates import MessagePredicate
 import discord
 import emoji
 
-import asyncio
+import asyncio, bisect
 from datetime import timedelta, timezone, datetime
 from typing import Union, Optional, Literal, Tuple
 from random import choice
@@ -56,6 +57,19 @@ class MayhemMaker(commands.Cog):
                 "role": 300,
                 "reaction": 300,
             },
+            "level_integration_usage_cooldowns": {
+                "name": {},
+                "shut": {},
+                "role": {},
+                "reaction": {},
+            },
+            "level_integration_applied_cooldowns": {
+                "name": {},
+                "shut": {},
+                "role": {},
+                "reaction": {},
+            },
+            "level_integration_max_duration": {},
             "shut_messages": SHUT_DEFAULT_MSGs,
         }
         default_member = {
@@ -76,7 +90,7 @@ class MayhemMaker(commands.Cog):
         self.config.register_member(**default_member)
 
         self.actions = ["name", "role", "shut", "reaction"]
-
+        self.level_cog = None
         self.task = asyncio.create_task(self.loop())
 
     def cog_unload(self):
@@ -85,6 +99,7 @@ class MayhemMaker(commands.Cog):
 
     async def loop(self):
         await self.bot.wait_until_ready()
+        self.level_cog = self.bot.get_cog("LevelUp")
         while True:
             try:
                 await self.loop_task()
@@ -184,20 +199,48 @@ class MayhemMaker(commands.Cog):
         now = discord.utils.utcnow()
         usage_cooldown = (await self.config.guild(guild).usage_cooldowns())[action]
         applied_cooldown = (await self.config.guild(guild).applied_cooldowns())[action]
+
+        member_last_used = (await self.config.member(member).last_used())[action]
+        target_last_used = (await self.config.member(target).last_applied())[action]
+        member_last_used = now.fromtimestamp(member_last_used).astimezone(timezone.utc)
+        target_last_used = now.fromtimestamp(target_last_used).astimezone(timezone.utc)
+
+        if self.level_cog is not None:
+            member_level: int = await self.level_cog.get_level(member)
+            target_level: int = await self.level_cog.get_level(target)
+            # check level cooldowns, default to global cooldowns otherwise
+            lvl_usage_cooldowns = (await self.config.guild(guild).level_integration_usage_cooldowns())[action]
+            lvls = sorted(list(lvl_usage_cooldowns.keys()))
+            member_usage_cooldown = 0
+            if lvl_usage_cooldowns:
+                member_usage_cooldown = bisect.bisect_left(lvls, str(member_level))
+                if member_usage_cooldown != len(
+                    lvl_usage_cooldowns
+                ):  # if false then member has a higher level then configured
+                    member_usage_cooldown = lvl_usage_cooldowns[lvls[member_usage_cooldown]]
+
+            lvl_applied_cooldowns = (await self.config.guild(guild).level_integration_applied_cooldowns())[action]
+            lvls = sorted(list(lvl_applied_cooldowns.keys()))
+            target_applied_cooldown = 0
+            if lvl_applied_cooldowns:
+                target_applied_cooldown = bisect.bisect_left(lvls, str(target_level))
+                if target_applied_cooldown != len(lvl_applied_cooldowns):
+                    target_applied_cooldown = lvl_applied_cooldowns[lvls[target_applied_cooldown]]
+
+            if member_usage_cooldown:
+                usage_cooldown = member_usage_cooldown
+            if target_applied_cooldown:
+                usage_cooldown = target_applied_cooldown
+
         usage_cooldown = timedelta(seconds=usage_cooldown)
         applied_cooldown = timedelta(seconds=applied_cooldown)
 
-        member_cooldown = (await self.config.member(member).last_used())[action]
-        target_cooldown = (await self.config.member(target).last_applied())[action]
-        member_cooldown = now.fromtimestamp(member_cooldown).astimezone(timezone.utc)
-        target_cooldown = now.fromtimestamp(target_cooldown).astimezone(timezone.utc)
-
         # check last usage of the action from member
-        if now - member_cooldown < usage_cooldown:
-            return True, "usage", now + (usage_cooldown - (now - member_cooldown))
+        if now - member_last_used < usage_cooldown:
+            return True, "usage", now + (usage_cooldown - (now - member_last_used))
         # check last applied of the action onto target
-        if now - target_cooldown < applied_cooldown:
-            return True, "applied", now + (applied_cooldown - (now - target_cooldown))
+        if now - target_last_used < applied_cooldown:
+            return True, "applied", now + (applied_cooldown - (now - target_last_used))
 
         return False, "", now
 
@@ -228,7 +271,6 @@ class MayhemMaker(commands.Cog):
 
         now = discord.utils.utcnow()
         on_cooldown, cooldown_type, next_usage = await self.check_cooldown(ctx.author, member, action)
-        max_duration = await self.config.guild(member.guild).max_duration()
         if on_cooldown:
             if cooldown_type == "usage":
                 await ctx.send(
@@ -246,6 +288,16 @@ class MayhemMaker(commands.Cog):
                     reference=ctx.message,
                 )
                 return
+
+        max_duration = await self.config.guild(member.guild).max_duration()
+        if self.level_cog is not None:
+            lvl_maxduration = await self.config.guild(member.guild).level_integration_max_duration()
+            lvls = sorted(list(lvl_maxduration.keys()))
+            member_level = await self.level_cog.get_level(ctx.author)
+            if lvl_maxduration:
+                idx = bisect.bisect_left(lvls, str(member_level))
+                if idx != len(lvl_maxduration):
+                    max_duration = lvl_maxduration[lvls[idx]]
 
         if action != "shut":
             time = parse_timedelta(duration)
@@ -522,6 +574,60 @@ class MayhemMaker(commands.Cog):
         """
         pass
 
+    @mayhemset.group(name="shutmessages")
+    async def mayhemset_shutmessages(self, ctx: commands.Context):
+        """
+        Manage the messages sent on shut command
+        """
+        pass
+
+    @mayhemset_shutmessages.command(name="add")
+    async def mayhemset_shutmessages_add(self, ctx: commands.Context, *, msg: str):
+        """
+        Add a new shut command message
+
+        You can use `{author}` to represent the user who initaited the command and `{target}` to represent the target of the command in your message
+        """
+        async with self.config.guild(ctx.guild).shut_messages() as shut_messages:
+            if msg not in shut_messages:
+                shut_messages.append(msg)
+        await ctx.tick()
+
+    @mayhemset_shutmessages.command(name="del")
+    async def mayhemset_shutmessages_del(self, ctx: commands.Context):
+        """
+        Delete a shut command message
+        """
+        async with self.config.guild(ctx.guild).shut_messages() as shut_messages:
+            msg = "### Select the number you want to delete:\n"
+            messages = msg + box("\n".join([f"{i+1}. {m}" for i, m in enumerate(shut_messages)]))
+            for page in pagify(messages):
+                await ctx.send(page)
+
+            pred = MessagePredicate.positive(ctx)
+            try:
+                await self.bot.wait_for("message", check=pred, timeout=120)
+            except asyncio.TimeoutError:
+                await ctx.send(warning("Took too long! Cancelling..."))
+                return
+            idx = int(pred.result) - 1
+            if idx > len(shut_messages):
+                await ctx.send(warning("Invalid number! Cancelling..."))
+                return
+            msg = shut_messages.pop(idx)
+            await ctx.send(info(f"Deleted shut message `{idx + 1}. {msg}`"))
+
+    @mayhemset_shutmessages.command(name="list")
+    async def mayhemset_shutmessages_list(self, ctx: commands.Context):
+        """
+        List all shut messages.
+        """
+        async with self.config.guild(ctx.guild).shut_messages() as shut_messages:
+            msg = "### Shut messages:\n"
+            messages = msg + box("\n".join([f"{i+1}. {m}" for i, m in enumerate(shut_messages)]))
+            for page in pagify(messages):
+                await ctx.send(page)
+
     @mayhemset.command(name="list")
     async def mayhemset_list(self, ctx: commands.Context):
         """
@@ -543,14 +649,187 @@ class MayhemMaker(commands.Cog):
     async def mayhemset_max_duration(self, ctx: commands.Context, max_duration: int):
         """
         Set max time a mayhem action can be applied for
+
+        If using levelup integration:
+        This will be the default duration if no level is specified for the max duration
         """
         await self.config.guild(ctx.guild).max_duration.set(max_duration)
         await ctx.tick()
 
-    @mayhemset.group(name="cooldown", alias="cooldowns")
+    @mayhemset.group(name="levelup")
+    async def mayhemset_levelup(self, ctx: commands.Context):
+        """
+        Manage levelup integration settings
+        """
+        pass
+
+    @mayhemset_levelup.command(name="list")
+    async def mayhemset_levelup_list(self, ctx: commands.Context):
+        """
+        List LevelUp integration settings
+        """
+        usage_cooldowns = await self.config.guild(ctx.guild).level_integration_usage_cooldowns()
+        applied_cooldowns = await self.config.guild(ctx.guild).level_integration_applied_cooldowns()
+        max_duration = await self.config.guild(ctx.guild).level_integration_max_duration()
+
+        msg = "# Max Duration:\n"
+        if max_duration:
+            for level, maxduration in max_duration.items():
+                msg += f"   - Level `{level}`: `{humanize_timedelta(seconds=maxduration)}`\n"
+        else:
+            msg += "   - No levels set\n"
+
+        msg += "# Cooldowns:\n## Usage Cooldowns:\n"
+        for action, cooldowns in usage_cooldowns.items():
+            msg += f"### {action}:\n"
+            if cooldowns:
+                for level, cooldown in cooldowns.items():
+                    msg += f"   - Level `{level}`: {humanize_timedelta(seconds=cooldown)}\n"
+            else:
+                msg += "   - No levels set\n"
+
+        msg += "## Applied Cooldowns:\n"
+        for action, cooldowns in applied_cooldowns.items():
+            msg += f"### {action}:\n"
+            if cooldowns:
+                for level, cooldown in cooldowns.items():
+                    msg += f"   - Level `{level}`: {humanize_timedelta(seconds=cooldown)}\n"
+            else:
+                msg += "   - No levels set\n"
+
+        for page in pagify(msg):
+            await ctx.send(page)
+
+    @mayhemset_levelup.group(name="cooldown", aliases=["cooldowns"])
+    async def mayhemset_levelup_cooldown(self, ctx: commands.Context):
+        """
+        Manage levelup integration cooldowns
+        """
+        pass
+
+    @mayhemset_levelup_cooldown.command(name="usage")
+    async def mayhemset_levelup_cooldown_usage(
+        self,
+        ctx: commands.Context,
+        action: Literal["name", "shut", "role", "reaction"],
+        level: int,
+        cooldown: int,
+    ):
+        """
+        Set how long a user must wait before using a mayhem action again based on their level.
+
+        Set cooldown to 0 to remove cooldown for that level.
+
+        Levels added will act as as a ceiling, meaning that levels below the specified `level` can use mayhem commands after the `cooldown` set for that level.
+        Example:
+        [p]mayhemset levelup cooldown usage name 5 120
+        [p]mayhemset levelup cooldown usage name 10 300
+
+        Users level [0, 5] will have a cooldown of 120 seconds for name (including level 5)
+        Users level (5, 10] will have a cooldown of 300 seconds for name (including level 10)
+        Users above level 10 will use the default cooldown set by [p]mayhemset cooldown usage
+        """
+        if not self.level_cog:
+            return await ctx.reply(
+                error(
+                    "LevelUp cog not loaded, please contact the bot owner to load the cog. If you just loaded the LevelUp cog reload MayhemMaker."
+                ),
+                mention_author=False,
+            )
+        async with self.config.guild(ctx.guild).level_integration_usage_cooldowns() as lvl_usage_cooldowns:
+            if cooldown == 0:
+                try:
+                    del lvl_usage_cooldowns[action][level]
+                except:
+                    pass
+            else:
+                lvl_usage_cooldowns[action][level] = cooldown
+            await ctx.tick()
+
+    @mayhemset_levelup_cooldown.command(name="apply")
+    async def mayhemset_levelup_cooldown_apply(
+        self,
+        ctx: commands.Context,
+        action: Literal["name", "shut", "role", "reaction"],
+        level: int,
+        cooldown: int,
+    ):
+        """
+        Set how long a user is protected from a mayhem command after being attacked based on their level.
+
+        Set cooldown to 0 to remove cooldown for that level.
+
+        Levels added will act as as a ceiling, meaning that levels below the specified `level` will have `cooldown` applied to them before that mayhem action can be used against them again
+        Example:
+        [p]mayhemset levelup cooldown apply name 5 300
+        [p]mayhemset levelup cooldown apply name 10 900
+
+        Users level [0, 5] will have a 300 second protection against name.
+        Users level (5, 10] will have a 900 second protection against name.
+        Users above level 10 will have the default cooldownset by [p]mayhemset cooldown apply protection time
+        """
+        if not self.level_cog:
+            return await ctx.reply(
+                error(
+                    "LevelUp cog not loaded, please contact the bot owner to load the cog. If you just loaded the LevelUp cog reload MayhemMaker."
+                ),
+                mention_author=False,
+            )
+        async with self.config.guild(ctx.guild).level_integration_applied_cooldowns() as lvl_apply_cooldowns:
+            if cooldown == 0:
+                try:
+                    del lvl_apply_cooldowns[action][level]
+                except:
+                    pass
+            else:
+                lvl_apply_cooldowns[action][level] = cooldown
+            await ctx.tick()
+
+    @mayhemset_levelup.command(name="maxduration")
+    async def mayhemset_levelup_maxduration(
+        self,
+        ctx: commands.Context,
+        level: int,
+        maxduration: int,
+    ):
+        """
+        Add a cooldown for a specific level
+
+        Set maxduration to 0 to remove the cooldown for the specified level
+
+        Levels added will act as as a ceiling, meaning that levels below the specified `level` can use mayhem commands with the `maxduration` set for that level.
+        Example:
+        [p]mayhemset levelup maxduration name 5 120
+        [p]mayhemset levelup maxduration name 10 300
+
+        Users level [0, 5] can set a max duration of 120 seconds for name (including level 5)
+        Users level (5, 10] can set a max duration of 300 seconds for name (including level 10)
+        Users above level 10 will use the default max duration set by [p]mayhemset maxduration
+        """
+        if not self.level_cog:
+            return await ctx.reply(
+                error(
+                    "LevelUp cog not loaded, please contact the bot owner to load the cog. If you just loaded the LevelUp cog reload MayhemMaker."
+                ),
+                mention_author=False,
+            )
+        async with self.config.guild(ctx.guild).level_integration_max_duration() as lvl_maxduration:
+            if maxduration == 0:
+                try:
+                    del lvl_maxduration[level]
+                except:
+                    pass
+            else:
+                lvl_maxduration[level] = maxduration
+            await ctx.tick()
+
+    @mayhemset.group(name="cooldown", aliases=["cooldowns"])
     async def mayhemset_cooldown(self, ctx):
         """
         Manage mayhem cooldowns.
+
+        If using levelup integration:
+        This will manage the default cooldown duration if no level is specified for a cooldown
         """
         pass
 
@@ -608,7 +887,7 @@ class MayhemMaker(commands.Cog):
         ctx: commands.Context,
     ):
         """
-        List all cooldowns.
+        List all default cooldowns.
         """
         usage_cooldowns = await self.config.guild(ctx.guild).usage_cooldowns()
         applied_cooldowns = await self.config.guild(ctx.guild).applied_cooldowns()

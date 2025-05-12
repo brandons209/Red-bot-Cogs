@@ -412,9 +412,9 @@ class Warnings_Custom(commands.Cog):
         else:
             await ctx.send(_("There are no actions configured!"))
 
-    @commands.command()
+    @commands.hybrid_command()
     @commands.guild_only()
-    @checks.admin_or_permissions(ban_members=True)
+    @checks.mod_or_permissions(ban_members=True)
     async def warn(
         self,
         ctx: commands.Context,
@@ -619,9 +619,9 @@ class Warnings_Custom(commands.Cog):
         async with member_settings.warnings() as user_warnings:
             user_warnings.update(warning_to_add)
 
-    @commands.command()
+    @commands.hybrid_command()
     @commands.guild_only()
-    @checks.admin()
+    @checks.mod_or_permissions(ban_members=True)
     async def warnings(self, ctx: commands.Context, user: discord.Member):
         """List the warnings for the specified user."""
 
@@ -713,13 +713,13 @@ class Warnings_Custom(commands.Cog):
                     )
                 await ctx.send_interactive(pagify(msg, shorten_by=58))
 
-    @commands.command()
+    @commands.hybrid_command()
     @commands.guild_only()
-    @checks.admin_or_permissions(ban_members=True)
+    @checks.mod_or_permissions(ban_members=True)
     async def unwarn(
         self,
         ctx: commands.Context,
-        user: Union[discord.Member, int],
+        user: discord.Member,
         warn_id: str,
         *,
         reason: str = None,

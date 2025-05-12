@@ -1,0 +1,19 @@
+{
+    "author": [
+        "brandons209"
+    ],
+    "name": "ChatbotAssistant",
+    "description": "Chatting, summarization, user learning, and more. Your own personalized chatbot assistant using either Ollama or any OpenAI compatiable endpoint. Currently in alpha.",
+    "hidden": false,
+    "end_user_data_statement": "This cog does not store user data.",
+    "requirements": [
+        "python-dateutil",
+        "chromadb",
+        "sentence-transformers",
+        "ollama",
+        "openai",
+        "tiktoken",
+        "transformers",
+        "huggingface-hub"
+    ]
+}

@@ -460,7 +460,7 @@ class MoreAdmin(commands.Cog):
         controls.update({"\N{NO ENTRY SIGN}": delete_note})
         await menu(ctx, embeds, controls, message=message)
 
-    @commands.group()
+    @commands.hybrid_group()
     @commands.guild_only()
     @checks.mod()
     async def notes(self, ctx):
@@ -892,7 +892,7 @@ class MoreAdmin(commands.Cog):
                 await ctx.send("{}".format(escape(message.content, formatting=True, mass_mentions=True)))
             await asyncio.sleep(0.2)
 
-    @commands.command()
+    @commands.hybrid_command()
     @commands.guild_only()
     @checks.admin_or_permissions(ban_members=True)
     @checks.bot_has_permissions(ban_members=True)

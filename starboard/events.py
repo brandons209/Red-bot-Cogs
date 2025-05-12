@@ -168,7 +168,7 @@ class StarboardEvents:
             if not star_channel:
                 continue
             async with starboard.lock:
-                await self._loop_messages(payload, starboard, star_channel)
+                await self._loop_messages(payload, starboard, star_channel, is_clear=True)
 
     async def is_bot_or_server_owner(self, member: discord.Member) -> bool:
         guild = member.guild
@@ -376,7 +376,7 @@ class StarboardEvents:
 
     async def _loop_messages(
         self,
-        payload: Union[discord.RawReactionActionEvent, FakePayload],
+        payload: Union[discord.RawReactionActionEvent, discord.RawReactionClearEvent, FakePayload],
         starboard: StarboardEntry,
         star_channel: discord.TextChannel,
         is_clear: bool = False,
@@ -421,6 +421,9 @@ class StarboardEvents:
             starboard_msg = starboard.messages[key]
             pass
         else:
+            return False
+
+        if is_clear:
             return False
 
         # await starboard_msg.update_count(self.bot, starboard, remove)

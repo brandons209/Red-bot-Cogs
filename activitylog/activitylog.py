@@ -2,6 +2,7 @@
 from tokenize import String
 from discord.user import User
 from discord.member import Member
+from networkx import Graph
 from redbot.core.utils.chat_formatting import *
 from redbot.core import Config, checks, commands, modlog, bank
 from redbot.core.data_manager import cog_data_path
@@ -22,6 +23,7 @@ from .data import (
     plot_retention,
     build_interaction_graph,
 )
+from .menus import LogView, GraphView
 from datetime import datetime, timedelta
 from dateutil.tz import tzlocal
 from glob import glob
@@ -1549,11 +1551,21 @@ class ActivityLogger(commands.Cog):
 
         return start_time, discord.utils.utcnow()
 
-    @commands.group(aliases=["log"])
+    @commands.group(aliases=["log"], invoke_without_command=True)
     @commands.guild_only()
-    @checks.admin_or_permissions(administrator=True)
-    async def logs(self, ctx):
-        pass
+    @checks.mod_or_permissions(administrator=True)
+    async def logs(self, ctx: commands.Context):
+        """
+        Download chat logs for your server
+
+        Run with no subcommand to use the menu
+        """
+        if ctx.invoked_subcommand is None:
+            view = LogView(ctx, self)
+            view.message = await ctx.send(
+                "Configure your logging request, don't forget to submit either a time delta or a date range using the buttons:",
+                view=view,
+            )
 
     @logs.command(name="from")
     async def logs_channel_interval(
@@ -1731,14 +1743,19 @@ class ActivityLogger(commands.Cog):
         await self.audit_log_sender(ctx, ctx.guild, start_time=start_time, member=user, end_time=end_time)
 
     ### Graphing ###
-    @commands.group(name="graphstats")
-    @checks.mod()
+    @commands.group(name="graphstats", invoke_without_command=True)
+    @checks.mod_or_permissions(administrator=True)
     @commands.guild_only()
     async def graphstats(self, ctx):
         """
         Generate graphs for users and guild.
         """
-        pass
+        if ctx.invoked_subcommand is None:
+            view = GraphView(ctx, self)
+            view.message = await ctx.send(
+                "Configure your graph request:",
+                view=view,
+            )
 
     @graphstats.command(name="correlation")
     async def graphstats_correlation(self, ctx: commands.Context):
@@ -2309,7 +2326,7 @@ class ActivityLogger(commands.Cog):
             return
         if not (self.should_log(message.channel) or self.should_log(message.guild)):
             return
-        if isinstance(message.channel, discord.abc.PrivateChannel):
+        if type(message.channel) in [discord.abc.PrivateChannel, discord.channel.DMChannel] or message.guild is None:
             await self.log("global", global_table="message", update=False, message=message)
         else:
             await self.log("message", guild=message.guild, update=False, message=message)
@@ -2320,13 +2337,20 @@ class ActivityLogger(commands.Cog):
             return
         if not (self.should_log(after.channel) or self.should_log(after.guild)):
             return
-        await self.log("message", guild=before.guild, update=True, message=before, after=after)
+        if type(before.channel) in [discord.abc.PrivateChannel, discord.channel.DMChannel] or before.guild is None:
+            await self.log("global", global_table="message", update=True, message=before, after=after)
+        else:
+            await self.log("message", guild=before.guild, update=True, message=before, after=after)
 
     @commands.Cog.listener()
     async def on_message_delete(self, message: discord.Message):
         if await self.bot.cog_disabled_in_guild(self, message.guild):
             return
         if not (self.should_log(message.channel) or self.should_log(message.guild)):
+            return
+
+        if type(message.channel) in [discord.abc.PrivateChannel, discord.channel.DMChannel] or message.guild is None:
+            await self.log("global", global_table="message", update=True, message=message, deleted_by=message.author)
             return
 
         entry = await self.get_audit_entry(
