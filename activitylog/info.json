@@ -15,7 +15,7 @@
     "jinja2",
     "sqlalchemy",
     "numpy",
-    "pymsql"
+    "pymysql"
   ],
   "short": "Log messages, audit actions, and track user statistics.",
   "tags": [
