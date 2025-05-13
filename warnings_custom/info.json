@@ -7,7 +7,7 @@
   "hidden": false,
   "install_msg": "Thank you for using this cog! Make sure to unload the build in warnings cog before loading this cog.",
   "requirements": [
-    "dateutil"
+    "python-dateutil"
   ],
   "short": "Better warnings cog.",
   "tags": [
