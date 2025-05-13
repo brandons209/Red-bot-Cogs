@@ -4,11 +4,7 @@
     "shroomdog26",
     "brandons209"
   ],
-  "min_bot_version": [
-    3,
-    5,
-    0
-  ],
+  "min_bot_version": "3.5.0",
   "description": "Cog used for setting birthdays and announcing them and giving people roles on their birthday. Also can announce server anniversaries.",
   "hidden": false,
   "install_msg": "Use [p]bday to bring up the help menu",
