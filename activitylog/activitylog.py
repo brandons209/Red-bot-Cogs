@@ -1184,8 +1184,9 @@ class ActivityLogger(commands.Cog):
             else:
                 try:
                     await author.send(embed=data)
+                    await ctx.reply(info("I sent your info to your DMs!"), delete_after=30)
                 except discord.HTTPException:
-                    await ctx.send(
+                    await ctx.reply(
                         error("Please allow messages from server members to get your info."),
                         delete_after=30,
                         reference=ctx.message,
