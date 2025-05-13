@@ -1,56 +1,21 @@
+from datetime import datetime, timedelta, timezone
 from redbot.core.utils.chat_formatting import *
 from redbot.core.utils import mod
-from redbot.core.utils.predicates import MessagePredicate
 from redbot.core.utils.menus import menu, DEFAULT_CONTROLS
 from redbot.core import Config, checks, commands, modlog
-from redbot.core.bot import Red
-from redbot.core.data_manager import cog_data_path
+from redbot.core.commands.converter import parse_timedelta
 import discord
+from redbot.core.utils.predicates import MessagePredicate
 
 from .utils import *
-from typing import Literal
-import asyncio
-from typing import Union, Optional
-import os
-import random
+from typing import List, Union, Optional, Dict
+import asyncio, time
 
-from datetime import datetime
-import time
-
-TIME_RE_STRING = r"\s?".join(
-    [
-        r"((?P<weeks>\d+?)\s?(weeks?|w))?",
-        r"((?P<days>\d+?)\s?(days?|d))?",
-        r"((?P<hours>\d+?)\s?(hours?|hrs|hr?))?",
-        r"((?P<minutes>\d+?)\s?(minutes?|mins?|m(?!o)))?",  # prevent matching "months"
-        r"((?P<seconds>\d+?)\s?(seconds?|secs?|s))?",
-    ]
-)
-
-TIME_RE = re.compile(TIME_RE_STRING, re.I)
-
-MIN_MSG_LEN = 6
-
-# 0 is guild object, 1 is invite link
-PURGE_DM_MESSAGE = "**__Notice of automatic inactivity removal__**\n\nYou have been kicked from {0.name} for lack of activity in the server; this is merely routine, and you are welcome to join back here: {1}"
-
-# 0 is guild object, number of messages is 1
-PURGE_DM_WARN_MESSAGE_MSG = "**__WARNING! You may be kicked from {0.name} soon!__**\n\nDue to your inactivity, it may happen that you get kicked. If you don't want that, then we recommend you chat with people in text channels! The minimum number of messages you need is **{1}** to be marked as active.\n\nHowever, you can't just spam letters or messages! We aren't doing this to be rude but simply to try and keep active people within our community. We hope you understand and apologize for any inconveniences."
-
-# 0 is guild object
-PURGE_DM_WARN_MESSAGE = "**__WARNING! You may be kicked from {0.name} soon!__**\n\nDue to your inactivity, it may happen that you get kicked. If you don't want that, then we recommend you chat with people in text channels! Once you get the trusted role you will be marked as active.\n\nHowever, you can't just spam letters or messages! We aren't doing this to be rude but simply to try and keep active people within our community. We hope you understand and apologize for any inconveniences.\nIf you have any questions or concerns please message one of the staff members!"
+LOG_MSG = "[Moreadmin] {}"
 
 # guild is guild name
 BAN_DM_MESSAGE = "You have been banned from {guild} for {reason}."
-
-
-def parse_timedelta(argument: str) -> Optional[timedelta]:
-    matches = TIME_RE.match(argument)
-    if matches:
-        params = {k: int(v) for k, v in matches.groupdict().items() if v}
-        if params:
-            return timedelta(**params)
-    return None
+BAITED_MESSAGE = "Hello {member}! You have added the {role} role to yourself in {guild}. This role is meant to capture bots that add the role to themselves. Please remove the role using the Channels & Roles section at the top of the server."
 
 
 class MoreAdmin(commands.Cog):
@@ -65,157 +30,146 @@ class MoreAdmin(commands.Cog):
         default_guild = {
             "user_count_channel": None,
             "sus_user_channel": None,
-            "sus_user_threshold": None,
-            "sus_user_kick_threshold": None,
+            "sus_user_threshold": 0,
+            "sus_user_kick_threshold": 0,
+            "sus_user_kick_spammer": False,
             "ignore_bot_commands": False,
-            "last_msg_num": 5,
-            "prefixes": [],
-            "purge_dm_msg": PURGE_DM_WARN_MESSAGE_MSG,
-            "purge_dm": PURGE_DM_WARN_MESSAGE,
+            "baited_role": None,
+            "baited_channel": None,
+            "ban_baited_after": None,
+            "baited_message": BAITED_MESSAGE,
             "ban_dm": BAN_DM_MESSAGE,
-            "purge_action": "kick",
         }
 
         default_role = {"addable": []}  # role ids who can add this role
 
         # maps message_time -> dict("channel_id":int, "message_id": int)
-        default_member = {"last_msgs": {}, "notes": []}
+        default_member = {"baited": None, "notes": []}
 
         self.config.register_role(**default_role)
         self.config.register_member(**default_member)
         self.config.register_guild(**default_guild)
 
-        # initalize prefixes and add user count updater task
-        asyncio.create_task(self.initialize())
-        self.user_task = asyncio.create_task(self.user_count_updater())
-
-    async def initialize(self):
-        await self.register_casetypes()
-        for guild in self.bot.guilds:
-            async with self.config.guild(guild).prefixes() as prefixes:
-                if not prefixes:
-                    curr = await self.bot.get_valid_prefixes()
-                    prefixes.extend(curr)
+        #  add user count updater task
+        self.loop_task = asyncio.create_task(self.loop())
+        self.loop_task2 = asyncio.create_task(self.baited_loop())
 
     def cog_unload(self):
-        self.user_task.cancel()
+        self.loop_task.cancel()
+        self.loop_task2.cancel()
 
-    @staticmethod
-    async def register_casetypes():
-        # register mod case
-        purge_case = {
-            "name": "Purge",
-            "default_setting": True,
-            "image": "\N{WOMANS BOOTS}",
-            "case_str": "Purge",
-        }
-        try:
-            await modlog.register_casetype(**purge_case)
-        except RuntimeError:
-            pass
+    async def baited_loop(self):
+        await self.bot.wait_until_ready()
+        while not self.bot.is_closed():
+            try:
+                await self.check_baited_role()
+            except asyncio.CancelledError:
+                # normal exit
+                break
+            except Exception as e:
+                print(LOG_MSG.format(f"Internal baited loop crashed, restarting in 10s, error: {e}"))
+                await asyncio.sleep(10)
 
-    async def check_prefix(self, message: discord.Message):
-        # check if prefixes appear in message
-        prefixes = await self.config.guild(message.guild).prefixes()
-        for prefix in prefixes:
-            if prefix == message.content[: len(prefix)]:
-                return False
+    async def check_baited_role(self):
+        while True:
+            for guild in self.bot.guilds:
+                baited_role = await self.config.guild(guild).baited_role()
+                if baited_role is None:
+                    continue
+                baited_role = guild.get_role(baited_role)
+                if baited_role is None:
+                    continue
+                baited_channel = await self.config.guild(guild).baited_channel()
+                baited_channel = guild.get_channel_or_thread(baited_channel)
+                # check if anyone got baited, and send them a reminder to remove the role or get banned
+                for member in baited_role.members:
+                    baited_check = await self.config.member(member).baited()
+                    ban_baited_after = await self.config.guild(guild).ban_baited_after()
+                    # print(member, baited_check)
+                    if ban_baited_after is not None:
+                        ban_baited_after = timedelta(seconds=ban_baited_after)
+                    if baited_check is None:
+                        msg = await self.config.guild(guild).baited_message()
+                        # send reminder and update baited time
+                        send_channel = baited_channel if baited_channel is not None else member
+                        try:
+                            msg = msg.format(member=member.mention, role=bold(str(baited_role)), guild=guild)
+                            if ban_baited_after:
+                                msg += f"\n\nYou will be automatically **banned** from {guild} after {bold(humanize_timedelta(timedelta=ban_baited_after))} if no action is taken."
+                            await send_channel.send(msg)
+                        except:
+                            pass
+                        await self.config.member(member).baited.set(int(discord.utils.utcnow().timestamp()))
+                    elif ban_baited_after is not None:
+                        baited_check = datetime.fromtimestamp(baited_check, tz=timezone.utc)
+                        now = discord.utils.utcnow()
+                        if (now - baited_check) > ban_baited_after:
+                            # automatically ban baited user, make modlog case if loaded
+                            try:
+                                reason = f"Automatically banned after having baited role {baited_role} for {humanize_timedelta(timedelta=ban_baited_after)}."
+                                try:
+                                    await modlog.create_case(
+                                        self.bot, guild, now, "ban", member, moderator=guild.me, reason=reason
+                                    )
+                                except:
+                                    pass
+                                await guild.ban(
+                                    member,
+                                    reason=reason,
+                                )
+                            except Exception as e:
+                                print(LOG_MSG.format(f"Failed baited ban for {member} in {guild}: {e}"))
+                                try:
+                                    await guild.owner.send(
+                                        error(f"I cannot automatically ban baited users, please check permissions!")
+                                    )
+                                except:
+                                    pass
+                            finally:
+                                await self.config.member(member).baited.clear()
 
-        return True
+            await asyncio.sleep(5)  # TODO change
 
-    async def add_last_msg(self, message):
-        if not isinstance(message.author, discord.Member):
-            return
-
-        # length/attachment check
-        if not message.attachments and len(message.content) < MIN_MSG_LEN:
-            return
-
-        # adds last message for user
-        max_msg = await self.config.guild(message.guild).last_msg_num()
-        async with self.config.member(message.author).last_msgs() as last_msgs:
-            if len(last_msgs.keys()) < max_msg:
-                last_msgs[message.created_at.timestamp()] = {"channel_id": message.channel.id, "message_id": message.id}
-            else:
-                keys = sorted([float(k) for k in last_msgs.keys()])
-                # if oldest message saved is newer than the message to add, dont add it
-                if keys:  # need to make sure if user has last message
-                    if keys[0] > message.created_at.timestamp():
-                        return
-                    del last_msgs[str(keys[0])]  # remove oldest entry
-
-                # append new entry
-                last_msgs[message.created_at.timestamp()] = {"channel_id": message.channel.id, "message_id": message.id}
-
-    async def last_message_sync(self, ctx: commands.Context):
-        """
-        Syncs last message of EVERY user in a guild.
-        **WARNING VERY SLOW AND COSTLY OPERATION!**
-        """
-        text_channels = [channel for channel in ctx.guild.channels if isinstance(channel, discord.TextChannel)]
-        ignore = await self.config.guild(ctx.guild).ignore_bot_commands()
-        num_text_c = len(text_channels)
-        progress_message = await ctx.send(f"Processed 0/{num_text_c} channels...")
-        start_time = time.time()
-        for i, channel in enumerate(text_channels):
-            async for message in channel.history(limit=None):
-                to_add = True
-                if ignore:
-                    to_add = await self.check_prefix(message)
-
-                if to_add:
-                    await self.add_last_msg(message)
-
-            await progress_message.edit(content=f"Processed {i+1}/{num_text_c} channels...")
-
-        await progress_message.edit(
-            content=f"Done. Processed {num_text_c} channels in {parse_seconds(time.time() - start_time)}."
-        )
+    async def loop(self):
+        await self.bot.wait_until_ready()
+        while not self.bot.is_closed():
+            try:
+                await self.user_count_updater()
+            except asyncio.CancelledError:
+                # normal exit
+                break
+            except Exception as e:
+                print(LOG_MSG.format(f"Internal loop crashed, restarting in 10s, error: {e}"))
+                await asyncio.sleep(10)
 
     async def user_count_updater(self):
-        await self.bot.wait_until_ready()
         SERVER_STATS_MSG = "USERS: {}/{}"
-        SLEEP_TIME = 300
+        SERVER_STATS_CHANNEL_MSG = "users-{}-{}"
+        SLEEP_TIME = 500
         while True:
             for guild in self.bot.guilds:
                 if await self.bot.cog_disabled_in_guild(self, guild):
                     continue
                 channel = await self.config.guild(guild).user_count_channel()
                 if channel:
-                    channel = guild.get_channel(channel)
+                    channel = guild.get_channel_or_thread(channel)
                     online = len([m.status for m in guild.members if m.status != discord.Status.offline])
-                    title = SERVER_STATS_MSG.format(online, len(guild.members))
-                    await channel.edit(name=title)
+                    if isinstance(channel, discord.TextChannel):
+                        title = SERVER_STATS_CHANNEL_MSG.format(online, len(guild.members))
+                    else:
+                        title = SERVER_STATS_MSG.format(online, len(guild.members))
+                    try:
+                        await channel.edit(name=title)
+                    except Exception as e:
+                        print(LOG_MSG.format(f"Failed updating user count for guild {guild}: {e}"))
+                        try:
+                            await guild.owner.send(
+                                error(f"I cannot edit channel {channel} for user counts, please check permissions!")
+                            )
+                        except:
+                            pass
 
             await asyncio.sleep(SLEEP_TIME)
-
-    async def get_purges(self, ctx, role, threshold, check_messages=True):
-        # returns users that can be purged given the settings.
-        guild = ctx.guild
-        to_purge = []
-
-        # update members
-        _guilds = [g for g in self.bot.guilds if g.large and not (g.chunked or g.unavailable)]
-        await self.bot.request_offline_members(*_guilds)
-
-        for member in guild.members:
-            if member.id == self.bot.user.id:  # don't want to purge the bot.
-                continue
-            if role in member.roles:
-                if check_messages:
-                    last_msgs = await self.config.member(member).last_msgs()
-                    keys = sorted([float(k) for k in last_msgs.keys()])
-                    if not keys:
-                        to_purge.append(member)
-                    # if their oldest message is longer than the threshold, then must be purged.
-                    # so a user where 3/5 messages meet the threshold still gets purged.
-                    elif (ctx.message.created_at - datetime.fromtimestamp(keys[0])) > threshold:
-                        to_purge.append(member)
-                else:
-                    if (ctx.message.created_at - member.joined_at) > threshold:
-                        to_purge.append(member)
-
-        return to_purge
 
     @commands.group(name="adminset")
     @commands.guild_only()
@@ -226,68 +180,147 @@ class MoreAdmin(commands.Cog):
         """
         pass
 
-    @adminset.command(name="user-count")
-    async def adminset_user_count(self, ctx, *, channel: Union[discord.TextChannel, discord.VoiceChannel] = None):
+    @adminset.group(name="bait")
+    async def adminset_baited(self, ctx):
         """
-        Set channel to display guild user count.
-        Run with no channel to disable.
+        Manage bot baiting functionality
         """
-        if not channel:
-            pred = MessagePredicate.yes_or_no(ctx)
-            curr_channel = await self.config.guild(ctx.guild).user_count_channel()
-            if not curr_channel:
-                await ctx.send("No channel defined.")
-                return
+        pass
 
-            await ctx.send(
-                f"Would you like to clear the current channel? ({ctx.guild.get_channel(curr_channel).mention})"
-            )
-            try:
-                await self.bot.wait_for("message", check=pred, timeout=30)
-            except asyncio.TimeoutError:
-                await ctx.send("Took too long.")
-                return
-            if pred.result:
-                await self.config.guild(ctx.guild).user_count_channel.set(None)
+    @adminset_baited.command(name="role")
+    async def adminset_baited_role(self, ctx, role: Union[discord.Role, str]):
+        """
+        Set the role for baiting bots
+        The role should be user addable in either onboarding or role channels for proper function
+
+        Pass `disable` to disable bait role function
+        """
+        if isinstance(role, str):
+            if role.lower() == "disable":
+                await self.config.guild(ctx.guild).baited_role.clear()
                 await ctx.tick()
                 return
             else:
-                await ctx.send("Nothing changed.")
+                await ctx.send(error("Invalid role!"), delete_after=30, reference=ctx.message)
                 return
+
+        await self.config.guild(ctx.guild).baited_role.set(role.id)
+        await ctx.tick()
+
+    @adminset_baited.command(name="channel")
+    async def adminset_baited_channel(
+        self, ctx, channel: Union[discord.TextChannel, discord.VoiceChannel, discord.Thread, str]
+    ):
+        """
+        Set the channel to message baited users in
+        If no channel is set the user will be DMed the baited message instead
+
+        Pass `disable` to remove baited channel
+        """
+        if isinstance(channel, str):
+            if channel.lower() == "disable":
+                await self.config.guild(ctx.guild).baited_channel.clear()
+                await ctx.tick()
+                return
+            else:
+                await ctx.send(error("Invalid channel!"), delete_after=30, reference=ctx.message)
+                return
+
+        await self.config.guild(ctx.guild).baited_channel.set(channel.id)
+        await ctx.tick()
+
+    @adminset_baited.command(name="autoban")
+    @checks.bot_has_permissions(ban_members=True)
+    async def adminset_baited_autoban(self, ctx, ban_after: str):
+        """
+        Set time to automatically ban a baited user after
+
+        Pass `disable` to disable
+
+        Interval should look like:
+           5 minutes
+           1 minute 30 seconds
+           1 hour
+           2 days
+           30 days
+           5h30m
+           (etc)
+        """
+        if ban_after.lower() == "disable":
+            await self.config.guild(ctx.guild).ban_baited_after.clear()
+            await ctx.tick()
+            return
+
+        interval = parse_timedelta(ban_after)
+        if not interval:
+            await ctx.send(error("Invalid interval time!"), delete_after=30, reference=ctx.message)
+            return
+
+        await self.config.guild(ctx.guild).ban_baited_after.set(int(interval.total_seconds()))
+        await ctx.tick()
+
+    @adminset_baited.command(name="message")
+    async def adminset_baited_message(self, ctx, *, message: Optional[str] = None):
+        """
+        Set message to be sent to the baited channel or DM to the baited user
+        Pass with no message to see the current message.
+
+        You can use these tags in your message:
+        - {guild} - Name of the guild.
+        - {member} - The member in question
+        - {role} - The baited role.
+        """
+        if not message:
+            curr = await self.config.guild(ctx.guild).baited_message()
+            await ctx.send("**__Current message:__**")
+            return await ctx.send(escape(curr, formatting=True))
+
+        await self.config.guild(ctx.guild).baited_message.set(message)
+        await ctx.tick()
+
+    @adminset.command(name="user-count")
+    async def adminset_user_count(self, ctx, *, channel: Union[discord.abc.GuildChannel, discord.Thread, str]):
+        """
+        Set channel to display guild user count.
+        Pass "disable" to disable the user count channel
+        """
+        if isinstance(channel, str) and (channel.lower() == "disable" or channel.lower() == "off"):
+            curr_channel = await self.config.guild(ctx.guild).user_count_channel()
+            if not curr_channel:
+                await ctx.send(error("No channel defined."), delete_after=30, reference=ctx.message)
+                return
+
+            await self.config.guild(ctx.guild).user_count_channel.set(None)
+            await ctx.tick()
+            return
+        elif isinstance(channel, str):
+            await ctx.send(error("Invalid channel input!"), delete_after=30, reference=ctx.message)
+            return
 
         await self.config.guild(ctx.guild).user_count_channel.set(channel.id)
         await ctx.tick()
 
     @adminset.command(name="sus-channel")
-    async def adminset_sus_user(self, ctx, *, channel: discord.TextChannel = None):
+    async def adminset_sus_user(
+        self, ctx, *, channel: Union[discord.TextChannel, discord.VoiceChannel, discord.Thread, str]
+    ):
         """
         Set channel to log new users.
-        Run with no channel to disable.
+        Pass "disable" to disable the user count channel
         Make sure to set threshold age for new account using [p]adminset sus-threshold
         """
-        if not channel:
-            pred = MessagePredicate.yes_or_no(ctx)
+        if isinstance(channel, str) and (channel.lower() == "disable" or channel.lower() == "off"):
             curr_channel = await self.config.guild(ctx.guild).sus_user_channel()
             if not curr_channel:
-                await ctx.send("No channel defined.")
+                await ctx.send(error("No channel defined."), delete_after=30, reference=ctx.message)
                 return
 
-            await ctx.send(
-                f"Would you like to clear the current channel? ({ctx.guild.get_channel(curr_channel).mention})"
-            )
-            try:
-                await self.bot.wait_for("message", check=pred, timeout=30)
-            except asyncio.TimeoutError:
-                await ctx.send("Took too long.")
-                return
-            if pred.result:
-                await self.config.guild(ctx.guild).sus_user_channel.set(None)
-                await ctx.tick()
-                return
-            else:
-                await ctx.send("Nothing changed.")
-                return
-
+            await self.config.guild(ctx.guild).sus_user_channel.set(None)
+            await ctx.tick()
+            return
+        elif isinstance(channel, str):
+            await ctx.send(error("Invalid channel input!"), delete_after=30, reference=ctx.message)
+            return
         await self.config.guild(ctx.guild).sus_user_channel.set(channel.id)
         await ctx.tick()
 
@@ -295,6 +328,8 @@ class MoreAdmin(commands.Cog):
     async def adminset_sus_threshold(self, ctx, *, threshold: str):
         """
         Set threshold for classifying users as new.
+
+        Pass "disable" to disable
 
         Threshold should look like:
            5 minutes
@@ -305,12 +340,26 @@ class MoreAdmin(commands.Cog):
            5h30m
            (etc)
         """
-        threshold = parse_timedelta(threshold)
-        if not threshold:
-            await ctx.send("Invalid threshold!")
+        if threshold.lower() == "disable":
+            await self.config.guild(ctx.guild).sus_user_threshold.set(0)
+            await ctx.tick()
             return
 
-        await self.config.guild(ctx.guild).sus_user_threshold.set(int(threshold.total_seconds()))
+        interval = parse_timedelta(threshold)
+        if not interval:
+            await ctx.send(error("Invalid threshold!"), delete_after=30, reference=ctx.message)
+            return
+
+        await self.config.guild(ctx.guild).sus_user_threshold.set(int(interval.total_seconds()))
+        await ctx.tick()
+
+    @adminset.command(name="sus-kick-spammer")
+    @checks.bot_has_permissions(kick_members=True)
+    async def adminset_sus_kick_spammer(self, ctx, *, kick_spammers: bool):
+        """
+        Automatically kick users marked as suspected spammers by Discord on join.
+        """
+        await self.config.guild(ctx.guild).sus_user_kick_spammer.set(kick_spammers)
         await ctx.tick()
 
     @adminset.command(name="sus-kick")
@@ -318,6 +367,8 @@ class MoreAdmin(commands.Cog):
     async def adminset_sus_kick(self, ctx, *, threshold: str):
         """
         Set threshold for kicking new accounts with DM
+
+        Pass "disable" to disable
 
         Intervals look like:
            5 minutes
@@ -328,82 +379,21 @@ class MoreAdmin(commands.Cog):
            5h30m
            (etc)
         """
-        threshold = parse_timedelta(threshold)
-        if not threshold:
-            await ctx.send("Invalid threshold!")
+        if threshold.lower() == "disable":
+            await self.config.guild(ctx.guild).sus_user_kick_threshold.set(0)
+            await ctx.tick()
             return
 
-        await self.config.guild(ctx.guild).sus_user_kick_threshold.set(int(threshold.total_seconds()))
+        interval = parse_timedelta(threshold)
+        if not interval:
+            await ctx.send(error("Invalid threshold!"), delete_after=30, reference=ctx.message)
+            return
+
+        await self.config.guild(ctx.guild).sus_user_kick_threshold.set(int(interval.total_seconds()))
         await ctx.tick()
 
-    @adminset.command(name="addable")
-    async def adminset_addable(self, ctx, role: discord.Role, *, role_list: str = None):
-        """
-        Set roles that can add this role to others.
-
-        Role list should be a list of one or more **role names or ids** seperated by commas.
-        Roles in role list will be removed if already in the role list, or added if they are not.
-
-        Role names are case sensitive!
-
-        Don't pass a role list to see the current roles
-        """
-        if not role_list:
-            curr = await self.config.role(role).addable()
-            if not curr:
-                await ctx.send("No roles defined.")
-            else:
-                curr = [ctx.guild.get_role(role_id) for role_id in curr]
-                not_found = len([r for r in curr if r is None])
-                curr = [r.name for r in curr if curr is not None]
-                if not_found:
-                    await ctx.send(
-                        f"{not_found} roles weren't found, please run {ctx.prefix}costset clear to remove these roles.\nAddable Roles: {humanize_list(curr)}"
-                    )
-                else:
-                    await ctx.send(f"Addable Roles: {humanize_list(curr)}")
-            return
-
-        guild = ctx.guild
-        role_list = role_list.strip().split(",")
-        role_list = [r.strip() for r in role_list]
-        not_found = set()
-        found = set()
-        added = set()
-        removed = set()
-        for role_name in role_list:
-            role = role_from_string(guild, role_name)
-
-            if role is None:
-                not_found.add(role_name)
-                continue
-
-            found.add(role)
-
-        if not_found:
-            await ctx.send(
-                warning("These roles weren't found, please try again: {}".format(humanize_list(list(not_found))))
-            )
-            return
-
-        async with self.config.role(role).addable() as addable:
-            for role in found:
-                if role.id in addable:
-                    addable.remove(role.id)
-                    removed.add(role.name)
-                else:
-                    addable.append(role.id)
-                    added.add(role.name)
-        msg = ""
-        if added:
-            msg += "Added: {}\n".format(humanize_list(list(added)))
-        if removed:
-            msg += "Removed: {}".format(humanize_list(list(removed)))
-
-        await ctx.send(msg)
-
     @adminset.command(name="ban-dm-msg")
-    async def adminset_ban_dm_msg(self, ctx, *, msg: str = None):
+    async def adminset_ban_dm_msg(self, ctx, *, msg: Optional[str] = None):
         """
         Set a message to be DMed to a user when they are banned using the bandm command
 
@@ -414,140 +404,11 @@ class MoreAdmin(commands.Cog):
         """
         if not msg:
             curr = await self.config.guild(ctx.guild).ban_dm()
-            await ctx.send("Current message:")
+            await ctx.send("**__Current message:__**")
             return await ctx.send(escape(curr, formatting=True))
 
         await self.config.guild(ctx.guild).ban_dm.set(msg)
         await ctx.tick()
-
-    @commands.group(name="purgeset")
-    @commands.guild_only()
-    @checks.admin_or_permissions(administrator=True)
-    async def purgeset(self, ctx):
-        """
-        Manage purge settings.
-        """
-        pass
-
-    @purgeset.command(name="prefixes")
-    async def purgeset_prefixes(self, ctx, *, prefixes: str = None):
-        """
-        Set prefixes for bot commands to check for when purging.
-
-        Seperate prefixes with spaces.
-        """
-        if not prefixes:
-            prefixes = await self.config.guild(ctx.guild).prefixes()
-            curr = [f"`{p}`" for p in prefixes]
-            await ctx.send("Current Prefixes: " + humanize_list(curr))
-            return
-
-        prefixes = [p for p in prefixes.split(" ")]
-        await self.config.guild(ctx.guild).prefixes.set(prefixes)
-        prefixes = [f"`{p}`" for p in prefixes]
-        await ctx.send("Prefixes set to: " + humanize_list(prefixes))
-
-    @purgeset.command(name="bot")
-    async def purgeset_ignore_bot(self, ctx, *, toggle: bool):
-        """
-        Set whether to ignore bot commands for last messages.
-        """
-        await self.config.guild(ctx.guild).ignore_bot_commands.set(toggle)
-        await ctx.tick()
-
-    @purgeset.command(name="dm-last-msg")
-    async def purgeset_dm_last_msg(self, ctx, *, msg: str = None):
-        """
-        Set DM message that is sent to users when check_last_messages is True.
-
-        You can use {0.name} to put the guild name in the message, and
-        {1} to put the number of messages needed to be marked active, which is taken
-        from your purge settings.
-
-        Run with no message to view current message.
-        """
-        if msg is None:
-            curr = await self.config.guild(ctx.guild).purge_dm_msg()
-            await ctx.send("`{0} represents the guild, {1} is the number of messages needed to be active.`")
-            return await ctx.send(escape(curr, formatting=True))
-
-        await self.config.guild(ctx.guild).purge_dm_msg.set(msg)
-        await ctx.tick()
-
-    @purgeset.command(name="dm-msg")
-    async def purgeset_dm_msg(self, ctx, *, msg: str = None):
-        """
-        Set DM message that is sent to users when check_last_messages is False.
-
-        You can use {0.name} to put the guild name in the message.
-
-        Run with no message to view current message.
-        """
-        if msg is None:
-            curr = await self.config.guild(ctx.guild).purge_dm()
-            await ctx.send("`{0} represents the guild.`")
-            return await ctx.send(escape(curr, formatting=True))
-
-        await self.config.guild(ctx.guild).purge_dm.set(msg)
-        await ctx.tick()
-
-    @purgeset.command(name="numlast")
-    async def purgeset_last_message_number(self, ctx, count: int):
-        """
-        Set the number of messages to track.
-
-        This number of messages must be within threshold when purging in order
-        for a member to **not** be purged.
-        """
-        if count < 0 or count > 500:
-            await ctx.send("Invalid message count.")
-            return
-
-        await self.config.guild(ctx.guild).last_msg_num.set(count)
-        await ctx.tick()
-
-    @purgeset.command(name="sync")
-    async def purgeset_sync(self, ctx):
-        """
-        Syncs last messages for all users in the guild.
-        **WARNING, VERY SLOW OPERATION!**
-        """
-        await ctx.send("This will take a long time! Are you sure you want to continue?")
-        pred = MessagePredicate.yes_or_no(ctx)
-        try:
-            await self.bot.wait_for("message", check=pred, timeout=30)
-        except asyncio.TimeoutError:
-            await ctx.send("Took too long.")
-            return
-
-        if pred.result:
-            await ctx.send("Better grab some coffee then.")
-            await self.last_message_sync(ctx)
-
-    @purgeset.command(name="action")
-    @checks.bot_has_permissions(manage_roles=True)
-    async def purgeset_action(self, ctx, action: str, *, role: discord.Role = None):
-        """
-        Set the action of purge commands
-
-        Available options:
-            - kick: kick users who meet purge criteria
-            - role: remove a role from users who meet purge criteria (specify in command which role)
-        """
-        action = action.lower()
-
-        if action == "kick":
-            await self.config.guild(ctx.guild).purge_action.set("kick")
-            await ctx.tick()
-        elif action == "role":
-            if role is None:
-                await ctx.send(error("No role specified! Please rerun command with role to remove"))
-                return
-            await self.config.guild(ctx.guild).purge_action.set(role.id)
-            await ctx.send(info("Make sure to update purge DM messages to reflect this action!"))
-            await ctx.tick()
-        else:
-            await ctx.send(error("Unknown action! Available actions are: `kick` and `role`"))
 
     async def note_menu(self, ctx, member: discord.Member, message: Optional[discord.Message] = None) -> list:
         color = await ctx.embed_color()
@@ -599,7 +460,7 @@ class MoreAdmin(commands.Cog):
         controls.update({"\N{NO ENTRY SIGN}": delete_note})
         await menu(ctx, embeds, controls, message=message)
 
-    @commands.group()
+    @commands.hybrid_group()
     @commands.guild_only()
     @checks.mod()
     async def notes(self, ctx):
@@ -648,7 +509,7 @@ class MoreAdmin(commands.Cog):
             try:
                 await user.add_roles(role, reason=reason)
             except:
-                await ctx.send("Adding role failed!")
+                await ctx.send(error("Adding role failed!"), delete_after=30, reference=ctx.message)
             return
 
         roles = {r.id for r in author.roles if r.name != "@everyone"}
@@ -658,7 +519,9 @@ class MoreAdmin(commands.Cog):
         if roles:
             await user.add_roles(role, reason=reason)
         else:
-            await ctx.send("You do not have the proper roles to add this role.")
+            await ctx.send(
+                error("You do not have the proper roles to add this role."), delete_after=30, reference=ctx.message
+            )
 
     @commands.command(name="remrole")
     @checks.mod()
@@ -675,7 +538,7 @@ class MoreAdmin(commands.Cog):
             try:
                 await user.remove_roles(role, reason=reason)
             except:
-                await ctx.send("Removing role failed!")
+                await ctx.send(error("Removing role failed!"), delete_after=30, reference=ctx.message)
             return
 
         roles = {r.id for r in author.roles if r.name != "@everyone"}
@@ -685,11 +548,136 @@ class MoreAdmin(commands.Cog):
         if roles:
             await user.remove_roles(role, reason=reason)
         else:
-            await ctx.send("You do not have the proper roles to remove this role.")
+            await ctx.send(
+                error("You do not have the proper roles to remove this role."), delete_after=30, reference=ctx.message
+            )
 
-    @commands.command(name="pingable")
+    @commands.command(name="channelfix")
+    @checks.admin_or_permissions(administrator=True)
+    @checks.bot_has_permissions(manage_channels=True, manage_roles=True)
+    @commands.guild_only()
+    async def channelfix(self, ctx: commands.Context, *channels: discord.abc.GuildChannel):
+        """
+        Fixes newly created channels not being displayed to current users when onboarding is setup
+        You can supply a list of channel mentions to perform this action on multiple channels
+
+        This only needs to be applied to newly created channels under categories that are not set as a default category (i.e channels that require a specific role for access)
+        The fix works by removing access to the members then adding a role that grants access. Simply toggling the view permission a role a user already has will not work.
+        Users who gain the role that grants access to the channel after channel creation will see the channel without explicitly selecting the channel in the `Channels & Roles` section
+
+        New channels that are created are not immeditaly visible to users unless they have the `show all channels` setting enabled.
+        This command fixes this by:
+        1. Setting the channel so only those with the Administrator permission can access it
+        2. Creates a temporary role
+        3. Allow permissions to the channel for the temporary role
+        4. Adds the temporary role to add members
+        5. Restore previous access permissions to the channel
+        6. Deletes the temporary role
+
+        This is a slow process but should show the channel for everyone after completion.
+        **WARNING** if the bot crashes, goes offline, or a Discord outage occurs during this process your permission structure may be left in a locked down state. You can simply remove the temp role created and revert permissions on the affect channels to restore previous permissions.
+        """
+        pred = MessagePredicate.yes_or_no(ctx)
+        await ctx.send(
+            warning(
+                "This is a slow process if you have a large number of members, its better if you supply all channels you want to fix at once. Also note that if the bot crashes, or an error occurs, settings will not be cleaned up, you'll have to delete the temporary role and fix the permissions on the affect channel(s) manually. Continue?"
+            ),
+            delete_after=120,
+        )
+        try:
+            await self.bot.wait_for("message", check=pred, timeout=60)
+        except asyncio.TimeoutError:
+            await ctx.send(info("Timed out, cancelled."), delete_after=30)
+            return
+        if not pred.result:
+            await ctx.send(info("Cancelling command."), delete_after=30)
+            return
+
+        guild = ctx.guild
+        temp_role = await guild.create_role(
+            reason=f"Fixing channel display issues for {humanize_list([c.name for c in channels])}",
+            name="Onboard Channel Fix",
+        )
+
+        channel_permissions: List[
+            Dict[Union[discord.Role, discord.Member, discord.Object], discord.PermissionOverwrite]
+        ] = [c.overwrites for c in channels]
+
+        view_permission = discord.Permissions.none()
+        view_permission.view_channel = True
+
+        deny_overwrite = discord.PermissionOverwrite.from_pair(discord.Permissions.none(), view_permission)
+        allow_overwrite = discord.PermissionOverwrite.from_pair(view_permission, discord.Permissions.none())
+
+        for i, channel in enumerate(channels):
+            overwrites = channel_permissions[i]
+            overwrites = {k: deny_overwrite for k in overwrites.keys()}
+            overwrites[temp_role] = allow_overwrite
+            try:
+                await channel.edit(overwrites=overwrites)
+            except Exception as e:
+                await ctx.reply(
+                    error(
+                        f"There was an error modifying {channel.mention}: {e}\n\nProcess has been cancelled and permissions have NOT been reverted for the channels {humanize_list([c.mention for c in channels])}"
+                    )
+                )
+                return
+
+        # now add the role to every user:
+        start = time.perf_counter()
+        total = len(guild.members)
+        await ctx.send(info("Adding temporary role to all members."))
+        update_message = info("Processing {} members... \nProgress: {}")
+        update_m = await ctx.send(update_message.format(total, "N/A"))
+        for i, member in enumerate(guild.members):
+            try:
+                await member.add_roles(temp_role)
+            except Exception as e:
+                await ctx.reply(warning(f"Failed to edit {member}: {e}"))
+            finally:
+                await asyncio.sleep(0.2)
+
+            now = time.perf_counter()
+            elapsed = now - start
+            avg = elapsed / i if i > 0 else 0
+            remaining = (total - i) * avg
+
+            hrs, rem = divmod(remaining, 3600)
+            mins, secs = divmod(rem, 60)
+            eta_str = f"{int(hrs)}:{int(mins):02d}:{secs:04.1f}"
+            progress_string = f"Iter {i+1}/{total} — elapsed {elapsed:.1f}s — ETA {eta_str}"
+
+            try:
+                update_m = await update_m.edit(content=update_message.format(total, progress_string))
+            except:
+                update_m = await ctx.send(update_message.format(total, progress_string))
+
+        # revert back
+        await ctx.reply(
+            info("All members have been processed, reverting channel permissions and deleting the temporary role.")
+        )
+
+        for i, channel in enumerate(channels):
+            overwrites = channel_permissions[i]
+            try:
+                await channel.edit(overwrites=overwrites)
+            except Exception as e:
+                await ctx.reply(error(f"There was an error reverting permissions for {channel.mention}: {e}"))
+
+        # delete the role
+        try:
+            await temp_role.delete()
+            await ctx.reply(
+                info("Permissions reverted and temporary role deleted, I am finished with the fix!"),
+                mention_author=False,
+            )
+        except Exception as e:
+            await ctx.reply(warning(f"Failed to delete temporary role, please do so manually: {e}"))
+
+    @commands.hybrid_command(name="pingable")
     @checks.mod()
     @checks.bot_has_permissions(manage_roles=True)
+    @commands.guild_only()
     async def pingable(self, ctx, seconds: int, *, role: discord.Role):
         """
         Sets a role to be pingable for <seconds> amount of seconds.
@@ -698,10 +686,10 @@ class MoreAdmin(commands.Cog):
 
         Role should be a role name (case sensitive) or role ID.
         """
-        guild = ctx.guild
-
         if seconds < 0:
-            await ctx.send("Please enter a time greater than or equal to 0.")
+            await ctx.send(
+                error("Please enter a time greater than or equal to 0."), delete_after=30, reference=ctx.message
+            )
             return
 
         if seconds == 0:
@@ -710,325 +698,118 @@ class MoreAdmin(commands.Cog):
             await role.edit(mentionable=current_status)
         else:
             await ctx.send("Setting {} to be pingable for {} seconds.".format(role.name, seconds))
-            await role.edit(mentionable=True)
+            updated_role = await role.edit(mentionable=True)
             await asyncio.sleep(seconds)
-            await role.edit(mentionable=False)
+            await updated_role.edit(mentionable=False)
 
-    @commands.command(name="lastmsg")
+    @commands.hybrid_command(hidden=True)
     @checks.mod()
-    async def last_msg(self, ctx, *, user: discord.Member):
-        """
-        Gets stored last messages for a user
-        """
-        last_msgs = await self.config.member(user).last_msgs()
-        if not last_msgs:
-            await ctx.send(
-                "No last messages for this user. Make sure you have synced last messages for all users in the guild."
-            )
-            return
-        keys = sorted([float(k) for k in last_msgs.keys()])
-        msg = ""
-        for i, k in enumerate(keys):
-            channel = last_msgs[str(k)]["channel_id"]
-            message = last_msgs[str(k)]["message_id"]
-
-            channel = ctx.guild.get_channel(channel)
-            if not channel:
-                msg += f"{i+1}. Time: {datetime.fromtimestamp(k)}, channel not found\n"
-                continue
-            message = await channel.fetch_message(message)
-            if not message:
-                msg += f"{i+1}. Time: {datetime.fromtimestamp(k)}, message not found\n"
-                continue
-
-            msg += f"{i+1}. Time: {datetime.fromtimestamp(k)}, {message.jump_url}\n"
-
-        pages = pagify(msg)
-        for page in pages:
-            await ctx.send(page)
-
-    @commands.group(name="purge", invoke_without_command=True)
-    @checks.admin_or_permissions(administrator=True)
-    @checks.bot_has_permissions(kick_members=True)
-    async def purge(
-        self,
-        ctx,
-        role: discord.Role,
-        check_messages: bool = True,
-        *,
-        threshold: str = None,
-    ):
-        """
-        Purge inactive users with role.
-
-        **If the role has spaces, you need to use quotes**
-
-        If check_messages is yes/true/1 then purging is dictated by the user's last message.
-        If check_messages is no/false/0 then purging is dictated by the user's join date.
-
-        **Make sure to set purge settings with [p]purgeset**
-
-        Threshold should be an interval.
-
-        Intervals look like:
-           5 minutes
-           1 minute 30 seconds
-           1 hour
-           2 days
-           30 days
-           5h30m
-           (etc)
-        """
-        if ctx.invoked_subcommand:
-            return
-
-        threshold = parse_timedelta(threshold)
-        if not threshold:
-            await ctx.send("Invalid threshold!")
-            return
-
-        guild = ctx.guild
-        start_time = time.time()
-        to_purge = await self.get_purges(ctx, role, threshold, check_messages=check_messages)
-
-        if not to_purge:
-            await ctx.send("No one to purge.")
-            return
-
-        num = len(to_purge)
-        await ctx.send(f"This will purge {num} users, are you sure you want to continue?")
-
-        pred = MessagePredicate.yes_or_no(ctx)
-        try:
-            await self.bot.wait_for("message", check=pred, timeout=30)
-        except asyncio.TimeoutError:
-            await ctx.send("Took too long.")
-            return
-        if pred.result:
-            await ctx.send("Are you really sure? This cannot be stopped once it starts.")
-            try:
-                await self.bot.wait_for("message", check=pred, timeout=30)
-            except asyncio.TimeoutError:
-                await ctx.send("Took too long.")
-                return
-
-            if not pred.result:
-                await ctx.send("Cancelled")
-                return
-
-            await ctx.send("Okay, here we go.")
-            progress_message = await ctx.send(f"Processed 0/{num} users...")
-            invite = await guild.invites()
-            purge_action = await self.config.guild(guild).purge_action()
-
-            if str(purge_action) != "kick":
-                role = guild.get_role(int(purge_action))
-                if role is None:
-                    await progress_message.edit(
-                        content=error("Purge role not found! Cannot continue with purge. Please update purge action!")
-                    )
-                    return
-
-            if not invite:
-                invite = (await ctx.channel.create_invite()).url
-            else:
-                invite = invite[0].url
-            purge_msg = PURGE_DM_MESSAGE.format(guild, invite)
-            _threshold = parse_seconds(threshold.total_seconds())
-
-            for i, user in enumerate(to_purge):
-                try:
-                    await user.send(purge_msg)
-                except discord.HTTPException:
-                    pass
-
-                if check_messages:
-                    last_msgs = await self.config.member(user).last_msgs()
-                    keys = sorted([float(k) for k in last_msgs.keys()])
-                    if keys:
-                        _purge = datetime.fromtimestamp(keys[0])
-                    else:
-                        _purge = ctx.message.created_at
-                    msg = "Last Message Time"
-                else:
-                    _purge = user.joined_at
-                    msg = "Account Age"
-
-                _purge = ctx.message.created_at - _purge
-                _purge = parse_seconds(_purge.total_seconds())
-                reason = f"Purged by moreadmins cog. {msg}: {_purge}, Threshold: {_threshold}"
-
-                if str(purge_action) == "kick":
-                    await user.kick(reason=reason)
-                else:
-                    try:
-                        await user.remove_roles(role, reason=reason)
-                    except:
-                        pass
-
-                # await modlog.create_case(
-                #    self.bot, guild, ctx.message.created_at, "Purge", user, moderator=ctx.author, reason=reason
-                # )
-                if i % 10 == 0:
-                    await progress_message.edit(content=f"Processed {i+1}/{num} users...")
-
-            await progress_message.edit(
-                content=f"Purged {num} users successfully. Took {parse_seconds(time.time() - start_time)}."
-            )
-
-        else:
-            await ctx.send("Cancelled.")
-
-    @purge.command(name="audit")
-    async def purge_audit(self, ctx, role: discord.Role, check_messages: bool = True, *, threshold: str = None):
-        """
-        Audits a potential purge.
-
-        Gives number of users, the purge settings, and 10 potential purge users for you to check.
-        """
-        threshold = parse_timedelta(threshold)
-        if not threshold:
-            await ctx.send("Invalid threshold!")
-            return
-
-        to_purge = await self.get_purges(ctx, role, threshold, check_messages=check_messages)
-
-        if not to_purge:
-            await ctx.send("No one can be purged with those settings.")
-            return
-
-        purge_settings = await self.config.guild(ctx.guild).all()
-        msg = "**__Settings:__**\nIgnore bot commands: {}\nNumber of messages to check: {}\nPrefixes: {}\n**Number of users who can be purged: {}**\n\nHere are some users who can be purged:\n"
-        msg = msg.format(
-            purge_settings["ignore_bot_commands"],
-            purge_settings["last_msg_num"],
-            humanize_list([f"`{p}`" for p in purge_settings["prefixes"]]),
-            len(to_purge),
-        )
-
-        try:
-            sample = random.sample(to_purge, 10)
-        except ValueError:
-            sample = to_purge
-
-        for m in sample:
-            msg += f"{m.mention}\n"
-
-        await ctx.send(msg)
-
-    @purge.command(name="dm")
-    async def purge_dm(self, ctx, role: discord.Role, check_messages: bool = True, *, threshold: str = None):
-        """
-        DMs users warning them of their potential to be purged.
-        """
-        threshold = parse_timedelta(threshold)
-        if not threshold:
-            await ctx.send("Invalid threshold!")
-            return
-
-        start_time = time.time()
-        to_purge = await self.get_purges(ctx, role, threshold, check_messages=check_messages)
-
-        if not to_purge:
-            await ctx.send("No one can be purged with those settings.")
-            return
-
-        num = len(to_purge)
-        plural = "s" if num > 1 else ""
-        await ctx.send(f"This will send DMs to {num} user{plural}, are you sure you want to continue?")
-        pred = MessagePredicate.yes_or_no(ctx)
-        try:
-            await self.bot.wait_for("message", check=pred, timeout=30)
-        except asyncio.TimeoutError:
-            await ctx.send("Took too long.")
-            return
-
-        if not pred.result:
-            await ctx.send("Cancelled.")
-            return
-
-        await ctx.send("Okay, here we go.")
-        progress_message = await ctx.send(f"Processed 0/{num} users...")
-
-        number = await self.config.guild(ctx.guild).last_msg_num()
-        ignore = await self.config.guild(ctx.guild).ignore_bot_commands()
-        failed = 0
-        if check_messages:
-            msg = await self.config.guild(ctx.guild).purge_dm_msg()
-            msg = msg.format(ctx.guild, number)
-            if ignore:
-                msg += "\n\n**Bot commands do not count towards activity!**"
-        else:
-            msg = await self.config.guild(ctx.guild).purge_dm()
-            msg = msg.format(ctx.guild)
-
-        for i, member in enumerate(to_purge):
-            try:
-                await member.send(msg)
-            except:
-                failed += 1
-                pass
-            if i % 10 == 0:
-                await progress_message.edit(content=f"Processed {i+1}/{num} users...")
-
-        extra = f"\n\nFailed to send DMs to {failed} users" if failed > 0 else ""
-        await progress_message.edit(
-            content=f"Done. DMed {num - failed} users in {parse_seconds(time.time() - start_time)}." + extra
-        )
-
-    @commands.command(hidden=True)
+    @checks.bot_has_permissions(send_messages=True)
     @commands.guild_only()
     async def say(self, ctx, *, content: str):
         await ctx.send(escape(content, mass_mentions=True), allowed_mentions=discord.AllowedMentions.all())
 
-    @commands.command(hidden=True)
+    @commands.hybrid_command(hidden=True)
     @commands.guild_only()
     async def selfdm(self, ctx, *, content: str):
         try:
             await ctx.author.send(content, allowed_mentions=discord.AllowedMentions.all())
         except:
             await ctx.send(
-                "I couldn't send you the DM, make sure to turn on messages from server members! Here is the message:"
+                error(
+                    "I couldn't send you the DM, make sure to turn on messages from server members! Here is the message:"
+                )
             )
             await ctx.send(content)
 
-    @commands.command()
+    @commands.hybrid_command()
     @checks.mod()
     @commands.guild_only()
-    async def edit(self, ctx, channel: discord.TextChannel, message_id: int, *, msg: str):
+    async def edit(
+        self,
+        ctx,
+        channel: Union[discord.TextChannel, discord.VoiceChannel, discord.Thread],
+        message_id: str,
+        *,
+        msg: Optional[str] = None,
+    ):
         """
         Edit any message sent by Aurelia.
         Needs message ID of message to edit, and the channel the message is in.
+
+        Can also edit attachments by adding attachments to the command message
         """
         try:
-            message = await channel.fetch_message(message_id)
+            message = await channel.fetch_message(int(message_id))
         except:
-            await ctx.send("Sorry, that message could not be found.", delete_after=30)
+            await ctx.send(error("Sorry, that message could not be found."), delete_after=30, reference=ctx.message)
             return
 
+        attach = ctx.message.attachments
+
+        files: Union[List[discord.File], None] = []
+        if attach:
+            for a in attach:
+                files.append(
+                    await a.to_file(
+                        spoiler=a.is_spoiler(),
+                    )
+                )
+        if not files:
+            files = None
+
         try:
-            await message.edit(content=msg, allowed_mentions=discord.AllowedMentions.all())
+            await message.edit(content=msg, attachments=files, allowed_mentions=discord.AllowedMentions.all())
             await ctx.tick()
         except:
-            await ctx.send("Could not edit message.", delete_after=30)
+            await ctx.send(
+                error("Could not edit message, check my permissions."), delete_after=30, reference=ctx.message()
+            )
 
-    @commands.command()
+    @commands.hybrid_command()
     @commands.guild_only()
     @checks.admin_or_permissions(administrator=True)
-    async def send(self, ctx, channel: discord.TextChannel, *, msg: str):
+    @checks.bot_has_permissions(send_messages=True)
+    async def send(
+        self,
+        ctx,
+        channel: Union[discord.TextChannel, discord.VoiceChannel, discord.Thread],
+        *,
+        msg: Optional[str] = None,
+    ):
         """
         Sends a message to a channel from Aurelia.
+
+        Attach files to the command message to send attachments as well
         """
+        attach = ctx.message.attachments
+
+        files: Union[List[discord.File], None] = []
+        if attach:
+            for a in attach:
+                files.append(
+                    await a.to_file(
+                        spoiler=a.is_spoiler(),
+                    )
+                )
+        if not files:
+            files = None
         try:
-            await channel.send(msg, allowed_mentions=discord.AllowedMentions.all())
+            await channel.send(content=msg, files=files, allowed_mentions=discord.AllowedMentions.all())
             await ctx.tick()
         except:
-            await ctx.send("Could not send message in that channel.", delete_after=30)
+            await ctx.send(error("Could not send message in that channel."), delete_after=30, reference=ctx.message)
 
     @commands.command()
     @commands.guild_only()
     @checks.admin_or_permissions(administrator=True)
-    async def react(self, ctx, channel: discord.TextChannel, message_id: int, emoji: Union[discord.Emoji, str]):
+    async def react(
+        self,
+        ctx,
+        channel: Union[discord.TextChannel, discord.VoiceChannel, discord.Thread],
+        message_id: int,
+        emoji: Union[discord.Emoji, str],
+    ):
         """
         Have the bot react to a message
 
@@ -1037,61 +818,44 @@ class MoreAdmin(commands.Cog):
         try:
             message = await channel.fetch_message(message_id)
         except:
-            await ctx.send("Sorry, that message could not be found.", delete_after=30)
+            await ctx.send(error("Sorry, that message could not be found."), delete_after=30, reference=ctx.message)
             return
 
         try:
             await message.add_reaction(emoji)
             await ctx.tick()
         except discord.NotFound:
-            await ctx.send(f"I could not find the emoji `{emoji}`", delete_after=30)
+            await ctx.send(error(f"I could not find the emoji `{emoji}`"), delete_after=30, reference=ctx.message)
         except discord.Forbidden:
-            await ctx.send("I do not have permissions to react to that message.", delete_after=30)
+            await ctx.send(
+                error(
+                    "I do not have permissions to react to that message. I need read message history and add reactions if its a new reaction being added to the message."
+                ),
+                delete_after=30,
+                reference=ctx.message,
+            )
         except discord.HTTPException:
             # assume it couldnt find Emoji
-            await ctx.send(f"I could not find the emoji `{emoji}`", delete_after=30)
+            await ctx.send(error(f"I could not find the emoji `{emoji}`"), delete_after=30, reference=ctx.message)
 
-    @commands.command()
-    @commands.guild_only()
-    @checks.admin_or_permissions(administrator=True)
-    async def sendatt(self, ctx, channel: discord.TextChannel):
-        """
-        Sends an attachment to a channel from Aurelia.
-
-        Attach content to the message.
-        """
-        attach = ctx.message.attachments
-        if len(attach) < 1:
-            await ctx.send("Please add an attachment.")
-            return
-
-        filepaths = []
-        if attach:
-            for a in attach:
-                filepaths.append(cog_data_path(cog_instance=self) / f"{ctx.author.id}_{a.filename}")
-                await a.save(filepaths[-1])
-        else:
-            await ctx.send("You must provide a Discord attachment.", delete_after=30)
-            return
-
-        files = [discord.File(file) for file in filepaths]
-
-        await channel.send(files=files)
-
-        for file in filepaths:
-            os.remove(file)
-
-    @commands.command()
+    @commands.hybrid_command()
     @commands.guild_only()
     @checks.mod()
-    async def get(self, ctx, channel: discord.TextChannel, message_id: int):
+    async def get(
+        self,
+        ctx,
+        channel: Union[discord.TextChannel, discord.VoiceChannel, discord.Thread],
+        message_id: str,
+    ):
         """
         Gets a message with it's formatting from Aurelia.
+
+        Discord now allows you to right click a message and copy all of the text including formatting.
         """
         try:
-            message = await channel.fetch_message(message_id)
+            message = await channel.fetch_message(int(message_id))
         except:
-            await ctx.send("Sorry, that message could not be found.", delete_after=30)
+            await ctx.send(error("Sorry, that message could not be found."), delete_after=30, reference=ctx.message)
             return
 
         if message.content == "":
@@ -1099,10 +863,12 @@ class MoreAdmin(commands.Cog):
         else:
             await ctx.send("{}".format(escape(message.content, formatting=True, mass_mentions=True)))
 
-    @commands.command()
+    @commands.hybrid_command()
     @commands.guild_only()
     @checks.mod()
-    async def getall(self, ctx, channel: discord.TextChannel, message_id: int):
+    async def getall(
+        self, ctx, channel: Union[discord.TextChannel, discord.VoiceChannel, discord.Thread], message_id: str
+    ):
         """
         Gets ALL messages with it's formatting from Aurelia after the specified message.
 
@@ -1110,9 +876,9 @@ class MoreAdmin(commands.Cog):
         """
         messages = []
         try:
-            message = await channel.fetch_message(message_id)
+            message = await channel.fetch_message(int(message_id))
         except:
-            await ctx.send("Sorry, that message could not be found.", delete_after=30)
+            await ctx.send(error("Sorry, that message could not be found."), delete_after=30, reference=ctx.message)
             return
 
         async for m in channel.history(limit=100, after=message.created_at):
@@ -1126,65 +892,15 @@ class MoreAdmin(commands.Cog):
                 await ctx.send("{}".format(escape(message.content, formatting=True, mass_mentions=True)))
             await asyncio.sleep(0.2)
 
-    @commands.command()
-    @commands.guild_only()
-    @checks.admin_or_permissions(administrator=True)
-    async def listrole(self, ctx, *, role_list: str = None):
-        """
-        Lists all memebers with specified roles.
-        Leave list empty to list everyone with no roles.
-
-        Role list should be a list of one or more **role names or ids** seperated by commas.
-
-        Role names are case sensitive!
-        """
-        guild = ctx.guild
-        results = []
-        if role_list is None:
-            for member in guild.members:
-                if len(member.roles) == 1:
-                    results.append(member)
-        else:
-            role_list = role_list.strip().split(",")
-            role_list = [r.strip() for r in role_list]
-            parsed_roles = [role_from_string(guild, role) for role in role_list]
-
-            if None in parsed_roles:
-                await ctx.send("Some of those role(s) were not found, please try again.")
-                return
-
-            num_parsed_roles = len(parsed_roles)
-            for member in guild.members:
-                found = 0
-                for role in parsed_roles:
-                    if role in member.roles:
-                        found += 1
-
-                if num_parsed_roles == found:
-                    results.append(member)
-
-        if not results:
-            await ctx.send("No members found with specified role(s).")
-            return
-
-        results = [m.mention for m in results]
-        msg = " ".join(results)
-        msg_pages = pagify(msg)
-
-        for page in msg_pages:
-            await ctx.send(page)
-
-        num = len(results)
-        plural = "s" if num > 1 else ""
-        await ctx.send(f"That is {num} member{plural} with these role(s)")
-
-    @commands.command()
+    @commands.hybrid_command()
     @commands.guild_only()
     @checks.admin_or_permissions(ban_members=True)
     @checks.bot_has_permissions(ban_members=True)
-    async def bandm(self, ctx, member: discord.Member, days: Optional[int] = None, *, reason: str = None):
+    async def bandm(self, ctx, member: discord.Member, days: Optional[int] = 1, *, reason: Optional[str] = None):
         """
         Ban a member and have the bot DM them a message
+
+        By default, deletes last day of messages
         """
         ban_command = self.bot.get_command("ban")
 
@@ -1199,37 +915,53 @@ class MoreAdmin(commands.Cog):
         try:
             await member.send(dm_msg.format(guild=guild, member=member_name, reason=reason))
         except discord.HTTPException:
+            await ctx.send(warning("I could not send the DM message."), delete_after=30)
             pass
 
         await ctx.invoke(ban_command, user=member, days=days, reason=reason)
         await ctx.tick()
 
     ### Listeners ###
+    @commands.Cog.listener()
+    async def on_member_update(self, before: discord.Member, after: discord.Member):
+        # clear baited status on role remove
+        if before.roles == after.roles:
+            return
+        guild = before.guild
+        baited_role = await self.config.guild(guild).baited_role()
+        baited_role = guild.get_role(baited_role)
+        if baited_role is None:
+            return
+        if baited_role in before.roles and baited_role not in after.roles:
+            await self.config.member(after).baited.clear()
 
     @commands.Cog.listener()
-    async def on_member_join(self, member):
+    async def on_member_join(self, member: discord.Member):
         if await self.bot.cog_disabled_in_guild(self, member.guild):
             return
         sus_threshold = await self.config.guild(member.guild).sus_user_threshold()
         sus_kick_threshold = await self.config.guild(member.guild).sus_user_kick_threshold()
-        if not (sus_threshold or sus_kick_threshold):
+        sus_kick_spammers = await self.config.guild(member.guild).sus_user_kick_spammer()
+        if not (sus_threshold or sus_kick_threshold or sus_kick_spammers):
             return
 
         channel = await self.config.guild(member.guild).sus_user_channel()
-        channel = member.guild.get_channel(channel)
-        if not (channel or sus_kick_threshold):
+        channel = member.guild.get_channel_or_thread(channel)
+        if not (channel or sus_kick_threshold or sus_kick_spammers):
             return
 
-        age = (datetime.utcnow() - member.created_at).total_seconds()
+        age = int((discord.utils.utcnow() - member.created_at).total_seconds())
+        is_spammer = member.public_flags.spammer
 
         if channel:
-            if sus_threshold and age < sus_threshold:
-                if sus_kick_threshold and age < sus_kick_threshold:
+            if age < sus_threshold:
+                if (sus_kick_threshold and age < sus_kick_threshold) or (is_spammer and sus_kick_spammers):
                     data = discord.Embed(title="NEW ACCOUNT KICKED", colour=member.colour)
                 else:
                     data = discord.Embed(title="NEW ACCOUNT DETECTED", colour=member.colour)
 
                 data.add_field(name="Account Age", value=parse_seconds(age))
+                data.add_field(name="Spammer", value=is_spammer)
                 data.add_field(name="Threshold", value=parse_seconds(sus_threshold))
 
                 data.set_footer(text=f"User ID:{member.id}")
@@ -1237,9 +969,11 @@ class MoreAdmin(commands.Cog):
                 name = str(member)
                 name = " ~ ".join((name, member.nick)) if member.nick else name
 
-                if member.avatar_url:
-                    data.set_author(name=name, url=member.avatar_url)
-                    data.set_thumbnail(url=member.avatar_url)
+                avatar = member.display_avatar
+
+                if avatar:
+                    data.set_author(name=name, url=avatar.url)
+                    data.set_thumbnail(url=avatar.url)
                 else:
                     data.set_author(name=name)
 
@@ -1251,80 +985,92 @@ class MoreAdmin(commands.Cog):
                         )
                     except:
                         pass
-
                     try:
                         await member.guild.kick(
                             member, reason=f"Account age too new, threshold: {parse_seconds(sus_kick_threshold)}"
                         )
                     except:
-                        data.add_field(name="KICK FAILED!", value="Please check bot permissions!")
+                        data.add_field(name=error("KICK FAILED!"), value="Please check bot permissions!")
+                elif is_spammer and sus_kick_spammers:
+                    try:
+                        await member.send(
+                            f"Hello, you have been kicked from `{member.guild}` because you are marked as a suspected spammer. Please resolve this issue before rejoining."
+                        )
+                    except:
+                        pass
+                    try:
+                        await member.guild.kick(member, reason=f"Suspected Spammer")
+                    except:
+                        data.add_field(name=error("KICK FAILED!"), value="Please check bot permissions!")
 
                 await channel.send(embed=data)
-            elif sus_kick_threshold and age < sus_kick_threshold:
-
+            elif (sus_kick_threshold and age < sus_kick_threshold) or (is_spammer and sus_kick_spammers):
                 data = discord.Embed(title="NEW ACCOUNT KICKED", colour=member.colour)
                 data.add_field(name="Account Age", value=parse_seconds(age))
+                data.add_field(name="Spammer", value=is_spammer)
                 data.add_field(name="Kick Threshold", value=parse_seconds(sus_kick_threshold))
                 data.set_footer(text=f"User ID:{member.id}")
 
                 name = str(member)
                 name = " ~ ".join((name, member.nick)) if member.nick else name
 
-                if member.avatar_url:
-                    data.set_author(name=name, url=member.avatar_url)
-                    data.set_thumbnail(url=member.avatar_url)
+                avatar = member.display_avatar
+
+                if avatar:
+                    data.set_author(name=name, url=avatar.url)
+                    data.set_thumbnail(url=avatar.url)
                 else:
                     data.set_author(name=name)
 
+                if sus_kick_threshold and age < sus_kick_threshold:
+                    data.add_field(name="Kick Threshold", value=parse_seconds(sus_kick_threshold))
+                    try:
+                        await member.send(
+                            f"Hello, you have been kicked from `{member.guild}` because your account is too new. Please try again later."
+                        )
+                    except:
+                        pass
+                    try:
+                        await member.guild.kick(
+                            member, reason=f"Account age too new, threshold: {parse_seconds(sus_kick_threshold)}"
+                        )
+                    except:
+                        data.add_field(name=error("KICK FAILED!"), value="Please check bot permissions!")
+                elif is_spammer and sus_kick_spammers:
+                    try:
+                        await member.send(
+                            f"Hello, you have been kicked from `{member.guild}` because you are marked as a suspected spammer. Please resolve this issue before rejoining."
+                        )
+                    except:
+                        pass
+                    try:
+                        await member.guild.kick(member, reason=f"Suspected Spammer")
+                    except:
+                        data.add_field(name=error("KICK FAILED!"), value="Please check bot permissions!")
+
+                await channel.send(embed=data)
+        elif (sus_kick_threshold and age < sus_kick_threshold) or (is_spammer and sus_kick_spammers):
+            if sus_kick_threshold and age < sus_kick_threshold:
                 try:
                     await member.send(
                         f"Hello, you have been kicked from `{member.guild}` because your account is too new. Please try again later."
                     )
                 except:
                     pass
-
                 try:
                     await member.guild.kick(
                         member, reason=f"Account age too new, threshold: {parse_seconds(sus_kick_threshold)}"
                     )
                 except:
-                    data.add_field(name="KICK FAILED!", value="Please check bot permissions!")
-
-                await channel.send(embed=data)
-        elif sus_kick_threshold and age < sus_kick_threshold:
-            try:
-                await member.send(
-                    f"Hello, you have been kicked from `{member.guild}` because your account is too new. Please try again later."
-                )
-            except:
-                pass
-
-            try:
-                await member.guild.kick(
-                    member, reason=f"Account age too new, threshold: {parse_seconds(sus_kick_threshold)}"
-                )
-            except:
-                pass
-
-    @commands.Cog.listener()
-    async def on_message(self, message):
-        if await self.bot.cog_disabled_in_guild(self, message.guild):
-            return
-        # Set user's last message
-        if not message.guild:
-            return
-        to_add = True
-        ignore = await self.config.guild(message.guild).ignore_bot_commands()
-        if ignore:
-            to_add = await self.check_prefix(message)
-
-        if to_add:
-            await self.add_last_msg(message)
-
-    async def red_delete_data_for_user(
-        self,
-        *,
-        requester: Literal["discord_deleted_user", "owner", "user", "user_strict"],
-        user_id: int,
-    ):
-        pass
+                    pass
+            elif is_spammer and sus_kick_spammers:
+                try:
+                    await member.send(
+                        f"Hello, you have been kicked from `{member.guild}` because you are marked as a suspected spammer. Please resolve this issue before rejoining."
+                    )
+                except:
+                    pass
+                try:
+                    await member.guild.kick(member, reason=f"Suspected Spammer")
+                except:
+                    pass

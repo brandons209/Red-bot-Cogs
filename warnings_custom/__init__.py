@@ -1,5 +1,5 @@
 from .warnings import Warnings_Custom
 
 
-def setup(bot):
-    bot.add_cog(Warnings_Custom(bot))
+async def setup(bot):
+    await bot.add_cog(Warnings_Custom(bot))

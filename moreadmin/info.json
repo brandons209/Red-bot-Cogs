@@ -3,19 +3,15 @@
     "Brandons209",
     "TheScriptPony"
   ],
-  "bot_version": [
-    3,
-    4,
-    0
-  ],
-  "description": "More admin commands like purging inactive users, member count display for channel name, add roles based on author's current roles, log new user accounts joining, and more!",
+  "min_bot_version": "3.5.0",
+  "description": "More admin commands like member count display for channel name, add roles based on author's current roles, log new user accounts joining, autokick spammers, and more!",
   "hidden": false,
-  "install_msg": "Thank you for using this cog! Make sure to set bot prefixes so the bot can track which messages are bot commands. Also set whether the bot should ignore bot commands or not when tracking messages.",
+  "install_msg": "Thank you for using this cog!",
   "requirements": [],
   "short": "More admins commands for your server.",
   "tags": [
     "brandons209",
     "redbot"
   ],
-  "end_user_data_statement": "This will store a user's last few messages (depending on configuration), and also notes made by mods/admins on user."
+  "end_user_data_statement": "This will store notes made by mods/admins on user."
 }

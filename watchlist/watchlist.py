@@ -1,12 +1,13 @@
 import asyncio
 import discord
 import datetime
-from tabulate import tabulate
 
 from typing import Optional, Literal, Union
-from redbot.core import Config, checks, commands
+from redbot.core import Config, checks, commands, app_commands
 from redbot.core.utils.chat_formatting import *
 from redbot.core.utils.menus import menu, DEFAULT_CONTROLS
+
+LOG_MSG = "[Watchlist] {}"
 
 
 class WatchlistUser:
@@ -48,7 +49,13 @@ class WatchlistUser:
 
         self.bot = bot
 
-    async def create_embed(self, amended_by: discord.Member = None):
+    async def _fetch_user(self, user_id: int) -> Union[discord.abc.User, None]:
+        try:
+            return await self.bot.fetch_user(user_id)
+        except:
+            return None
+
+    async def create_embed(self, amended_by: Optional[discord.Member] = None):
         """
         Create a discord Embed that represents this user on the watchlist
 
@@ -60,18 +67,20 @@ class WatchlistUser:
         """
         user = self.bot.get_user(self.user_id)
         if not user:
-            user = await self.bot.fetch_user(self.user_id)
+            user = await self._fetch_user(self.user_id)
 
         added_by = self.bot.get_user(self.added_by)
         if not added_by:
-            added_by = await self.bot.fetch_user(self.added_by)
+            added_by = await self._fetch_user(self.added_by)
 
         if not user:
             title = f"#{self.watchlist_number} Unknown / not found user ({self.user_id})"
             avatar = None
         else:
             title = f"#{self.watchlist_number} {user} ({user.id})"
-            avatar = user.avatar_url_as(static_format="png")
+            avatar = user.display_avatar
+            if avatar is not None:
+                avatar = avatar.url
 
         embed = discord.Embed(color=discord.Color.blue(), title=title, description=self.reason)
 
@@ -90,14 +99,16 @@ class WatchlistUser:
         else:
             amended_by = self.bot.get_user(self.amended_by)
             if not amended_by and self.amended_by is not None:
-                amended_by = await self.bot.fetch_user(self.amended_by)
+                amended_by = await self._fetch_user(self.amended_by)
 
             if amended_by is not None:
                 embed.add_field(name="Amended by", value=f"{amended_by} at <t:{self.amended_time}:f>")
 
         return embed
 
-    async def send_watchlist_message(self, channel: discord.TextChannel = None):
+    async def send_watchlist_message(
+        self, channel: Optional[Union[discord.TextChannel, discord.Thread, discord.VoiceChannel]] = None
+    ):
         """
         Send (or resend) watchlist message
 
@@ -227,7 +238,10 @@ class WatchlistUser:
         if not channel:
             message = None
         else:
-            message = await channel.fetch_message(data["message_id"])
+            try:
+                message = await channel.fetch_message(data["message_id"])
+            except discord.NotFound:
+                message = None
 
         return WatchlistUser(
             bot,
@@ -260,6 +274,13 @@ class Watchlist(commands.Cog):
             "watchlist_num": 0,
         }
 
+        self.requried_perms = discord.Permissions(
+            send_messages=True,
+            embed_links=True,
+            read_messages=True,
+            read_message_history=True,
+        )
+
         self.config.register_guild(**default_guild)
 
         # store cached watchlist for each guild
@@ -271,6 +292,12 @@ class Watchlist(commands.Cog):
         if self.task:
             self.task.cancel()
 
+    async def _fetch_user(self, user_id: int) -> Union[discord.abc.User, None]:
+        try:
+            return await self.bot.fetch_user(user_id)
+        except discord.NotFound:
+            return None
+
     async def init(self):
         await self.bot.wait_until_ready()
 
@@ -281,8 +308,19 @@ class Watchlist(commands.Cog):
                 try:
                     self.watchlist[guild.id].append(await WatchlistUser.from_dict(self.bot, w))
                 except AttributeError as e:
-                    print(e)
+                    print(LOG_MSG.format(f"Error adding watchlist users for guild {guild}, error: {e}"))
 
+        while not self.bot.is_closed():
+            try:
+                await self.loop()
+            except asyncio.CancelledError:
+                # normal exit
+                break
+            except Exception as e:
+                print(LOG_MSG.format(f"Internal loop crashed, restarting in 10s, error: {e}"))
+                await asyncio.sleep(10)
+
+    async def loop(self):
         while True:
             for guild in self.bot.guilds:
                 if guild.id not in self.watchlist:
@@ -303,51 +341,84 @@ class Watchlist(commands.Cog):
         pass
 
     @watchlist.command(name="channel")
-    async def watchlist_channel(self, ctx, *, channel: discord.TextChannel = None):
+    async def watchlist_channel(
+        self, ctx, *, channel: Union[discord.TextChannel, discord.Thread, discord.VoiceChannel, str]
+    ):
         """
-        Change the watchlist channel
+        Change the watchlist channel. Pass `clear` to channel to clear the current watchlist channel
         """
-        if not channel:
+        if isinstance(channel, str) and channel.lower() == "clear":
             await self.config.guild(ctx.guild).channel.clear()
             await ctx.send(info("Watchlist channel cleared."))
-        else:
+        elif isinstance(channel, discord.abc.GuildChannel) or isinstance(channel, discord.Thread):
+            perms = channel.permissions_for(ctx.guild.me)
+            if not perms.is_superset(self.requried_perms):
+                await ctx.send(
+                    error(
+                        "I do not have the required permissions for that channel! Please make sure I can read, send, and embed links in the specified channel."
+                    ),
+                    reference=ctx.message,
+                )
+                return
             await self.config.guild(ctx.guild).channel.set(channel.id)
+        else:
+            return await ctx.send(
+                warning("Invalid channel or `clear` not given!"), delete_after=30, reference=ctx.message
+            )
 
         await ctx.tick()
 
     @watchlist.command(name="alert")
-    async def watchlist_alert(self, ctx, *, channel: discord.TextChannel = None):
+    async def watchlist_alert(
+        self, ctx, *, channel: Union[discord.TextChannel, discord.Thread, discord.VoiceChannel, str]
+    ):
         """
-        Change the watchlist alert channel
+        Change the watchlist alert channel, Pass `clear` to channel to clear the current alert channel
         """
-        if not channel:
+        if isinstance(channel, str) and channel.lower() == "clear":
             await self.config.guild(ctx.guild).alert_channel.clear()
-            await ctx.send(info("Watchlist channel cleared."))
-        else:
+            await ctx.send(info("Watchlist alert channel cleared."))
+        elif isinstance(channel, discord.abc.GuildChannel) or isinstance(channel, discord.Thread):
+            perms = channel.permissions_for(ctx.guild.me)
+            if not perms.is_superset(self.requried_perms):
+                await ctx.send(
+                    error(
+                        "I do not have the required permissions for that channel! Please make sure I can read, send, and embed links in the specified channel."
+                    ),
+                    reference=ctx.message,
+                )
+                return
             await self.config.guild(ctx.guild).alert_channel.set(channel.id)
+        else:
+            return await ctx.send(warning("Invalid channel or `clear` not given!"), delete_after=30)
 
         await ctx.tick()
 
-    @watchlist.command(name="add")
-    async def watchlist_add(self, ctx, user_id: int, *, reason: str = None):
+    @watchlist.command(name="add", usage="<user or user_id> <reason>")
+    async def watchlist_add(
+        self, ctx, user_id: Union[int, discord.User, discord.Member], *, reason: Optional[str] = None
+    ):
         """
         Add a user to the watchlist, Reason is optional
 
-        Must use their user id!
+        Accepts a user ID or a user mention
         """
         if ctx.guild.id not in self.watchlist:
             self.watchlist[ctx.guild.id] = []
 
-        user = self.bot.get_user(user_id)
-        if not user:
-            user = await self.bot.fetch_user(user_id)
+        if isinstance(user_id, int):
+            user = self.bot.get_user(user_id)
+            if not user:
+                user = await self._fetch_user(user_id)
+        elif isinstance(user_id, discord.abc.User):
+            user = user_id
 
         watch_list_ids = [w.user_id for w in self.watchlist[ctx.guild.id]]
 
         if not user:
             await ctx.send(error(f"Could not find user with id `{user_id}`!"))
             return
-        elif user_id in watch_list_ids:
+        elif user.id in watch_list_ids:
             await ctx.send(error(f"User {user} already in the watchlist!"))
             return
 
@@ -356,19 +427,23 @@ class Watchlist(commands.Cog):
 
         watchlist_num = await self.config.guild(ctx.guild).watchlist_num()
         channel_id = await self.config.guild(ctx.guild).channel()
-        channel = ctx.guild.get_channel(channel_id)
+        channel = ctx.guild.get_channel_or_thread(channel_id)
         alert_channel = await self.config.guild(ctx.guild).alert_channel()
-        alert_channel = ctx.guild.get_channel(alert_channel)
+        alert_channel = ctx.guild.get_channel_or_thread(alert_channel)
 
         if not channel:
-            await ctx.send(error(f"Could not find watchlist channel, please set it using `[p]watchlist channel` !"))
+            await ctx.send(
+                error(f"Could not find watchlist channel, please set it using `[p]watchlist channel` !"),
+                reference=ctx.message,
+            )
             return
 
         if not alert_channel:
             await ctx.send(
                 warning(
                     "No alert channel set, you will not get alerts if this user joins! Please set it using `[p]watchlist alert`"
-                )
+                ),
+                reference=ctx.message,
             )
 
         watchlist_user = WatchlistUser(self.bot, user.id, watchlist_num, reason, ctx.author.id)
@@ -384,7 +459,7 @@ class Watchlist(commands.Cog):
         await ctx.tick()
 
     @watchlist.command(name="remove")
-    async def watchlist_remove(self, ctx, watchlist_num: int, *, reason: str = None):
+    async def watchlist_remove(self, ctx, watchlist_num: int, *, reason: Optional[str] = None):
         """
         Remove a user from the watchlist.
 
@@ -425,7 +500,7 @@ class Watchlist(commands.Cog):
         await ctx.tick()
 
     @watchlist.command(name="reason")
-    async def watchlist_reason(self, ctx, watchlist_num: int, *, reason):
+    async def watchlist_reason(self, ctx, watchlist_num: int, *, reason: str):
         """
         Change the reason for a watchlist user
 
@@ -465,7 +540,7 @@ class Watchlist(commands.Cog):
         for data in removed_users:
             user = self.bot.get_user(data["user_id"])
             if not user:
-                user = await self.bot.fetch_user(data["user_id"])
+                user = await self._fetch_user(data["user_id"])
 
             if user is None:
                 msg += f"Unknown user (id: {data['user_id']})\n"
@@ -506,7 +581,7 @@ class Watchlist(commands.Cog):
         idx = watchlist_ids.index(member.id)
         watchlist_user = self.watchlist[guild.id][idx]
         alert_channel = await self.config.guild(guild).alert_channel()
-        channel = guild.get_channel(alert_channel)
+        channel = guild.get_channel_or_thread(alert_channel)
 
         if not channel:
             return
@@ -516,12 +591,12 @@ class Watchlist(commands.Cog):
 
         if not admin_roles or not mod_roles:
             await channel.send(
-                f"**__Watchlist Alert for #{watchlist_user.watchlist_number}__**\n@everyone\n\nUser {member.mention} has joined!\n\n**Watchlist reason:** `{watchlist_user.reason}`",
+                f"**__Watchlist Alert for [#{watchlist_user.watchlist_number}]({watchlist_user.message.jump_url})__**\n@everyone\n\nUser {member.mention} has joined!\n\n**Watchlist reason:** `{watchlist_user.reason}`",
                 allowed_mentions=discord.AllowedMentions(everyone=True),
             )
         else:
             await channel.send(
-                f"**__Watchlist Alert for #{watchlist_user.watchlist_number}__**\n{admin_roles} {mod_roles}\n\nUser {member.mention} has joined!\n\n**Watchlist reason:** `{watchlist_user.reason}`",
+                f"**__Watchlist Alert for [#{watchlist_user.watchlist_number}]({watchlist_user.message.jump_url})__**\n{admin_roles} {mod_roles}\n\nUser {member.mention} has joined!\n\n**Watchlist reason:** `{watchlist_user.reason}`",
                 allowed_mentions=discord.AllowedMentions(roles=True),
             )
 
@@ -539,7 +614,7 @@ class Watchlist(commands.Cog):
         idx = watchlist_ids.index(member.id)
         watchlist_user = self.watchlist[guild.id][idx]
         alert_channel = await self.config.guild(guild).alert_channel()
-        channel = guild.get_channel(alert_channel)
+        channel = guild.get_channel_or_thread(alert_channel)
 
         if not channel:
             return
@@ -549,11 +624,11 @@ class Watchlist(commands.Cog):
 
         if not admin_roles or not mod_roles:
             await channel.send(
-                f"**__Watchlist Alert for #{watchlist_user.watchlist_number}__**\n@everyone\n\nUser {member.mention} has left!\n\n**Watchlist reason:** `{watchlist_user.reason}`",
+                f"**__Watchlist Alert for [#{watchlist_user.watchlist_number}]({watchlist_user.message.jump_url})__**\n@everyone\n\nUser {member.mention} has left!\n\n**Watchlist reason:** `{watchlist_user.reason}`",
                 allowed_mentions=discord.AllowedMentions(everyone=True),
             )
         else:
             await channel.send(
-                f"**__Watchlist Alert for #{watchlist_user.watchlist_number}__**\n{admin_roles} {mod_roles}\n\nUser {member.mention} has left!\n\n**Watchlist reason:** `{watchlist_user.reason}`",
+                f"**__Watchlist Alert for [#{watchlist_user.watchlist_number}]({watchlist_user.message.jump_url})__**\n{admin_roles} {mod_roles}\n\nUser {member.mention} has left!\n\n**Watchlist reason:** `{watchlist_user.reason}`",
                 allowed_mentions=discord.AllowedMentions(roles=True),
             )

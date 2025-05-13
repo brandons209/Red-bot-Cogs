@@ -1,11 +1,13 @@
 {
     "author": [
         "TheScriptPony",
-        "Flame442"
+        "Flame442",
+        "Brandons209"
     ],
     "name": "ImageMagic",
     "description": "Manipulates images.",
     "hidden": false,
+    "min_bot_version": "3.5.0",
     "end_user_data_statement": "This cog does not store user data.",
     "requirements": [
         "wand",

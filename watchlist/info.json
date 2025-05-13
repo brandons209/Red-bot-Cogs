@@ -2,11 +2,13 @@
     "author": [
         "brandons209"
     ],
-    "install_msg": "Thank you for installing my cog!",
+    "install_msg": "Thank you for installing my cog! To get started, run [p]watchlist",
     "name": "Watchlist",
     "short": "Watch for user's joining your guild and get notified when they join/leave.",
-    "description": "Allows guild staff to better keep track of persons of interest in their guild.",
+    "description": "Allows guild staff to better keep track of persons of interest both inside and outside of their guild.",
     "tags": [
         "watchlist"
-    ]
+    ],
+    "min_bot_version": "3.5.0",
+    "end_user_data_statement": "This cog store's users ids of those added to the watchlist for each guild."
 }

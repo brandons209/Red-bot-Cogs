@@ -2,7 +2,7 @@ import discord
 from redbot.core.utils.chat_formatting import *
 from redbot.core import Config, checks, commands
 from urllib import parse
-from typing import Literal
+from typing import Literal, Optional
 import aiohttp
 import os
 import traceback
@@ -41,20 +41,20 @@ class Pony(commands.Cog):
         for guild in self.bot.guilds:
             self.cooldowns[guild.id] = {}
 
-    @commands.command()
+    @commands.hybrid_command()
     @commands.guild_only()
     async def pony(self, ctx, *, text: str = ""):
         """Retrieves the latest result from Derpibooru"""
         await self.fetch_image(ctx, randomize=False, tags=text)
 
-    @commands.command()
+    @commands.hybrid_command()
     @commands.guild_only()
     async def ponyr(self, ctx, *, text: str = ""):
         """Retrieves a random result from Derpibooru"""
         await self.fetch_image(ctx, randomize=True, tags=text)
 
     # needed because derpi was having trouble getting a random image from our derpi page with the filters we have
-    @commands.command()
+    @commands.hybrid_command()
     @commands.guild_only()
     async def mascot(self, ctx):
         """
@@ -181,12 +181,13 @@ class Pony(commands.Cog):
 
     @ponyset.command(name="maxfilters")
     @checks.is_owner()
-    async def _maxfilters_ponyset(self, ctx, new_max_filters: int):
+    async def _maxfilters_ponyset(self, ctx, new_max_filters: Optional[int] = None):
         """Sets the global tag limit for the filter list.
 
         Leave blank to get current max filters.
 
-        Gives an error when a user tries to add a filter while the server's filter list contains a certain amount of tags"""
+        Gives an error when a user tries to add a filter while the server's filter list contains a certain amount of tags
+        """
         if new_max_filters is None:
             max_filters = self.config.maxfilters()
             await ctx.send("Current filter limit: {} filters.".format(max_filters))
@@ -214,7 +215,6 @@ class Pony(commands.Cog):
                 import_settings = json.load(raw_settings)
                 for json_guild_id, json_guild_verbose in import_settings.items():
                     if json_guild_id != "maxfilters":
-
                         guild = bot.get_guild(int(json_guild_id))
                         if guild is None:
                             continue
@@ -234,7 +234,6 @@ class Pony(commands.Cog):
                 msg = "Filters import successful for these guilds:\n"
                 for json_guild_id, json_guild_filters in import_filters.items():
                     if json_guild_id != "default":
-
                         guild = bot.get_guild(int(json_guild_id))  # returns None if guild is not found
                         if guild is None:
                             continue

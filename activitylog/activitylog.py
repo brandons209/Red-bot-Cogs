@@ -1,78 +1,52 @@
 # redbot/discord
+from tokenize import String
+from discord.user import User
+from discord.member import Member
+from networkx import Graph
 from redbot.core.utils.chat_formatting import *
 from redbot.core import Config, checks, commands, modlog, bank
 from redbot.core.data_manager import cog_data_path
 from redbot.core.utils.mod import is_mod_or_superior
 from redbot.core.utils.predicates import MessagePredicate
+from redbot.core.commands.converter import parse_timedelta
 import discord
 
 from .utils import *
+from .database import DatabaseHandler
+from .export import ChatHTMLExporter
+from .data import (
+    plot_voice_time_by_channel,
+    plot_text_activity_over_time,
+    plot_guild_joins_and_leaves,
+    plot_users_in_voice_channel,
+    plot_hourly_heatmap,
+    plot_retention,
+    build_interaction_graph,
+)
+from .menus import LogView, GraphView
 from datetime import datetime, timedelta
-from dateutil.relativedelta import relativedelta
 from dateutil.tz import tzlocal
+from glob import glob
 import time
 import os
 import asyncio
-import glob
-import io
-import functools
+from typing import Literal, Optional, Union, Any, Sequence, List, Deque
+from collections import deque
+from io import BytesIO, StringIO
+import csv
+import re
 
-from typing import Literal
-
-# plotting
-from bisect import bisect_left
-import matplotlib.pyplot as plt
-from matplotlib.dates import AutoDateLocator, AutoDateFormatter
-import pandas as pd
-import numpy as np
-import networkx as nx
-
-__version__ = "3.1.0"
-
-TIMESTAMP_FORMAT = "%Y-%m-%d %X"  # YYYY-MM-DD HH:MM:SS
-
-# 0 is Message object
-AUTHOR_TEMPLATE = "@{0.author.name}#{0.author.discriminator}(id:{0.author.id})"
-MESSAGE_TEMPLATE = AUTHOR_TEMPLATE + ": {0.clean_content}"
-
-# 0 is Message object, 1 is the message replied too
-REPLY_TEMPLATE = (
-    AUTHOR_TEMPLATE
-    + " replied to @{1.author.name}#{1.author.discriminator}(id:{1.author.id}): {1.clean_content} [with]: {0.clean_content}"
-)
-
-# 0 is Message object, 1 is attachment URL
-ATTACHMENT_TEMPLATE = AUTHOR_TEMPLATE + ": {0.clean_content} (attachment url(s): {1})"
-
-# 0 is Message object, 1 is sticker URL
-STICKER_TEMPLATE = AUTHOR_TEMPLATE + ": {0.clean_content} (sticker url(s): {1})"
-
-# 0 is Message object, 1 is attachment path
-DOWNLOAD_TEMPLATE = AUTHOR_TEMPLATE + ": {0.clean_content} (attachment(s) saved to {1})"
-
-# 0 is before, 1 is after, 2 is formatted timestamp
-EDIT_TEMPLATE = AUTHOR_TEMPLATE + " edited message from {2} ({0.clean_content}) to read: {1.clean_content}"
-
-# 0 is deleted message, 1 is formatted timestamp
-DELETE_TEMPLATE = AUTHOR_TEMPLATE + " deleted message from {1} ({0.clean_content})"
-
-# 0 is member who deleted the message, 1 is message, 2 is the user who authored the message
-# 3 is formatted timestamp
-DELETE_AUDIT_TEMPLATE = "@{0.name}#{0.discriminator}(id:{0.id}) deleted message from {3} @{2.name}#{2.discriminator}(id:{2.id}): ({1.clean_content})"
-
-MAX_LINES = 50000
-
-CORR_MSG_DELTA = timedelta(minutes=15)
-VOICE_TIME_LIMIT = timedelta(hours=24)
+AUDIT_QUEUE_LEN = 100
+LOG_MSG = "[Activitylog] {}"
+ID_FINDER = re.compile(r"\(id\s*(\d+)\)")
 
 
 class ActivityLogger(commands.Cog):
-    """Log activity seen by bot"""
+    """Log all activities seen by bot"""
 
     def __init__(self, bot):
         super().__init__()
-        global PATH
-        PATH = cog_data_path(cog_instance=self)
+        self.data_path = cog_data_path(cog_instance=self)
 
         self.bot = bot
         self.config = Config.get_conf(self, identifier=9584736583, force_registration=True)
@@ -82,18 +56,32 @@ class ActivityLogger(commands.Cog):
                 "default": False,
                 "direct": False,
                 "everything": False,
-                "rotation": "m",
                 "check_audit": True,
-            }
+            },
+            "database_config": {
+                "backend": "sqlite",
+                "username": None,
+                "password": None,
+                "host": "localhost",
+                "port": 3306,
+            },
         }
         self.default_guild = {
             "all_s": False,
             "voice": False,
             "events": False,
+            "attachment_channel": None,
             "prefixes": [],
             "corr_weights": {
                 "reply": 1,
-                "messages": [1, 0.8, 0.6, 0.4, 0.2, 0.1],  # in order of closest to farthest
+                "messages": [
+                    1,
+                    0.8,
+                    0.6,
+                    0.4,
+                    0.2,
+                    0.1,
+                ],  # in order of closest to farthest
                 "vc_per_minute": 1,
                 "vc_people_multiplier": 0.5,
             },
@@ -101,7 +89,13 @@ class ActivityLogger(commands.Cog):
         self.default_channel = {"enabled": False}
         default_user = {"past_names": []}
         default_member = {
-            "stats": {"total_msg": 0, "bot_cmd": 0, "avg_len": 0.0, "vc_time_sec": 0.0, "last_vc_time": None}
+            "stats": {
+                "total_msg": 0,
+                "bot_cmd": 0,
+                "avg_len": 0.0,
+                "vc_time_sec": 0.0,
+                "last_vc_time": None,
+            }
         }
         self.config.register_global(**default_global)
         self.config.register_guild(**self.default_guild)
@@ -109,11 +103,12 @@ class ActivityLogger(commands.Cog):
         self.config.register_user(**default_user)
         self.config.register_member(**default_member)
 
-        self.handles = {}
-        self.lock = False
+        self.database_handlers: Dict[Union[int, str], DatabaseHandler] = {}
+        # used to store what we should log to avoid constant config calls
         self.cache = {}
+        # used to cache audit log entries seen by the bot for logging purposes
+        self.audit_logs: Dict[int, Deque[discord.AuditLogEntry]] = {}
 
-        # remove userinfo since we are replacing it
         self.badge_emojis = {
             "staff": 848556248832016384,
             "early_supporter": 706198530837970998,
@@ -128,25 +123,63 @@ class ActivityLogger(commands.Cog):
             "verified_bot": 848561838974697532,
             "verified_bot2": 848561839260434482,
         }
+
+        # remove userinfo since we are replacing it
         self.bot.remove_command("userinfo")
+        self.is_initalized = False
         self.load_task = asyncio.create_task(self.initialize())
-        self.loop = asyncio.get_event_loop()
 
     def cog_unload(self):
-        self.lock = True
-
-        for h in self.handles.values():
-            h.close()
-
-        if self.load_task:
+        try:
             self.load_task.cancel()
+        except:
+            pass
+        for handler in self.database_handlers.values():
+            try:
+                handler.close()
+            except Exception as e:
+                print(LOG_MSG.format(f"Failed to close database handler: {e}"))
+
+    def initialize_databases(self, conf: dict):
+        # key ids for these should be ints
+        self.is_initalized = False
+        for guild in self.bot.guilds:
+            try:
+                if conf["backend"] == "sqlite":
+                    handler = DatabaseHandler(str(guild.id), data_path=str(self.data_path))
+                elif conf["backend"] == "mysql":
+                    handler = DatabaseHandler(str(guild.id), **conf)
+                else:  # shouldn't happen
+                    handler = None
+                self.database_handlers[guild.id] = handler
+                self.audit_logs[guild.id] = deque(maxlen=AUDIT_QUEUE_LEN)
+            except Exception as e:
+                print(LOG_MSG.format(f"Failed to load database for {guild}! {e}"))
+                return False
+        try:
+            # add handler for global bot logs
+            if conf["backend"] == "sqlite":
+                handler = DatabaseHandler(str("global"), data_path=str(self.data_path))
+            elif conf["backend"] == "mysql":
+                handler = DatabaseHandler(str("global"), **conf)
+            else:
+                handler = None
+            self.database_handlers["global"] = handler
+        except Exception as e:
+            print(LOG_MSG.format(f"Failed to load database for global! {e}"))
+            return False
+
+        self.is_initalized = True
+        return True
 
     async def initialize(self):
         await self.bot.wait_until_ready()
+        database_conf = await self.config.database_config()
+        self.initialize_databases(database_conf)
 
+        self.cache = await self.config.attrs()
         guild_data = await self.config.all_guilds()
         channel_data = await self.config.all_channels()
-        self.cache = await self.config.attrs()
 
         # key ids for these should be ints
         for guild_id, data in guild_data.items():
@@ -173,19 +206,849 @@ class ActivityLogger(commands.Cog):
                     prefixes.extend(curr)
                     self.cache[guild.id]["prefixes"] = curr
 
-    @commands.command(aliases=["uinfo"])
+    async def get_audit_entry(
+        self, guild: Union[discord.Guild, None], *conditions
+    ) -> Union[discord.AuditLogEntry, None]:
+        if guild is None:
+            return None
+        cached_entries = self.audit_logs[guild.id]
+        # it seems that cached entries wont contain the updated audit event right when it happens, it seems to fire after the event handler that is in question, may help with high traffic bots though
+        for entry in cached_entries:
+            if all(cond(entry) for cond in conditions):
+                return entry
+
+        # fallback to look at audit log for the guild
+        # print("firing get_audit_entry")
+        # print(len(conditions))
+        if self.cache["check_audit"]:
+            # try:
+            async for entry in guild.audit_logs(limit=3):
+                # print(entry)
+                # for i, cond in enumerate(conditions):
+                # print(str(i), cond(entry))
+                if all(cond(entry) for cond in conditions):
+                    return entry
+            # except discord.Forbidden:
+            #    return None
+            # except discord.HTTPException:
+            #    return None
+            # finally:
+            #    return None
+        else:
+            return None
+
+    def update_cache(
+        self,
+        attr: str,
+        value: Any,
+        level: Union[discord.Guild, discord.abc.GuildChannel, str] = "global",
+    ):
+        """
+        Updates cache with new configuration entry
+
+        Args:
+            attr (str): name of the config option
+            value (Any): value to set
+            level (Union[discord.Guild, discord.abc.GuildChannel, str], optional): Level to save to. Defaults to "global".
+        """
+        if isinstance(level, str) and level == "global":
+            self.cache[attr] = value
+        if isinstance(level, discord.Guild):
+            self.cache[level.id][attr] = value
+        if isinstance(level, discord.abc.GuildChannel):
+            self.cache[level.id][attr] = value
+
+    def should_log(
+        self,
+        location: Union[discord.Guild, discord.abc.GuildChannel, discord.DMChannel, discord.Thread, discord.User],
+    ) -> bool:
+        if not self.cache or not self.is_initalized:
+            # cache is empty, still booting
+            return False
+
+        if self.cache.get("everything", False):
+            return True
+
+        default = self.cache.get("default", False)
+
+        if type(location) is discord.Guild:
+            loc = self.cache[location.id]
+            return loc.get("all_s", False) or loc.get("events", default)
+
+        elif type(location) is discord.TextChannel or type(location) is discord.Thread:
+            loc = self.cache[location.guild.id]
+            opts = [
+                loc.get("all_s", False),
+                self.cache[location.id].get("enabled", default),
+            ]
+            return any(opts)
+
+        elif type(location) is discord.VoiceChannel:
+            loc = self.cache[location.guild.id]
+            opts = [loc.get("all_s", False), loc.get("voice", False)]
+
+            return any(opts)
+
+        elif isinstance(location, discord.abc.PrivateChannel) or isinstance(location, discord.User):
+            return self.cache.get("direct", default)
+
+        else:  # can't log other types
+            return False
+
+    def should_download(self, msg: discord.Message, check_guild_attach_channel: Optional[bool] = False) -> bool:
+        """
+        Checks if we should download the attachment in a message
+
+        Args:
+            msg (discord.Message): Message containing attachments
+            check_guild_attach_channel (bool, optional): Check if there is a guild attachments channel to save to. Defaults to False.
+
+        Returns:
+            bool: Whether downloads are enabled or not
+        """
+        if check_guild_attach_channel:
+            if not msg.guild:
+                return False
+            return (
+                self.should_log(msg.channel)
+                and self.cache.get(msg.guild.id, {}).get("attachment_channel", None) is not None
+                and msg.channel.id != self.cache.get(msg.guild.id, {}).get("attachment_channel", None)
+            )
+        else:
+            return self.should_log(msg.channel) and self.cache.get("attachments", False)
+
+    async def process_attachments(self, message: discord.Message):
+        """
+        Processes attachments in a message, and saves attachments if enabled
+
+        Args:
+            message (discord.Message): Message to process attachment for
+            a (discord.Attachment): Message attachment to process
+
+        Returns:
+
+        """
+        channel = message.channel
+        attachments = message.attachments
+        path = self.data_path
+
+        if type(channel) in [discord.TextChannel, discord.VoiceChannel, discord.Thread]:
+            guildid = channel.guild.id
+        elif isinstance(channel, discord.abc.PrivateChannel):
+            guildid = "direct"
+        else:
+            guildid = None
+
+        if guildid is None:
+            print(LOG_MSG.format(f"Unable to get guildid in process_attachments. Type of channel: {type(channel)}"))
+            return []
+
+        data = {
+            "id": None,
+            "message_id": message.id,
+            "attachment_message_id": None,
+            "url": None,
+            "filepath": None,
+        }
+        all_data = []
+        for att in attachments:
+            full_path = None
+            url = None
+            attachment_message_id = None
+            if self.should_download(message):
+                filepath = os.path.join(path, str(guildid), str(channel.id) + "_attachments")
+                os.makedirs(filepath, exist_ok=True)
+                filename = str(att.id) + "_" + att.filename
+                full_path = os.path.join(filepath, filename)
+                with open(full_path, "wb") as f:
+                    try:
+                        await att.save(f)
+                    except:
+                        pass  # TODO put error handling
+            if self.should_download(message, True):
+                save_channel_id: int = self.cache.get(guildid, {}).get("attachment_channel", None)
+                channel = message.guild.get_channel_or_thread(save_channel_id)
+                if channel and type(channel) not in [discord.ForumChannel, discord.CategoryChannel]:
+                    try:
+                        f = await att.to_file()
+                        download_msg = await channel.send(file=f)
+                        url = download_msg.attachments[0].url
+                        attachment_message_id = download_msg.id
+                    except Exception as e:
+                        print(LOG_MSG.format(f"Error sending file to guild channel attachment holder! {e}"))
+                        url = att.url
+                else:
+                    url = att.url
+            else:
+                url = att.url
+
+            new_data = data.copy()
+            new_data["id"] = att.id
+            new_data["url"] = url
+            new_data["filepath"] = full_path
+            new_data["attachment_message_id"] = attachment_message_id
+            all_data.append(new_data)
+        # process stickers
+        for sticker in message.stickers:
+            # ids can duplicate so generated a new one
+            new_data = data.copy()
+            new_data["id"] = generate_unique_id()
+            new_data["url"] = sticker.url
+            all_data.append(new_data)
+        return all_data
+
+    async def process_message(
+        self,
+        message: discord.Message,
+        after: Optional[discord.Message] = None,
+        deleted_by: Optional[discord.Member] = None,
+    ):
+        """
+        Processes a message for logging
+        """
+        attachments_rows = await self.process_attachments(message)
+        channel = message.channel
+        author = message.author
+
+        if message.reference:
+            reference_id = message.reference.message_id
+        else:
+            reference_id = None
+
+        # Update member stats -- don't calculate bot stats and make sure this isnt dm message
+        if message.author.id != self.bot.user.id and isinstance(message.author, discord.Member):
+            is_bot_msg = False
+            async with self.config.member(message.author).stats() as stats:
+                stats["total_msg"] += 1
+                content = after.content if after is not None else message.content
+                if len(content) > 0:
+                    for prefix in self.cache[message.guild.id]["prefixes"]:
+                        if prefix == content[: len(prefix)]:
+                            stats["bot_cmd"] += 1
+                            is_bot_msg = True
+                            break
+                    if not is_bot_msg:
+                        stats["avg_len"] += len(content.split(" "))
+
+        msg_data = {
+            "message_id": message.id,
+            "channel_id": channel.id,
+            "author_id": author.id,
+            "datetime": message.created_at,
+            "edited_datetime": after.edited_at if after else None,
+            "content": message.content,
+            "edited_content": after.content if after else None,
+            "reference_id": reference_id,
+            "deleted_by_id": deleted_by.id if deleted_by else None,
+        }
+        return msg_data, attachments_rows
+
+    async def process_voice(self, member: discord.Member, before: discord.VoiceState, after: discord.VoiceState):
+        action = None
+        state = None
+        moved_to_id = None
+        channel = before.channel if before.channel is not None else after.channel
+
+        if before.channel != after.channel:
+            if before.channel:
+                async with self.config.member(member).stats() as stats:
+                    if stats["last_vc_time"]:  # incase someone joins when bot is offline
+                        stats["vc_time_sec"] += time.time() - stats["last_vc_time"]
+                        stats["last_vc_time"] = None
+                action = "leave"
+                if after.channel:
+                    action = "move"
+                    moved_to_id = after.channel.id
+                state = True
+            elif after.channel:
+                action = "join"
+                async with self.config.member(member).stats() as stats:
+                    stats["last_vc_time"] = time.time()
+                state = True
+        else:
+            # there should only be one updated flag
+            action, state = get_voice_flags(before, after)
+
+        voice_data = {
+            "datetime": discord.utils.utcnow(),
+            "author_id": member.id,
+            "channel_id": channel.id,
+            "action_type": action,
+            "state": state,
+            "moved_to_id": moved_to_id,
+        }
+
+        return voice_data
+
+    def process_audit(
+        self,
+        action: str,
+        category: str,
+        author: Union[discord.Member, discord.User, int],
+        attribute: str,
+        before: Any,
+        after: Any,
+        audit: Optional[discord.AuditLogEntry] = None,
+        force_new_id: Optional[bool] = False,
+    ):
+        audit_data = {
+            "id": audit.id if audit and not force_new_id else generate_unique_id(),
+            "datetime": audit.created_at if audit else discord.utils.utcnow(),
+            "action": action,
+            "category": category,
+            "author_id": author if isinstance(author, int) else author.id,
+            "attribute": attribute,
+            "before": before,
+            "after": after,
+            "extra": str(audit.extra) if audit and audit.extra else None,
+            "reason": audit.reason if audit and audit.reason else None,
+        }
+        return audit_data
+
+    async def log(
+        self,
+        log_type: Literal["message", "voice", "audit", "global"],
+        global_table: Optional[str] = "message",
+        guild: Optional[Union[discord.Guild, None]] = None,
+        update: Optional[bool] = False,
+        safe_insert: Optional[bool] = False,
+        **kwargs,
+    ):
+        """
+        Logs message to database
+        """
+        # insert into the database
+        if log_type == "global":
+            handler = self.database_handlers["global"]
+        elif guild:
+            handler = self.database_handlers[guild.id]
+        else:
+            handler = None
+
+        if not handler:
+            # should log should of been checked already, so we are missing a database handler!
+            print(
+                LOG_MSG.format(
+                    f"No database handler exists for guild {guild}! Called with this state: log_type: `{log_type}`, global_table: `{global_table}`, update: `{update}`, safe_insert: `{safe_insert}`, kwargs: {kwargs}"
+                )
+            )
+            return  # TODO error handling
+
+        if log_type == "message" or (log_type == "global" and global_table == "message"):
+            msg_data, att_data = await self.process_message(**kwargs)
+            if update:
+                await handler.run_in_thread(handler.update, "messages", msg_data)
+            else:
+                if safe_insert:
+                    await handler.run_in_thread(handler.safe_insert, "messages", msg_data)
+                else:
+                    await handler.run_in_thread(handler.insert, "messages", msg_data)
+            for a in att_data:
+                if safe_insert:
+                    await handler.run_in_thread(handler.safe_insert, "attachments", a)
+                else:
+                    await handler.run_in_thread(handler.insert, "attachments", a)
+        elif log_type == "voice":
+            voice_data = await self.process_voice(**kwargs)
+            if safe_insert:
+                await handler.run_in_thread(handler.safe_insert, "voice", voice_data)
+            else:
+                await handler.run_in_thread(handler.insert, "voice", voice_data)
+        elif log_type == "audit" or (log_type == "global" and global_table == "audit"):
+            audit_data = self.process_audit(**kwargs)
+            if safe_insert:
+                await handler.run_in_thread(handler.safe_insert, "audit", audit_data)
+            else:
+                await handler.run_in_thread(handler.insert, "audit", audit_data)
+
+    ### Configuration Commands ###
+    @commands.group()
+    @checks.admin_or_permissions(administrator=True)
+    async def logset(self, ctx):
+        """
+        Change activity logging settings
+        """
+        pass
+
+    @logset.command(name="audit")
+    @checks.is_owner()
+    async def set_audit_check(self, ctx, on_off: Optional[bool] = None):
+        """
+        Set whether to access audit logs to get authors of audit actions
+
+        Turning this off means audit actions are **saved** but **who** did those actions are not saved.
+        This should be turned off for bots in large amount of servers since you will hit global ratelimits very quickly.
+        """
+        if on_off is not None:
+            async with self.config.attrs() as attrs:
+                attrs["check_audit"] = on_off
+            self.update_cache("check_audit", on_off, "global")
+
+        async with self.config.attrs() as attrs:
+            status = attrs["check_audit"]
+
+        if status:
+            await ctx.send("Checking audit logs is enabled.")
+        else:
+            await ctx.send("Checking audit logs is disabled.")
+
+    @logset.command(name="everything", aliases=["global"])
+    @checks.is_owner()
+    async def set_everything(self, ctx, on_off: Optional[bool] = None):
+        """
+        Global override for all logging
+        """
+        if on_off is not None:
+            async with self.config.attrs() as attrs:
+                attrs["everything"] = on_off
+            self.update_cache("everything", on_off, "global")
+
+        async with self.config.attrs() as attrs:
+            status = attrs["everything"]
+        if status:
+            await ctx.send("Global logging override is enabled.")
+        else:
+            await ctx.send("Global logging override is disabled.")
+
+    @logset.command(name="default")
+    @checks.is_owner()
+    async def set_default(self, ctx, on_off: Optional[bool] = None):
+        """
+        Sets whether logging is on or off where unset
+
+        guild overrides, global override, and attachments don't use this.
+        """
+        if on_off is not None:
+            async with self.config.attrs() as attrs:
+                attrs["default"] = on_off
+            self.update_cache("default", on_off, "global")
+
+        async with self.config.attrs() as attrs:
+            status = attrs["default"]
+        if status:
+            await ctx.send("Logging is enabled by default.")
+        else:
+            await ctx.send("Logging is disabled by default.")
+
+    @logset.command(name="dm")
+    @checks.is_owner()
+    async def set_direct(self, ctx, on_off: Optional[bool] = None):
+        """
+        Set logging direct messages to the bot
+        """
+        if on_off is not None:
+            async with self.config.attrs() as attrs:
+                attrs["direct"] = on_off
+            self.update_cache("direct", on_off, "global")
+
+        async with self.config.attrs() as attrs:
+            status = attrs["direct"]
+        if status:
+            await ctx.send("Logging of direct messages is enabled.")
+        else:
+            await ctx.send("Logging of direct messages is disabled.")
+
+    @logset.command(name="attachments")
+    @checks.is_owner()
+    async def set_attachments(self, ctx, on_off: Optional[bool] = None):
+        """
+        Download message attachments?
+
+        This can use a lot of disk space. If not turned on attachments are saved by their url only
+        """
+        if on_off is not None:
+            async with self.config.attrs() as attrs:
+                attrs["attachments"] = on_off
+            self.update_cache("attachments", on_off, "global")
+
+        async with self.config.attrs() as attrs:
+            status = attrs["attachments"]
+        if status:
+            await ctx.send("Downloading of attachments is enabled.")
+        else:
+            await ctx.send("Downloading of attachments is disabled.")
+
+    @logset.command(name="backend")
+    @checks.is_owner()
+    async def set_backend(self, ctx: commands.Context, backend: Optional[Literal["sqlite", "mysql"]] = None):
+        """
+        Set the backend database for activitylogger
+
+        Right now I support sqlite and mysql
+        """
+        curr = await self.config.database_config()
+        if backend is None:
+            await ctx.send(info(f"Current backend is {curr['backend']}."))
+            return
+
+        if backend == curr["backend"]:
+            await ctx.send(warning(f"The backend is already set to {curr['backend']}."))
+            return
+
+        await ctx.send(
+            warning(
+                "Data will not be imported from the old backend, you must do so manually. This will be supported in the future. Continue?"
+            )
+        )
+        pred = MessagePredicate.yes_or_no(ctx)
+        try:
+            await self.bot.wait_for("message", check=pred, timeout=60)
+        except asyncio.TimeoutError:
+            return await ctx.send("Cancelled.", delete_after=30)
+        if not pred.result:
+            return await ctx.send("Cancelled.", delete_after=30)
+
+        async with self.config.database_config() as database_config:
+            if backend == "sqlite":
+                temp = {"backend": "sqlite", "username": None, "password": None, "host": "localhost", "port": 3306}
+                success = self.initialize_databases(temp)
+                if success:
+                    await ctx.send(
+                        info(
+                            "Backend is now sqlite, if starting fresh make sure to run [p]logset sync to sync the guild data to the database."
+                        )
+                    )
+                    for k, v in temp.items():
+                        database_config[k] = v
+                else:
+                    return await ctx.send(error("There was an error setting up the databases. Please check bot logs."))
+            elif backend == "mysql":
+                pred = MessagePredicate.same_context(ctx)
+
+                def pred2(m):
+                    try:
+                        if int(m.content) > 65535 or int(m.content) < 1:
+                            return False
+                        if int(m.content):
+                            return True
+                        return False
+                    except ValueError:
+                        return False
+
+                msg = await ctx.send(
+                    info(
+                        "What is the server IP address? Do not include the port. Before continuing, make sure I will have full permissions on the database server."
+                    )
+                )
+                try:
+                    resp = await ctx.bot.wait_for("message", timeout=60, check=pred)
+                except asyncio.TimeoutError:
+                    return await ctx.send(warning("Timed out, canceling..."), reference=ctx.message)
+                ip = resp.content
+                try:
+                    await msg.delete()
+                    await resp.delete()
+                except:
+                    pass
+
+                msg = await ctx.send(info("What is the server port?"))
+                try:
+                    resp = await ctx.bot.wait_for("message", timeout=60, check=lambda m: pred2(m) and pred(m))
+                except asyncio.TimeoutError:
+                    return await ctx.send(warning("Timed out, canceling..."), reference=ctx.message)
+                port = int(resp.content)
+                try:
+                    await msg.delete()
+                    await resp.delete()
+                except:
+                    pass
+
+                msg = await ctx.send(info("What is the username?"))
+                try:
+                    resp = await ctx.bot.wait_for("message", timeout=60, check=pred)
+                except asyncio.TimeoutError:
+                    return await ctx.send(warning("Timed out, canceling..."), reference=ctx.message)
+                username = resp.content
+                try:
+                    await msg.delete()
+                    await resp.delete()
+                except:
+                    pass
+
+                msg = await ctx.send(info("What is the password?"))
+                try:
+                    resp = await ctx.bot.wait_for("message", timeout=60, check=pred)
+                except asyncio.TimeoutError:
+                    return await ctx.send(warning("Timed out, canceling..."), reference=ctx.message)
+                password = resp.content
+                try:
+                    await msg.delete()
+                    await resp.delete()
+                except:
+                    pass
+
+                temp = {
+                    "backend": "mysql",
+                    "username": username,
+                    "password": password,
+                    "host": ip,
+                    "port": port,
+                }
+                success = self.initialize_databases(temp)
+                if success:
+                    await ctx.send(
+                        info(
+                            "Backend is now mysql, if starting fresh make sure to run [p]logset sync to sync the guild data to the database."
+                        )
+                    )
+                    for k, v in temp.items():
+                        database_config[k] = v
+                else:
+                    return await ctx.send(error("There was an error setting up the databases. Please check bot logs."))
+
+    @logset.command(name="sync")
+    @commands.guild_only()
+    @checks.bot_has_permissions(administrator=True)
+    async def sync_guild(self, ctx: commands.Context):
+        """
+        Sync all channels to the internal database. Configure what you want to log first before running.
+
+        Audit logs are NOT synced, this will come in a future update. This will also pull some data from the older version logs.
+        """
+        await ctx.send(
+            warning(
+                "This is an intensive operation that will take a long time. I will only sync based on my settings, so make sure those are set how you want first. Proceed?"
+            )
+        )
+        pred = MessagePredicate.yes_or_no(ctx)
+        try:
+            await self.bot.wait_for("message", check=pred, timeout=60)
+        except asyncio.TimeoutError:
+            return
+        if not pred.result:
+            return
+
+        guild = ctx.guild
+        await ctx.send(f"🔄 Starting full sync for **{guild.name}**...")
+        update_message = info("Processing {} channels... \nProgress: {}")
+
+        ## helper functions
+        async def sync_channel(channel: Union[discord.TextChannel, discord.VoiceChannel, discord.Thread]):
+            """
+            Fetches messages from a channel or thread and logs them.
+            """
+            if not (self.should_log(channel) or self.should_log(channel.guild)):
+                return
+            try:
+                async for message in channel.history(limit=None, oldest_first=True):
+                    try:
+                        await self.log("message", guild=channel.guild, update=False, safe_insert=True, message=message)
+                    except Exception as e:
+                        print(f"Failed to log message {message.id} in {channel.name}: {e}")
+            except discord.Forbidden:
+                print(f"Skipping {channel.name} — missing permissions.")
+            except Exception as e:
+                print(f"Error fetching {channel.name}: {e}")
+
+        update_m = await ctx.send(update_message.format(len(guild.channels), "N/A"))
+        start = time.perf_counter()
+        total = len(guild.channels)
+        for i, channel in enumerate(guild.channels):
+            if isinstance(channel, discord.TextChannel) or isinstance(channel, discord.VoiceChannel):
+                await sync_channel(channel)
+
+                # Sync threads within the text channel
+                if isinstance(channel, discord.TextChannel):
+                    threads = channel.threads
+                    async for thread in channel.archived_threads(private=True, joined=True, limit=None):
+                        threads.append(thread)
+                    for thread in threads:
+                        await sync_channel(thread)
+
+            elif isinstance(channel, discord.ForumChannel):
+                threads = channel.threads
+                async for thread in channel.archived_threads(limit=None):
+                    threads.append(thread)
+                for thread in threads:
+                    await sync_channel(thread)
+
+            now = time.perf_counter()
+            elapsed = now - start
+            avg = elapsed / i if i > 0 else 0
+            remaining = (total - i) * avg
+
+            hrs, rem = divmod(remaining, 3600)
+            mins, secs = divmod(rem, 60)
+            eta_str = f"{int(hrs)}:{int(mins):02d}:{secs:04.1f}"
+            progress_string = f"Iter {i+1}/{total} — elapsed {elapsed:.1f}s — ETA {eta_str}"
+
+            try:
+                update_m = await update_m.edit(content=update_message.format(total, progress_string))
+            except:
+                update_m = await ctx.send(update_message.format(total, progress_string))
+
+        # sync member join/leaves from old files
+        files = sorted(glob(os.path.join(self.data_path, str(guild.id), "*guild.log")))
+        for path in files:
+            with open(path, "r") as f:
+                data = f.readlines()
+            for line in data:
+                if "Member join" in line or "Member leave" in line:
+                    id = re.search(ID_FINDER, line)
+                    if id:
+                        uid = int(id.group(1))
+                        if "Member join" in line:
+                            await self.log(
+                                "audit",
+                                guild=guild,
+                                update=False,
+                                audit=None,
+                                action="member_join",
+                                category="create",
+                                author=uid,
+                                attribute="join",
+                                before=None,
+                                after=uid,
+                            )
+                        else:
+                            await self.log(
+                                "audit",
+                                guild=guild,
+                                update=False,
+                                audit=None,
+                                action="member_leave",
+                                category="create",
+                                author=uid,
+                                attribute="leave",
+                                before=uid,
+                                after=None,
+                            )
+
+        await ctx.send("✅ Full guild sync complete!")
+
+    @logset.command(name="channel")
+    @commands.guild_only()
+    async def set_channel(self, ctx, on_off: bool, channel: Optional[discord.abc.GuildChannel] = None):
+        """
+        Sets channel logging on or off (channel optional)
+        This will also log all threads under this channel
+
+        To enable or disable all channels at once, use `logset server`.
+        """
+        if channel is None:
+            channel: discord.abc.GuildChannel = ctx.channel
+
+        self.update_cache("enabled", on_off, level=channel)
+        await self.config.channel(channel).enabled.set(on_off)
+
+        if on_off:
+            await ctx.send("Logging enabled for %s" % channel.mention)
+        else:
+            await ctx.send("Logging disabled for %s" % channel.mention)
+
+    @logset.command(name="attachment-channel")
+    @commands.guild_only()
+    async def set_attachment_channel(self, ctx, channel: Union[discord.TextChannel, str]):
+        """
+        Sets channel to log attachments to in your server.
+        Attachments from messages will be uploaded here and will be linked when gettings logs.
+
+        Pass `disable` to disable this feature.
+        """
+        if isinstance(channel, str) and channel.lower() == "disable":
+            await self.config.guild(ctx.guild).attachment_channel.clear()
+            await ctx.tick()
+            return
+        elif isinstance(channel, str):
+            await ctx.send(error("Invalid channel!"), delete_after=30, reference=ctx.message)
+            return
+
+        self.update_cache("attachment_channel", channel.id, level=ctx.guild)
+        await self.config.guild(ctx.guild).attachment_channel.set(channel.id)
+        await ctx.tick()
+
+    @logset.command(name="server")
+    @commands.guild_only()
+    async def set_guild(self, ctx, on_off: bool):
+        """
+        Sets logging on or off for all channels and server events
+        """
+        guild = ctx.guild
+
+        await self.config.guild(guild).all_s.set(on_off)
+        self.update_cache("all_s", on_off, level=guild)
+
+        if on_off:
+            await ctx.send("Logging enabled for %s" % guild)
+        else:
+            await ctx.send("Logging disabled for %s" % guild)
+
+    @logset.command(name="voice")
+    @commands.guild_only()
+    async def set_voice(self, ctx, on_off: bool):
+        """
+        Sets logging on or off for ALL voice channel events
+        """
+        guild = ctx.guild
+
+        await self.config.guild(guild).voice.set(on_off)
+        self.update_cache("voice", on_off, level=guild)
+
+        if on_off:
+            await ctx.send("Voice event logging enabled for %s" % guild)
+        else:
+            await ctx.send("Voice event logging disabled for %s" % guild)
+
+    @logset.command(name="events")
+    @commands.guild_only()
+    async def set_events(self, ctx, on_off: bool):
+        """
+        Sets logging on or off for guild audit events
+        """
+        guild = ctx.guild
+
+        await self.config.guild(guild).events.set(on_off)
+        self.update_cache("events", on_off, level=guild)
+
+        if on_off:
+            await ctx.send("Logging enabled for guild events in %s" % guild)
+        else:
+            await ctx.send("Logging disabled for guild events in %s" % guild)
+
+    @logset.command(name="prefixes")
+    @commands.guild_only()
+    async def set_prefixes(self, ctx, *, prefixes: Optional[str] = None):
+        """
+        Set list of prefixes to mark messages as bot commands for user stats.
+        Seperate prefixes with spaces
+        """
+        if prefixes is None:
+            curr = [f"`{p}`" for p in await self.config.guild(ctx.guild).prefixes()]
+            if not curr:
+                await ctx.send("No prefixes set, setting this bot's prefix.")
+                await self.config.guild(ctx.guild).prefixes.set([ctx.clean_prefix])
+                return
+            await ctx.send("Current Prefixes: " + humanize_list(curr))
+            return
+
+        new_prefixes = [p.strip() for p in prefixes.split(" ")]
+        self.update_cache("prefixes", new_prefixes, level=ctx.guild)
+        await self.config.guild(ctx.guild).prefixes.set(new_prefixes)
+        new_prefixes = [f"`{p}`" for p in prefixes]
+        await ctx.send("Prefixes set to: " + humanize_list(new_prefixes))
+
+    ### User Commands ###
+    @commands.hybrid_command(aliases=["uinfo"])
     @commands.guild_only()
     @commands.cooldown(rate=1, per=5, type=commands.BucketType.user)
-    async def userinfo(self, ctx, *, user: discord.Member = None):
+    async def userinfo(self, ctx: commands.Context, *, member: Optional[discord.Member] = None):
         """
         Show information about a user.
+
+        Pass with no arguments to get information about yourself
         """
         author = ctx.author
         guild = ctx.guild
+        if not isinstance(author, discord.Member) or not guild:
+            await ctx.send(error("This command can only run in a guild!"), delete_after=30, reference=ctx.message)
+            return
+
         is_mod = await is_mod_or_superior(self.bot, author)
 
-        if not user or not is_mod:
+        if not member or not is_mod:
             user = author
+        else:
+            user = member
 
         async with ctx.typing():
             if is_mod:
@@ -260,10 +1123,9 @@ class ActivityLogger(commands.Cog):
             data = discord.Embed(title=title, description=f"{statusemoji} {activity}", colour=user.colour)
             data.add_field(name="Joined Discord on", value=created_on)
             data.add_field(name="Joined this server on", value=joined_on)
-            if roles != "None":
-                roles = pagify(roles, page_length=1000, delims=[" "])
-                for r in roles:
-                    data.add_field(name="Roles", value=r, inline=False)
+            roles = pagify(roles, page_length=1000, delims=[" "])
+            for r in roles:
+                data.add_field(name="Roles", value=r, inline=False)
 
             data.add_field(name="Stats", value=stats)
             if names:
@@ -275,14 +1137,15 @@ class ActivityLogger(commands.Cog):
             name = str(user)
             name = " ~ ".join((name, user.nick)) if user.nick else name
 
-            if user.avatar:
-                avatar = user.avatar_url_as(static_format="png")
+            if user.display_avatar:
+                avatar = user.display_avatar.url
                 data.set_author(name=name, url=avatar)
                 data.set_thumbnail(url=avatar)
             else:
                 data.set_author(name=name)
 
-            flags = [f.name for f in user.public_flags.all()]
+            user_flags = user.public_flags
+            flags = [f.name for f in user_flags.all()]
             badges = ""
             badge_count = 0
             if flags:
@@ -303,35 +1166,57 @@ class ActivityLogger(commands.Cog):
                     badge_count += 1
             if badges:
                 data.add_field(name="Badges" if badge_count > 1 else "Badge", value=badges)
+            if user_flags.spammer:
+                data.add_field(name="Suspected Spammer", value="True")
             if "Economy" in self.bot.cogs:
-                balance_count = 1
-                bankstat = f"**Bank**: {str(humanize_number(await bank.get_balance(user)))} {await bank.get_currency_name(ctx.guild)}\n"
+                bankstat = f"**Bank**: {str(humanize_number(await bank.get_balance(user)))} {await bank.get_currency_name(guild)}\n"
                 data.add_field(name="Balance", value=bankstat)
 
             if is_mod:
                 try:
                     await ctx.send(embed=data, allowed_mentions=discord.AllowedMentions.all())
                 except discord.HTTPException:
-                    await ctx.send("I need the `Embed links` permission to send this")
+                    await ctx.send(
+                        error("I need the `Embed links` permission to send this!"),
+                        delete_after=30,
+                        reference=ctx.message,
+                    )
             else:
                 try:
                     await author.send(embed=data)
                 except discord.HTTPException:
-                    await ctx.send("Please allow messages from server members to get your info.")
+                    await ctx.send(
+                        error("Please allow messages from server members to get your info."),
+                        delete_after=30,
+                        reference=ctx.message,
+                    )
                 except Exception as e:
-                    print(f"Error in userinfo: {e}")
+                    print(LOG_MSG.format(f"Error in userinfo: {e}"))
 
-    async def userstats(self, guild, user):
+    async def userstats(self, guild: discord.Guild, user: discord.Member):
         """
         Get stats on a user about how active they are in the guild
         """
         stats = await self.config.member(user).stats()
+        names = []
         async with self.config.user(user).past_names() as past_names:
             if not past_names:
-                guild_files = sorted(glob.glob(os.path.join(PATH, "usernames", "*.log")))
-                names = get_all_names(guild_files, user)
+                # query global logs for names
+                handler = self.database_handlers["global"]
+                data = await handler.run_in_thread(
+                    handler.query,
+                    "audit",
+                    ["before", "after"],
+                    {"action": "user_update", "author_id": user.id, "attribute": "username"},
+                )
+                names = []
+                for row in data:
+                    names.append(row["before"])
+                    names.append(row["after"])
+                names = list(set(names))
             else:
                 names = past_names
+            past_names = names
 
         num_messages = stats["total_msg"]
         num_bot_commands = stats["bot_cmd"]
@@ -364,38 +1249,607 @@ class ActivityLogger(commands.Cog):
         except ZeroDivisionError:
             msg += "Average message length: `{:.2f}` words\n".format(0)
         msg += "Time spent in voice chat: `{:.0f}` {}.\n".format(
-            minutes if minutes <= 120 else hours, "minutes" if minutes <= 120 else "hours"
+            minutes if minutes <= 120 else hours,
+            "minutes" if minutes <= 120 else "hours",
         )
         msg += f"Bans: `{bans}`, Kicks: `{kicks}`, Mutes: `{mutes}`, Warnings: `{warns}`"
+        warnings = self.bot.get_cog("Warnings_Custom")
+        if warnings:
+            warn_points = await warnings.get_warnining_points(user)
+            msg += f" Warn Points: `{warn_points}`"
         if len(names) > 1:
             return msg, humanize_list(names)
 
         return msg, None
 
-    @commands.group(name="graphstats")
-    @checks.mod()
+    ### Generating Logs ###.
+    async def voice_log_sender(
+        self,
+        ctx: commands.Context,
+        channel: Union[discord.VoiceChannel, discord.StageChannel],
+        start_time: datetime,
+        end_time: Optional[datetime] = None,
+        member: Optional[discord.Member] = None,
+    ):
+        if end_time is None:
+            end_time = discord.utils.utcnow()
+        wait_msg = await ctx.send(warning("**__Generating logs, please wait...__**"))
+        guild = channel.guild
+        async with ctx.typing():
+            handler = self.database_handlers[guild.id]
+
+            columns = [
+                "datetime",
+                "author_id",
+                "channel_id",
+                "action_type",
+                "state",
+                "moved_to_id",
+            ]
+
+            filter: Dict[str, Any] = {"datetime": {"lte": end_time}}
+            if start_time:
+                filter["datetime"]["gte"] = start_time
+            if member:
+                filter["author_id"] = member.id
+            data = await handler.run_in_thread(handler.query, "voice", columns, filters=filter)
+            data = sorted(data, key=lambda r: r["datetime"])
+
+            for row in data:
+                author = (
+                    guild.get_member(row["author_id"])
+                    or self.bot.get_user(row["author_id"])
+                    or await guild.fetch_member(row["author_id"])
+                )
+                curr_channel = guild.get_channel(row["channel_id"]) or self.bot.get_channel(row["channel_id"])
+                if author:
+                    row["author_id"] = author.display_name
+                if curr_channel:
+                    row["channel_id"] = channel.name
+
+            # export audit data as csv:
+            output_file = StringIO()
+            writer = csv.DictWriter(output_file, fieldnames=columns)
+            writer.writeheader()
+            writer.writerows(data)
+            data_str = output_file.getvalue()
+            output_io = BytesIO()
+            output_io.write(data_str.encode())
+            output_io.seek(0)
+            output_attachment = discord.File(output_io, filename=f"{channel.name}_export.csv")
+            await ctx.send(file=output_attachment, reference=ctx.message)
+            try:
+                await wait_msg.edit(content=info("**__Log file Generated!__**"))
+            except:
+                pass
+
+    async def audit_log_sender(
+        self,
+        ctx: commands.Context,
+        guild: Union[discord.Guild, Literal["global"]],
+        start_time: datetime,
+        end_time: Optional[datetime] = None,
+        member: Optional[discord.Member] = None,
+    ):
+        if end_time is None:
+            end_time = discord.utils.utcnow()
+        wait_msg = await ctx.send(warning("**__Generating logs, please wait...__**"))
+        async with ctx.typing():
+            if isinstance(guild, discord.Guild):
+                handler = self.database_handlers[guild.id]
+            else:
+                handler = self.database_handlers["global"]
+
+            columns = [
+                "id",
+                "datetime",
+                "action",
+                "category",
+                "author_id",
+                "attribute",
+                "before",
+                "after",
+                "extra",
+                "reason",
+            ]
+
+            filter: Dict[str, Any] = {"datetime": {"lte": end_time}}
+            if start_time:
+                filter["datetime"]["gte"] = start_time
+            if member:
+                filter["author_id"] = member.id
+            data = await handler.run_in_thread(handler.query, "audit", columns, filters=filter)
+            data = sorted(data, key=lambda r: r["datetime"])
+            for row in data:
+                author = self.bot.get_user(row["author_id"])
+                if isinstance(guild, discord.Guild) and author is None:
+                    author = guild.get_member(row["author_id"]) or await guild.fetch_member(row["author_id"])
+                if author:
+                    row["author_id"] = author.display_name
+
+                action = row.get("action")
+                attr = row.get("attribute")
+                before = row.get("before")
+                after = row.get("after")
+
+                before_resolved = before
+                after_resolved = after
+
+                # === User or Member ===
+                if attr in ("owner", "author", "ban", "unban", "kick", "leave", "join"):
+                    before_resolved = await resolve_user(self.bot, before)
+                    after_resolved = await resolve_user(self.bot, after)
+
+                # === Role ===
+                elif attr == "role":
+                    before_resolved = await resolve_role(guild, before)
+                    after_resolved = await resolve_role(guild, after)
+
+                # === Channel/Thread ===
+                elif attr == "channel" or attr == "thread":
+                    before_resolved = resolve_channel(guild, before)
+                    after_resolved = resolve_channel(guild, after)
+
+                # === Emoji ===
+                elif attr == "emoji":
+                    before_resolved = resolve_emoji(self.bot, before)
+                    after_resolved = resolve_emoji(self.bot, after)
+
+                # === Sticker ===
+                elif attr == "sticker":
+                    before_resolved = resolve_sticker(guild, before)
+                    after_resolved = resolve_sticker(guild, after)
+
+                # === Event (Scheduled Event) ===
+                elif attr == "event":
+                    before_resolved = resolve_event(guild, before)
+                    after_resolved = resolve_event(guild, after)
+
+                # === Soundboard Sound ===
+                elif attr == "sound":
+                    before_resolved = resolve_sound(guild, before)
+                    after_resolved = resolve_sound(guild, after)
+
+                # === Invite ===
+                elif attr == "invite":
+                    # Invite codes are often already strings
+                    before_resolved = before
+                    after_resolved = after
+
+                # === Misc known formatting (like permissions, category_id, etc.) ===
+                if isinstance(before, int) and "category_id" in attr:
+                    before_resolved = resolve_channel(guild, before)
+                if isinstance(after, int) and "category_id" in attr:
+                    after_resolved = resolve_channel(guild, after)
+
+                row["before"] = before_resolved
+                row["after"] = after_resolved
+
+            # export audit data as csv:
+            output_file = StringIO()
+            writer = csv.DictWriter(output_file, fieldnames=columns)
+            writer.writeheader()
+            writer.writerows(data)
+            data_str = output_file.getvalue()
+            output_io = BytesIO()
+            output_io.write(data_str.encode())
+            output_io.seek(0)
+            output_attachment = discord.File(
+                output_io, filename=f"{guild.name if isinstance(guild, discord.Guild) else guild}_audit_export.csv"
+            )
+            await ctx.send(file=output_attachment, reference=ctx.message)
+            try:
+                await wait_msg.edit(content=info("**__Log file Generated!__**"))
+            except:
+                pass
+
+    async def chat_log_sender(
+        self,
+        ctx: commands.Context,
+        channel_or_member: Union[discord.TextChannel, discord.VoiceChannel, discord.Thread, discord.Member],
+        start_time: datetime,
+        end_time: Optional[datetime] = None,
+    ):
+        if end_time is None:
+            end_time = discord.utils.utcnow()
+        wait_msg = await ctx.send(warning("**__Generating logs, please wait...__**"))
+        async with ctx.typing():
+            if not ctx.guild:
+                await ctx.send("Fetching Private Channels is not support currently.")
+                try:
+                    await wait_msg.delete()
+                except:
+                    pass
+                return
+                handler = self.database_handlers["global"]
+            else:
+                handler = self.database_handlers[ctx.guild.id]
+            columns = [
+                "message_id",
+                "channel_id",
+                "author_id",
+                "datetime",
+                "edited_datetime",
+                "content",
+                "edited_content",
+                "reference_id",
+                "deleted_by_id",
+            ]
+            attach_columns = [
+                "id",
+                "message_id",
+                "attachment_message_id",
+                "url",
+                "filepath",
+            ]
+
+            filter: Dict[str, Any] = {"datetime": {"lte": end_time}}
+            if type(channel_or_member) in [discord.TextChannel, discord.VoiceChannel, discord.Thread]:
+                filter["channel_id"] = channel_or_member.id
+            else:
+                filter["author_id"] = channel_or_member.id
+            if start_time:
+                filter["datetime"]["gte"] = start_time
+            messages = await handler.run_in_thread(handler.query, "messages", columns, filters=filter)
+            attach_filter = {"message_id": {"in": [r["message_id"] for r in messages]}}
+            attachments = await handler.run_in_thread(
+                handler.query, "attachments", attach_columns, filters=attach_filter
+            )
+
+            if not messages:
+                await ctx.send(error("No messages found for that time period!"), delete_after=30, reference=ctx.message)
+                try:
+                    await wait_msg.delete()
+                except:
+                    pass
+                return
+
+            exporter = ChatHTMLExporter(self.bot, ctx.guild)
+            exporter.ingest_messages(messages)
+            exporter.ingest_attachments(attachments)
+            output = BytesIO()
+            if type(channel_or_member) in [discord.TextChannel, discord.VoiceChannel, discord.Thread]:
+                output_io = await exporter.export_channel(channel_or_member.id)
+            else:
+                output_io = await exporter.export_user(channel_or_member.id, output, include_dm_name=True)
+            output_attachments = [
+                discord.File(o, filename=f"{channel_or_member.name}_export_{i}.html") for i, o in enumerate(output_io)
+            ]
+            for output_att in output_attachments:
+                await ctx.send(file=output_att, reference=ctx.message)
+            try:
+                await wait_msg.edit(content=info("**__Log file Generated!__**"))
+            except:
+                pass
+
+    def interval_parser(self, till: str):
+        try:
+            dates = till.split(";")
+            dates = [dates[0].strip(), dates[1].strip()]  # only use 2 dates
+            start, end = [parse_time(date) for date in dates]
+
+            if end < start:
+                start, end = end, start  # swap order
+            return start, end
+        except:
+            pass
+
+        interval = parse_timedelta(till)
+        date = None
+        if not interval:
+            try:
+                date = parse_time(till)
+            except:
+                return None, None
+            if not date:
+                return None, None
+
+        if interval:
+            start_time = discord.utils.utcnow() - interval
+        else:
+            start_time = date
+
+        return start_time, discord.utils.utcnow()
+
+    @commands.group(aliases=["log"], invoke_without_command=True)
+    @commands.guild_only()
+    @checks.mod_or_permissions(administrator=True)
+    async def logs(self, ctx: commands.Context):
+        """
+        Download chat logs for your server
+
+        Run with no subcommand to use the menu
+        """
+        if ctx.invoked_subcommand is None:
+            view = LogView(ctx, self)
+            view.message = await ctx.send(
+                "Configure your logging request, don't forget to submit either a time delta or a date range using the buttons:",
+                view=view,
+            )
+
+    @logs.command(name="from")
+    async def logs_channel_interval(
+        self,
+        ctx,
+        channel: Union[discord.TextChannel, discord.VoiceChannel, discord.Thread],
+        *,
+        till: str,
+    ):
+        """
+        Logs for an entire channel going back to a specific interval or date/time.
+
+        `till` can be a date, an interval, or two different dates split by a **__semicolon__**
+
+        Dates/times look like:
+        - February 14 at 6pm EDT
+        - 2019-04-13 06:43:00 PST
+        - 01/20/18 at 21:00:43
+
+        times default to UTC if no timezone provided
+
+        Example with 2 dates:
+        - 2021-01-01 11:11:00 EDT;2021-01-01 12:00:00 EDT
+
+         Intervals look like:
+            5 minutes
+            1 minute 30 seconds
+            1 hour
+            2 days
+            30 days
+            5h30m
+        """
+        start_time, end_time = self.interval_parser(till)
+        if not start_time:
+            await ctx.send(error("Invalid date or interval! Try again."), delete_after=30, reference=ctx.message)
+            return
+
+        await self.chat_log_sender(ctx, channel, start_time, end_time=end_time)
+
+    @logs.command(name="user")
+    async def logs_users_channel_interval(self, ctx, user: discord.Member, *, till: str):
+        """
+        User's messages accross the guild going back to a specific interval or date/time.
+
+         `till` can be a date, an interval, or two different dates split by a **__semicolon__**
+
+        Dates/times look like:
+        - February 14 at 6pm EDT
+        - 2019-04-13 06:43:00 PST
+        - 01/20/18 at 21:00:43
+
+        times default to UTC if no timezone provided
+
+        Example with 2 dates:
+        - 2021-01-01 11:11:00 EDT;2021-01-01 12:00:00 EDT
+
+         Intervals look like:
+            5 minutes
+            1 minute 30 seconds
+            1 hour
+            2 days
+            30 days
+            5h30m
+        """
+        start_time, end_time = self.interval_parser(till)
+        if not start_time:
+            await ctx.send(error("Invalid date or interval! Try again."), delete_after=30, reference=ctx.message)
+            return
+
+        await self.chat_log_sender(ctx, user, start_time, end_time=end_time)
+
+    @logs.command(name="voice")
+    async def logs_voice_from(self, ctx, channel: Union[discord.VoiceChannel, discord.StageChannel], *, till: str):
+        """
+        Logs for a voice channel going back the specified interval.
+
+        `till` can be a date, an interval, or two different dates split by a **__semicolon__**
+
+        Dates/times look like:
+        - February 14 at 6pm EDT
+        - 2019-04-13 06:43:00 PST
+        - 01/20/18 at 21:00:43
+
+        times default to UTC if no timezone provided
+
+        Example with 2 dates:
+        - 2021-01-01 11:11:00 EDT;2021-01-01 12:00:00 EDT
+
+         Intervals look like:
+            5 minutes
+            1 minute 30 seconds
+            1 hour
+            2 days
+            30 days
+            5h30m
+        """
+        start_time, end_time = self.interval_parser(till)
+        if not start_time:
+            await ctx.send(error("Invalid date or interval! Try again."), delete_after=30, reference=ctx.message)
+            return
+
+        await self.voice_log_sender(ctx, channel, start_time, end_time=end_time)
+
+    @logs.group(name="audit")
+    async def logs_audit(self, ctx):
+        """Gets audit logs"""
+        pass
+
+    @logs_audit.command(name="from")
+    async def logs_audit_from(self, ctx: commands.Context, *, till: str):
+        """
+        Audit logs for server going back a time or to a specific data.
+        Gets all role and name changes, mutes, etc.
+        Also gets audit actions (deleting messages, bans, etc)
+
+        `till` can be a date, an interval, or two different dates split by a **__semicolon__**
+
+        Dates/times look like:
+        - February 14 at 6pm EDT
+        - 2019-04-13 06:43:00 PST
+        - 01/20/18 at 21:00:43
+
+        times default to UTC if no timezone provided
+
+        Example with 2 dates:
+        - 2021-01-01 11:11:00 EDT;2021-01-01 12:00:00 EDT
+
+         Intervals look like:
+            5 minutes
+            1 minute 30 seconds
+            1 hour
+            2 days
+            30 days
+            5h30m
+        """
+        start_time, end_time = self.interval_parser(till)
+        if not start_time:
+            await ctx.send(error("Invalid date or interval! Try again."), delete_after=30, reference=ctx.message)
+            return
+
+        await self.audit_log_sender(ctx, ctx.guild, start_time=start_time, end_time=end_time)
+
+    @logs_audit.command(name="user")
+    async def logs_audit_user_from(self, ctx, user: discord.Member, *, till: str):
+        """
+        Audit logs for server from user going back a time or to a specified date.
+        Gets all role and name changes, mutes, etc.
+        Also gets audit actions (deleting messages, bans, etc)
+
+        `till` can be a date, an interval, or two different dates split by a **__semicolon__**
+
+        Dates/times look like:
+        - February 14 at 6pm EDT
+        - 2019-04-13 06:43:00 PST
+        - 01/20/18 at 21:00:43
+
+        times default to UTC if no timezone provided
+
+        Example with 2 dates:
+        - 2021-01-01 11:11:00 EDT;2021-01-01 12:00:00 EDT
+
+         Intervals look like:
+            5 minutes
+            1 minute 30 seconds
+            1 hour
+            2 days
+            30 days
+            5h30m
+        """
+        start_time, end_time = self.interval_parser(till)
+        if not start_time:
+            await ctx.send(error("Invalid date or interval! Try again."), delete_after=30, reference=ctx.message)
+            return
+
+        await self.audit_log_sender(ctx, ctx.guild, start_time=start_time, member=user, end_time=end_time)
+
+    ### Graphing ###
+    @commands.group(name="graphstats", invoke_without_command=True)
+    @checks.mod_or_permissions(administrator=True)
     @commands.guild_only()
     async def graphstats(self, ctx):
         """
         Generate graphs for users and guild.
         """
+        if ctx.invoked_subcommand is None:
+            view = GraphView(ctx, self)
+            view.message = await ctx.send(
+                "Configure your graph request:",
+                view=view,
+            )
+
+    @graphstats.command(name="correlation")
+    async def graphstats_correlation(self, ctx: commands.Context):
+        """
+        Generate a correlation graph between all users in your server.
+
+        It is best visualized using Gephi, import the generated CSV using that program for easy visualization!
+        """
+        await ctx.send(
+            warning(
+                "This is an intensive operation, querying large amounts of data. Are you sure you want to continue?"
+            )
+        )
+        pred = MessagePredicate.yes_or_no(ctx)
+        try:
+            await self.bot.wait_for("message", check=pred, timeout=60)
+        except asyncio.TimeoutError:
+            return
+        if not pred.result:
+            return
+
+        user_map = {u.id: u.name for u in ctx.guild.members}
+        handler = self.database_handlers[ctx.guild.id]
+        # get logs
+        voice_columns = [
+            "datetime",
+            "author_id",
+            "channel_id",
+            "action_type",
+            "state",
+            "moved_to_id",
+        ]
+        text_columns = ["message_id", "channel_id", "author_id", "datetime", "reference_id"]
+        async with ctx.typing():
+            voice_data = await handler.run_in_thread(handler.query, "voice", voice_columns)
+            text_data = await handler.run_in_thread(handler.query, "messages", text_columns)
+            voice_data = sorted(voice_data, key=lambda r: r["datetime"])
+            text_data = sorted(text_data, key=lambda r: r["datetime"])
+
+            data_file, analysis_file, summary_file, figure_file = await asyncio.to_thread(
+                build_interaction_graph,
+                ctx.guild,
+                text_data,
+                voice_data,
+                user_lookup=user_map,
+            )
+
+            files = [
+                discord.File(data_file, filename=f"{ctx.guild.name}_correlation_data.csv"),
+                discord.File(analysis_file, filename=f"{ctx.guild.name}_user_analysis.csv"),
+                discord.File(summary_file, filename=f"{ctx.guild.name}_summary_explaination.csv"),
+                discord.File(figure_file, filename=f"{ctx.guild.name}_correlation_graph.png"),
+            ]
+
+            await ctx.send(files=files, reference=ctx.message)
+
+    @graphstats.command(name="retention")
+    async def graphstats_retention(self, ctx: commands.Context):
+        """
+        Graph a histogram of how long members have been in the guild
+        """
+        data_file, figure_file = await asyncio.to_thread(plot_retention, ctx.guild.members)
+        files = [
+            discord.File(data_file, filename="retention_graph_data.csv"),
+            discord.File(figure_file, filename="retention_voice_graph.png"),
+        ]
+
+        await ctx.send(files=files, reference=ctx.message)
+
+    @graphstats.group(name="voice")
+    async def graphstats_voice(self, ctx: commands.Context):
+        """
+        Graph voice stats for a guild
+        """
         pass
 
-    @graphstats.command(name="voice")
-    async def graphstats_voice(self, ctx, user: discord.Member, *, till: str):
+    @graphstats_voice.command(name="user")
+    async def graphstats_voice_user(self, ctx: commands.Context, member: discord.Member, *, till: str):
         """
         Create a graph of user activity in voice channels.
 
-        `till` can be a date or interval
+        `till` can be a date, an interval, or two different dates split by a **__semicolon__**
 
         **Times in graph are all in UTC**
 
         Dates/times look like:
-            February 14 at 6pm EDT
-            2019-04-13 06:43:00 PST
-            01/20/18 at 21:00:43
+        - February 14 at 6pm EDT
+        - 2019-04-13 06:43:00 PST
+        - 01/20/18 at 21:00:43
 
         times default to UTC if no timezone provided
+
+        Example with 2 dates:
+        - 2021-01-01 11:11:00 EDT;2021-01-01 12:00:00 EDT
 
          Intervals look like:
             5 minutes
@@ -404,152 +1858,142 @@ class ActivityLogger(commands.Cog):
             2 days
             30 days
             5h30m
-            (etc)
         """
-        interval = parse_timedelta(till)
-        date = None
-        if not interval:
-            try:
-                date = parse_time(till).replace(tzinfo=None)
-            except:
-                await ctx.send("Invalid date or interval! Try again.")
+        start_time, end_time = self.interval_parser(till)
+        if not start_time:
+            await ctx.send(error("Invalid date or interval! Try again."), delete_after=30, reference=ctx.message)
+            return
+
+        handler = self.database_handlers[ctx.guild.id]
+        # get logs
+        columns = [
+            "datetime",
+            "author_id",
+            "channel_id",
+            "action_type",
+            "state",
+            "moved_to_id",
+        ]
+        filters = {
+            "datetime": {"gte": start_time, "lte": end_time},
+            "author_id": member.id,
+            "action_type": {"in": ["join", "leave", "move"]},
+        }
+        async with ctx.typing():
+            data = await handler.run_in_thread(handler.query, "voice", columns, filters=filters)
+            data = sorted(data, key=lambda r: r["datetime"])
+
+            data_file, figure_file = await asyncio.to_thread(plot_voice_time_by_channel, data, ctx.guild, member)
+            if not data_file or not figure_file:
+                await ctx.send(
+                    warning("No data found for that user and time period."), delete_after=30, reference=ctx.author
+                )
                 return
 
-        guild = ctx.guild
-        log_files = glob.glob(os.path.join(PATH, str(guild.id), "*.log"))
-        # remove audit log entries
-        log_files = [log for log in log_files if "guild" not in log]
+            files = [
+                discord.File(data_file, filename=f"{member.display_name}_graph_data.csv"),
+                discord.File(figure_file, filename=f"{member.display_name}_voice_graph.png"),
+            ]
 
-        if interval:
-            end_time = datetime.utcnow() - interval
-        else:
-            end_time = date
+            await ctx.send(files=files, reference=ctx.message)
 
-        async with ctx.channel.typing():
-            # get messages split by channel
-            messages = await self.loop.run_in_executor(
-                None,
-                functools.partial(
-                    self.log_handler,
-                    log_files,
-                    end_time,
-                    split_channels=True,
-                ),
-            )
+    @graphstats_voice.command(name="channel")
+    async def graphstats_users_voice(
+        self,
+        ctx,
+        channel: Union[discord.VoiceChannel, discord.StageChannel],
+        *,
+        till: str,
+    ):
+        """
+        Gives activity in minutes of every user in a voice channel for a specific time period
 
-            ### set up data dictionary
-            voice_minutes = {}
-            to_delete = []
-            # make sure to include only voice channels
-            for ch_id in messages.keys():
-                channel = guild.get_channel(ch_id)
-                # channel may be deleted, but still want to include message data
-                if not isinstance(channel, discord.VoiceChannel):
-                    to_delete.append(ch_id)
-                    continue
-                voice_minutes[ch_id] = 0
-            # delete text channels
-            for ch_id in to_delete:
-                del messages[ch_id]
+        `till` can be a date, an interval, or two different dates split by a **__semicolon__**
 
-            def process_messages():
-                # calculate number of messages for the user for every split
-                for ch_id, msgs in messages.items():
-                    join_at = None
-                    for message in msgs:
-                        if f"(id {str(user.id)})" not in message:
-                            continue
+        **Times in graph are all in UTC**
 
-                        if "Voice channel join:" in message:
-                            join_at = parse_time_naive(message[:19])
-                        elif "Voice channel leave:" in message and join_at is not None:
-                            leave = parse_time_naive(message[:19])
-                            voice_minutes[ch_id] += int((leave - join_at).total_seconds() / 60)
-                            join_at = None
+        Dates/times look like:
+        - February 14 at 6pm EDT
+        - 2019-04-13 06:43:00 PST
+        - 01/20/18 at 21:00:43
 
-            await self.loop.run_in_executor(
-                None,
-                functools.partial(
-                    process_messages,
-                ),
-            )
+        times default to UTC if no timezone provided
 
-            # voice channels and minutes spent in channel per channel
-            df = pd.DataFrame(index=voice_minutes.keys(), data=voice_minutes.values(), columns=["voice_minutes"])
+        Example with 2 dates:
+        - 2021-01-01 11:11:00 EDT;2021-01-01 12:00:00 EDT
 
-            # change channel ids to real names, or leave as delete channel
-            names = {}
-            for i, ch_id in enumerate(voice_minutes.keys()):
-                channel = guild.get_channel(ch_id)
-                names[ch_id] = channel.name if channel else f"Deleted Channel {i+1}"
-            df = df.rename(index=names)
-            df.index.name = "channel"
+         Intervals look like:
+            5 minutes
+            1 minute 30 seconds
+            1 hour
+            2 days
+            30 days
+            5h30m
+        """
+        start_time, end_time = self.interval_parser(till)
+        if not start_time:
+            await ctx.send(error("Invalid date or interval! Try again."), delete_after=30, reference=ctx.message)
+            return
 
-            # drop channels with no data (all zeros) and check if theres still data
-            df = df.loc[df["voice_minutes"] != 0]
-            if len(df) < 1:
-                await ctx.send(warning("There is no messages from that user in the time period you specified."))
+        handler = self.database_handlers[ctx.guild.id]
+        # get logs
+        columns = [
+            "datetime",
+            "author_id",
+            "channel_id",
+            "action_type",
+            "state",
+            "moved_to_id",
+        ]
+        filters = {
+            "datetime": {"gte": start_time, "lte": end_time},
+            "action_type": {"in": ["join", "leave", "move"]},
+            "or": [{"channel_id": channel.id}, {"moved_to_id": channel.id}],
+        }
+        async with ctx.typing():
+            data = await handler.run_in_thread(handler.query, "voice", columns, filters=filters)
+            data = sorted(data, key=lambda r: r["datetime"])
+
+            data_file, figure_file = await asyncio.to_thread(plot_users_in_voice_channel, data, self.bot, channel)
+            if not data_file or not figure_file:
+                await ctx.send(
+                    warning("No data found for that channel and time period."), delete_after=30, reference=ctx.author
+                )
                 return
 
-            # make graph and send it
-            fontsize = 30
-            fig = plt.figure(figsize=(50, 30))
-            ax = plt.axes()
+            files = [
+                discord.File(data_file, filename=f"{channel.name}_graph_data.csv"),
+                discord.File(figure_file, filename=f"{channel.name}_voice_graph.png"),
+            ]
 
-            # define graph and table save paths
-            save_path = str(PATH / f"plot_{ctx.message.id}.png")
-            table_save_path = str(PATH / f"plot_data_{ctx.message.id}.txt")
-
-            plt.bar(["\n".join(str(s).split(" ")) for s in df.index], df["voice_minutes"], width=0.5, align="center")
-
-            # make graph look nice
-            plt.title(
-                f"{user} voice history from {end_time} to now, Total: {int(df['voice_minutes'].sum())} minutes",
-                fontsize=fontsize,
-            )
-            plt.xlabel("Channel", fontsize=fontsize)
-            plt.ylabel("Time spent in voice chat (minutes)", fontsize=fontsize)
-            plt.xticks(fontsize=fontsize)
-            plt.yticks(fontsize=fontsize)
-            plt.grid(True)
-
-            fig.tight_layout()
-
-            fig.savefig(save_path, dpi=fig.dpi)
-            plt.close()
-
-        df.to_csv(table_save_path, index=True)
-
-        with open(save_path, "rb") as f, open(table_save_path, "r") as t:
-            files = (discord.File(f, filename="graph.png"), discord.File(t, filename="graph_data.csv"))
-            await ctx.send(files=files)
-
-        os.remove(save_path)
-        os.remove(table_save_path)
+            await ctx.send(files=files, reference=ctx.message)
 
     @graphstats.command(name="text")
-    async def user_stats_graph(self, ctx, user: discord.Member, split: str, *, till: str):
+    async def user_stats_graph(self, ctx: commands.Context, member: discord.Member, split: str, *, till: str):
         """
         Create a graph of a users activity over time for text channels.
 
         `split` is how to split the data on the graph, like per hour, per day, etc.
         Possible values are:
-            "h" for hourly
-            "d" for daily
-            "w" for weekly
-            "m" for monthly
-            "y" for yearly
+        - "h" for hourly
+        - "d" for daily
+        - "w" for weekly
+        - "m" for monthly
+        - "y" for yearly
 
-        `till` can be a date or interval
+        `till` can be a date, an interval, or two different dates split by a **__semicolon__**
 
         **Times in graph are all in UTC**
 
         Dates/times look like:
-            February 14 at 6pm EDT
-            2019-04-13 06:43:00 PST
-            01/20/18 at 21:00:43
+        - February 14 at 6pm EDT
+        - 2019-04-13 06:43:00 PST
+        - 01/20/18 at 21:00:43
 
         times default to UTC if no timezone provided
+
+        Example with 2 dates:
+        - 2021-01-01 11:11:00 EDT;2021-01-01 12:00:00 EDT
 
          Intervals look like:
             5 minutes
@@ -558,257 +2002,74 @@ class ActivityLogger(commands.Cog):
             2 days
             30 days
             5h30m
-            (etc)
         """
-        interval = parse_timedelta(till)
-        date = None
-        if not interval:
-            try:
-                date = parse_time(till).replace(tzinfo=None)
-            except:
-                await ctx.send("Invalid date or interval! Try again.")
-                return
-
-        split = split.lower()
-        if split not in ["h", "d", "w", "m", "y"]:
-            await ctx.send("Invalid split! Try again.")
+        start_time, end_time = self.interval_parser(till)
+        if not start_time:
+            await ctx.send(error("Invalid date or interval! Try again."), delete_after=30, reference=ctx.message)
             return
+        handler = self.database_handlers[ctx.guild.id]
+        columns = [
+            "message_id",
+            "channel_id",
+            "author_id",
+            "datetime",
+        ]
 
-        guild = ctx.guild
-        log_files = glob.glob(os.path.join(PATH, str(guild.id), "*.log"))
-        # remove audit log entries
-        log_files = [log for log in log_files if "guild" not in log]
+        filters = {
+            "datetime": {"gte": start_time, "lte": end_time},
+            "author_id": member.id,
+        }
+        async with ctx.typing():
+            data = await handler.run_in_thread(handler.query, "messages", columns, filters=filters)
+            data = sorted(data, key=lambda r: r["datetime"])
 
-        if interval:
-            end_time = datetime.utcnow() - interval
-        else:
-            end_time = date
-
-        async with ctx.channel.typing():
-            # get messages split by channel
-            messages = await self.loop.run_in_executor(
-                None,
-                functools.partial(
-                    self.log_handler,
-                    log_files,
-                    end_time,
-                    split_channels=True,
-                ),
+            data_file, figure_file = await asyncio.to_thread(
+                plot_text_activity_over_time,
+                data,
+                ctx.guild,
+                member=member,
+                top_n_channels=5,
+                date_granularity=split.lower(),
             )
-
-            ### set up data dictionary
-            num_messages = {}
-            to_delete = []
-            # make sure to include only text channels
-            for ch_id in messages.keys():
-                channel = guild.get_channel(ch_id)
-                # channel may be deleted, but still want to include message data
-                if isinstance(channel, discord.VoiceChannel):
-                    to_delete.append(ch_id)
-                    continue
-                num_messages[ch_id] = 0
-            # delete voice channels
-            for ch_id in to_delete:
-                del messages[ch_id]
-
-            data = {"times": [], "num_messages": []}
-            # add all the possible times based on the split
-            # first for each one zero out now time to the minute, day, etc
-            # then go through and add all possible times to get data for
-            now = datetime.utcnow()
-            if split == "h":
-                now -= relativedelta(minute=0, second=0, microsecond=0)
-                end_time -= relativedelta(minute=0, second=0, microsecond=0)
-                while now >= end_time:
-                    data["times"].append(now)
-                    data["num_messages"].append(num_messages.copy())
-                    now = now - relativedelta(hours=1)
-            elif split == "d":
-                now -= relativedelta(hour=0, minute=0, second=0, microsecond=0)
-                end_time -= relativedelta(hour=0, minute=0, second=0, microsecond=0)
-                while now >= end_time:
-                    data["times"].append(now)
-                    data["num_messages"].append(num_messages.copy())
-                    now = now - relativedelta(days=1)
-            elif split == "w":
-                now -= relativedelta(days=now.weekday(), hour=0, minute=0, second=0, microsecond=0)
-                end_time -= relativedelta(days=end_time.weekday(), hour=0, minute=0, second=0, microsecond=0)
-                while now >= end_time:
-                    data["times"].append(now)
-                    data["num_messages"].append(num_messages.copy())
-                    now = now - relativedelta(weeks=1)
-            elif split == "m":
-                now -= relativedelta(day=1, hour=0, minute=0, second=0, microsecond=0)
-                end_time -= relativedelta(day=1, hour=0, minute=0, second=0, microsecond=0)
-                while now >= end_time:
-                    data["times"].append(now)
-                    data["num_messages"].append(num_messages.copy())
-                    now = now - relativedelta(months=1)
-            elif split == "y":
-                now -= relativedelta(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
-                end_time -= relativedelta(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
-                while now >= end_time:
-                    data["times"].append(now)
-                    data["num_messages"].append(num_messages.copy())
-                    now = now - relativedelta(years=1)
-
-            if not data["times"]:
+            if not data_file or not figure_file:
                 await ctx.send(
-                    error("Your split is too large for the time provided, try a smaller split or longer time.")
+                    warning("No data found for that user and time period."), delete_after=30, reference=ctx.author
                 )
                 return
 
-            data["times"].reverse()
+            files = [
+                discord.File(data_file, filename=f"{member.display_name}_graph_data.csv"),
+                discord.File(figure_file, filename=f"{member.display_name}_text_graph.png"),
+            ]
 
-            def process_messages():
-                # calculate number of messages for the user for every split
-                for ch_id, msgs in messages.items():
-                    for message in msgs:
-                        if f"(id:{str(user.id)})" not in message:
-                            continue
-                        # grab time of the message
-                        current_time = parse_time_naive(message[:19])
-                        # find what time to put it in using binary search
-                        index = bisect_left(data["times"], current_time) - 1
-                        # add message to channel
-                        data["num_messages"][index][ch_id] += 1
-
-            await self.loop.run_in_executor(
-                None,
-                functools.partial(
-                    process_messages,
-                ),
-            )
-
-            df = pd.DataFrame(data)
-            # make dict of num_messages into columns for every channel
-            df = pd.concat([df.drop("num_messages", axis=1), df["num_messages"].apply(pd.Series)], axis=1)
-            # calculate total messages for each time.
-            df["Total"] = df.drop("times", axis=1).sum(axis=1)
-
-            # change channel ids to real names, or leave as delete channel
-            names = {}
-            for i, ch_id in enumerate(data["num_messages"][0].keys()):
-                channel = guild.get_channel(ch_id)
-                names[ch_id] = channel.name if channel else f"Deleted Channel {i+1}"
-            df = df.rename(columns=names)
-
-            # set index
-            df = df.set_index("times")
-
-            # drop channels with no data (all zeros) and check if theres still data
-            df = df.loc[:, (df != 0).any(axis=0)]
-            if len(df.columns) < 2:
-                await ctx.send(warning("There is no messages from that user in the time period you specified."))
-                return
-
-        top_n = len(df.columns) - 1
-        if len(df.columns) > 2:
-            user_input = True
-            while user_input:
-                await ctx.send(
-                    info(
-                        f"There are {len(df.columns) - 1} channels, how many would you like displayed on the graph? (If there are alot of channels the graph may be harder to read).\n\nIf you want all channels to be displayed type `all`, else type the number of channels you want displayed. The channels with the highest number of messages will be chosen."
-                    ),
-                    delete_after=120,
-                )
-                pred = MessagePredicate.same_context(ctx)
-                try:
-                    msg = await self.bot.wait_for("message", check=pred, timeout=121)
-                except asyncio.TimeoutError:
-                    await ctx.send(error("Took too long, cancelling graph!"), delete_after=30)
-                    return
-
-                if msg.content.lower().strip() != "all":
-                    try:
-                        top_n = int(msg.content.strip())
-                        if top_n < 1 or top_n > len(df.columns) - 1:
-                            raise ValueError()
-                        user_input = False
-                    except:
-                        await ctx.send(
-                            error(
-                                f"Invalid number, please enter a positive number greater than or equal to 1 and less than or equal to {len(df.columns) - 1}!"
-                            ),
-                            delete_after=30,
-                        )
-                        continue
-                else:
-                    user_input = False
-
-        # make graph and send it
-        fontsize = 30
-        fig = plt.figure(figsize=(50, 30))
-        ax = plt.axes()
-
-        # set date formater for x axis
-        xtick_locator = AutoDateLocator()
-        ax.xaxis.set_major_locator(xtick_locator)
-        ax.xaxis.set_major_formatter(AutoDateFormatter(xtick_locator))
-
-        # define graph and table save paths
-        save_path = str(PATH / f"plot_{ctx.message.id}.png")
-        table_save_path = str(PATH / f"plot_data_{ctx.message.id}.txt")
-
-        # get columns to drop for graphing only
-        sums = df.sum().sort_values(ascending=False)
-        if top_n != len(df.columns) - 1:
-            graph_cols = sums[: top_n + 1]
-        else:
-            graph_cols = sums
-
-        # plot each column
-        for col_name, col_data in df.iteritems():
-            if col_name == "times" or col_name not in graph_cols.index:
-                continue
-            plt.plot(df.index, col_name, data=df, linewidth=3, marker="o", markersize=8)
-
-        # make graph look nice
-        plt.title(f"{user} message history from {end_time} to now", fontsize=fontsize)
-        plt.xlabel("dates (UTC)", fontsize=fontsize)
-        plt.ylabel("messages", fontsize=fontsize)
-        plt.xticks(fontsize=fontsize)
-        plt.yticks(fontsize=fontsize)
-        plt.grid(True)
-
-        plt.legend(bbox_to_anchor=(1.00, 1.0), loc="upper left", prop={"size": 30})
-        fig.tight_layout()
-
-        fig.savefig(save_path, dpi=fig.dpi)
-        plt.close()
-
-        df.to_csv(table_save_path, index=True)
-
-        with open(save_path, "rb") as f, open(table_save_path, "r") as t:
-            files = (discord.File(f, filename="graph.png"), discord.File(t, filename="graph_data.csv"))
-            await ctx.send(files=files)
-
-        os.remove(save_path)
-        os.remove(table_save_path)
+            await ctx.send(files=files, reference=ctx.message)
 
     @graphstats.command(name="leaves")
-    async def graphstats_leaves(self, ctx, split: str, *, till: str):
+    async def graphstats_leaves(self, ctx: commands.Context, split: str, *, till: str):
         """
         Plot server joins and leaves for time period.
 
         `split` is how to split the data on the graph, like per hour, per day, etc.
         Possible values are:
-            "h" for hourly
-            "d" for daily
-            "w" for weekly
-            "m" for monthly
-            "y" for yearly
+        - "h" for hourly
+        - "d" for daily
+        - "w" for weekly
+        - "m" for monthly
+        - "y" for yearly
 
-        `till` can be a date or interval
+        `till` can be a date, an interval, or two different dates split by a **__semicolon__**
 
         **Times in graph are all in UTC**
 
         Dates/times look like:
-            February 14 at 6pm EDT
-            2019-04-13 06:43:00 PST
-            01/20/18 at 21:00:43
+        - February 14 at 6pm EDT
+        - 2019-04-13 06:43:00 PST
+        - 01/20/18 at 21:00:43
 
         times default to UTC if no timezone provided
+
+        Example with 2 dates:
+        - 2021-01-01 11:11:00 EDT;2021-01-01 12:00:00 EDT
 
          Intervals look like:
             5 minutes
@@ -817,187 +2078,66 @@ class ActivityLogger(commands.Cog):
             2 days
             30 days
             5h30m
-            (etc)
         """
-        interval = parse_timedelta(till)
-        date = None
-        if not interval:
-            try:
-                date = parse_time(till).replace(tzinfo=None)
-            except:
-                await ctx.send("Invalid date or interval! Try again.")
-                return
-
-        split = split.lower()
-        if split not in ["h", "d", "w", "m", "y"]:
-            await ctx.send("Invalid split! Try again.")
+        start_time, end_time = self.interval_parser(till)
+        if not start_time:
+            await ctx.send(error("Invalid date or interval! Try again."), delete_after=30, reference=ctx.message)
             return
 
-        guild = ctx.guild
-        log_files = glob.glob(os.path.join(PATH, str(guild.id), "*guild*.log"))
-
-        if interval:
-            end_time = datetime.utcnow() - interval
-        else:
-            end_time = date
-
-        async with ctx.channel.typing():
-            # get messages split by channel
-            audit_messages = await self.loop.run_in_executor(
-                None,
-                functools.partial(
-                    self.log_handler,
-                    log_files,
-                    end_time,
-                ),
-            )
-
-            # filter out unneeded messages
-            audit_messages = [m for m in audit_messages if "Member leave:" in m or "Member join:" in m]
-
-            data = {"times": [], "joins": [], "leaves": []}
-            # add all the possible times based on the split
-            # first for each one zero out now time to the minute, day, etc
-            # then go through and add all possible times to get data for
-            now = datetime.utcnow()
-            if split == "h":
-                now -= relativedelta(minute=0, second=0, microsecond=0)
-                end_time -= relativedelta(minute=0, second=0, microsecond=0)
-                while now >= end_time:
-                    data["times"].append(now)
-                    data["joins"].append(0)
-                    data["leaves"].append(0)
-                    now = now - relativedelta(hours=1)
-            elif split == "d":
-                now -= relativedelta(hour=0, minute=0, second=0, microsecond=0)
-                end_time -= relativedelta(hour=0, minute=0, second=0, microsecond=0)
-                while now >= end_time:
-                    data["times"].append(now)
-                    data["joins"].append(0)
-                    data["leaves"].append(0)
-                    now = now - relativedelta(days=1)
-            elif split == "w":
-                now -= relativedelta(days=now.weekday(), hour=0, minute=0, second=0, microsecond=0)
-                end_time -= relativedelta(days=end_time.weekday(), hour=0, minute=0, second=0, microsecond=0)
-                while now >= end_time:
-                    data["times"].append(now)
-                    data["joins"].append(0)
-                    data["leaves"].append(0)
-                    now = now - relativedelta(weeks=1)
-            elif split == "m":
-                now -= relativedelta(day=1, hour=0, minute=0, second=0, microsecond=0)
-                end_time -= relativedelta(day=1, hour=0, minute=0, second=0, microsecond=0)
-                while now >= end_time:
-                    data["times"].append(now)
-                    data["joins"].append(0)
-                    data["leaves"].append(0)
-                    now = now - relativedelta(months=1)
-            elif split == "y":
-                now -= relativedelta(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
-                end_time -= relativedelta(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
-                while now >= end_time:
-                    data["times"].append(now)
-                    data["joins"].append(0)
-                    data["leaves"].append(0)
-                    now = now - relativedelta(years=1)
-
-            if not data["times"]:
+        handler = self.database_handlers[ctx.guild.id]
+        columns = [
+            "id",
+            "datetime",
+            "action",
+            "author_id",
+        ]
+        filters = {
+            "datetime": {"gte": start_time, "lte": end_time},
+            "action": {"in": ["member_join", "member_leave", "kick", "ban"]},
+        }
+        async with ctx.typing():
+            data = await handler.run_in_thread(handler.query, "audit", columns, filters=filters)
+            data = sorted(data, key=lambda r: r["datetime"])
+            data_file, figure_file = await asyncio.to_thread(plot_guild_joins_and_leaves, data, split.lower())
+            if not data_file or not figure_file:
                 await ctx.send(
-                    error("Your split is too large for the time provided, try a smaller split or longer time.")
+                    warning("No data found for that user and time period."), delete_after=30, reference=ctx.author
                 )
                 return
 
-            data["times"].reverse()
+            files = [
+                discord.File(data_file, filename=f"retention_graph_data.csv"),
+                discord.File(figure_file, filename=f"retention_graph.png"),
+            ]
 
-            def process_messages():
-                # calculate number of messages for the user for every split
-                for message in audit_messages:
-                    # grab time of the message
-                    current_time = parse_time_naive(message[:19])
-                    # find what time to put it in using binary search
-                    index = bisect_left(data["times"], current_time) - 1
-
-                    if "Member leave:" in message:
-                        data["leaves"][index] += 1
-                    else:
-                        data["joins"][index] += 1
-
-            await self.loop.run_in_executor(
-                None,
-                functools.partial(
-                    process_messages,
-                ),
-            )
-
-            df = pd.DataFrame(data)
-
-            # set index
-            df = df.set_index("times")
-
-            # make graph and send it
-            fontsize = 30
-            fig = plt.figure(figsize=(50, 30))
-            ax = plt.axes()
-
-            # set date formater for x axis
-            xtick_locator = AutoDateLocator()
-            ax.xaxis.set_major_locator(xtick_locator)
-            ax.xaxis.set_major_formatter(AutoDateFormatter(xtick_locator))
-
-            # define graph and table save paths
-            save_path = str(PATH / f"plot_{ctx.message.id}.png")
-            table_save_path = str(PATH / f"plot_data_{ctx.message.id}.txt")
-
-            # plot each column
-            for col_name, _ in df.iteritems():
-                plt.plot(df.index, col_name, data=df, linewidth=3, marker="o", markersize=8)
-
-            # make graph look nice
-            plt.title(f"{guild} leaves and joins from {end_time} to now", fontsize=fontsize)
-            plt.xlabel("dates (UTC)", fontsize=fontsize)
-            plt.ylabel("# of people", fontsize=fontsize)
-            plt.xticks(fontsize=fontsize)
-            plt.yticks(fontsize=fontsize)
-            plt.grid(True)
-
-            plt.legend(bbox_to_anchor=(1.00, 1.0), loc="upper left", prop={"size": 30})
-            fig.tight_layout()
-
-            fig.savefig(save_path, dpi=fig.dpi)
-            plt.close()
-
-        df.to_csv(table_save_path, index=True)
-
-        with open(save_path, "rb") as f, open(table_save_path, "r") as t:
-            files = (discord.File(f, filename="graph.png"), discord.File(t, filename="graph_data.csv"))
-            await ctx.send(files=files)
-
-        os.remove(save_path)
-        os.remove(table_save_path)
+            await ctx.send(files=files, reference=ctx.message)
 
     @graphstats.command(name="activity")
-    async def graphstats_activity(self, ctx, split: str, *, till: str):
+    async def graphstats_activity(self, ctx: commands.Context, split: str, *, till: str):
         """
         Create a graph that shows per channel activity
 
         `split` is how to split the data on the graph, like per hour, per day, etc.
         Possible values are:
-            "h" for hourly
-            "d" for daily
-            "w" for weekly
-            "m" for monthly
-            "y" for yearly
+        - "h" for hourly
+        - "d" for daily
+        - "w" for weekly
+        - "m" for monthly
+        - "y" for yearly
 
-        `till` can be a date or interval
+        `till` can be a date, an interval, or two different dates split by a **__semicolon__**
 
         **Times in graph are all in UTC**
 
         Dates/times look like:
-            February 14 at 6pm EDT
-            2019-04-13 06:43:00 PST
-            01/20/18 at 21:00:43
+        - February 14 at 6pm EDT
+        - 2019-04-13 06:43:00 PST
+        - 01/20/18 at 21:00:43
 
         times default to UTC if no timezone provided
+
+        Example with 2 dates:
+        - 2021-01-01 11:11:00 EDT;2021-01-01 12:00:00 EDT
 
          Intervals look like:
             5 minutes
@@ -1006,482 +2146,44 @@ class ActivityLogger(commands.Cog):
             2 days
             30 days
             5h30m
-            (etc)
         """
-        interval = parse_timedelta(till)
-        date = None
-        guild = ctx.guild
-        if not interval:
-            try:
-                date = parse_time(till).replace(tzinfo=None)
-            except:
-                await ctx.send("Invalid date or interval! Try again.")
-                return
-
-        split = split.lower()
-        if split not in ["h", "d", "w", "m", "y"]:
-            await ctx.send("Invalid split! Try again.")
+        start_time, end_time = self.interval_parser(till)
+        if not start_time:
+            await ctx.send(error("Invalid date or interval! Try again."), delete_after=30, reference=ctx.message)
             return
 
-        # select channels to graph
-        await ctx.send(
-            info(
-                f"Please list all the channels you wish to graph activity for. They must be **text channels**. Seperate each channel with a `,` (comma). You can use channel mentions, channel IDs, or their name."
-            ),
-            delete_after=240,
-        )
-        pred = MessagePredicate.same_context(ctx)
-        try:
-            msg = await self.bot.wait_for("message", check=pred, timeout=241)
-        except asyncio.TimeoutError:
-            await ctx.send(error("Took too long, cancelling graph!"), delete_after=30)
-            return
+        handler = self.database_handlers[ctx.guild.id]
+        columns = [
+            "message_id",
+            "channel_id",
+            "author_id",
+            "datetime",
+        ]
 
-        channels = [m.strip().strip("<").strip(">").strip("#") for m in msg.content.split(",")]
-        channel_objs = []
-        for ch in channels:
-            try:
-                channel = guild.get_channel(int(ch))
-            except:
-                channel = discord.utils.find(lambda c: c.name == ch, guild.text_channels)
-                if channel is None:
-                    await ctx.send(error(f"Unknown channel: `{ch}`, please run the command again."))
-                    return
+        filters = {
+            "datetime": {"gte": start_time, "lte": end_time},
+        }
+        async with ctx.typing():
+            data = await handler.run_in_thread(handler.query, "messages", columns, filters=filters)
+            data = sorted(data, key=lambda r: r["datetime"])
 
-            channel_objs.append(channel)
-
-        # get logs for specified channels
-        log_files = glob.glob(os.path.join(PATH, str(guild.id), "*.log"))
-        # remove audit log entries
-        log_files = [log for log in log_files if "guild" not in log]
-
-        # remove non-specified channels
-        to_remove = []
-        for l in log_files:
-            found = False
-            for ch in channel_objs:
-                if str(ch.id) not in l:
-                    continue
-                found = True
-                break
-
-            if not found:
-                to_remove.append(l)
-
-        log_files = [log for log in log_files if log not in to_remove]
-
-        if interval:
-            end_time = datetime.utcnow() - interval
-        else:
-            end_time = date
-
-        async with ctx.channel.typing():
-            # get messages split by channel
-            messages = await self.loop.run_in_executor(
-                None,
-                functools.partial(
-                    self.log_handler,
-                    log_files,
-                    end_time,
-                    split_channels=True,
-                ),
+            data_file, figure_file = await asyncio.to_thread(
+                plot_text_activity_over_time,
+                data,
+                ctx.guild,
+                top_n_channels=5,
+                date_granularity=split.lower(),
             )
-
-            ### set up data dictionary
-            num_messages = {}
-            # make sure to include only text channels
-            for ch_id in messages.keys():
-                num_messages[ch_id] = 0
-
-            data = {"times": [], "num_messages": []}
-            # add all the possible times based on the split
-            # first for each one zero out now time to the minute, day, etc
-            # then go through and add all possible times to get data for
-            now = datetime.utcnow()
-            if split == "h":
-                now -= relativedelta(minute=0, second=0, microsecond=0)
-                end_time -= relativedelta(minute=0, second=0, microsecond=0)
-                while now >= end_time:
-                    data["times"].append(now)
-                    data["num_messages"].append(num_messages.copy())
-                    now = now - relativedelta(hours=1)
-            elif split == "d":
-                now -= relativedelta(hour=0, minute=0, second=0, microsecond=0)
-                end_time -= relativedelta(hour=0, minute=0, second=0, microsecond=0)
-                while now >= end_time:
-                    data["times"].append(now)
-                    data["num_messages"].append(num_messages.copy())
-                    now = now - relativedelta(days=1)
-            elif split == "w":
-                now -= relativedelta(days=now.weekday(), hour=0, minute=0, second=0, microsecond=0)
-                end_time -= relativedelta(days=end_time.weekday(), hour=0, minute=0, second=0, microsecond=0)
-                while now >= end_time:
-                    data["times"].append(now)
-                    data["num_messages"].append(num_messages.copy())
-                    now = now - relativedelta(weeks=1)
-            elif split == "m":
-                now -= relativedelta(day=1, hour=0, minute=0, second=0, microsecond=0)
-                end_time -= relativedelta(day=1, hour=0, minute=0, second=0, microsecond=0)
-                while now >= end_time:
-                    data["times"].append(now)
-                    data["num_messages"].append(num_messages.copy())
-                    now = now - relativedelta(months=1)
-            elif split == "y":
-                now -= relativedelta(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
-                end_time -= relativedelta(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
-                while now >= end_time:
-                    data["times"].append(now)
-                    data["num_messages"].append(num_messages.copy())
-                    now = now - relativedelta(years=1)
-
-            if not data["times"]:
-                await ctx.send(
-                    error("Your split is too large for the time provided, try a smaller split or longer time.")
-                )
+            if not data_file or not figure_file:
+                await ctx.send(warning("No data found for that time period."), delete_after=30, reference=ctx.author)
                 return
 
-            data["times"].reverse()
-
-            def process_messages():
-                # calculate number of messages for the user for every split
-                for ch_id, msgs in messages.items():
-                    for message in msgs:
-                        # grab time of the message
-                        try:
-                            current_time = parse_time_naive(message[:19])
-                        except:
-                            continue
-                        # find what time to put it in using binary search
-                        index = bisect_left(data["times"], current_time) - 1
-                        # add message to channel
-                        data["num_messages"][index][ch_id] += 1
-
-            await self.loop.run_in_executor(
-                None,
-                functools.partial(
-                    process_messages,
-                ),
-            )
-
-            df = pd.DataFrame(data)
-            # make dict of num_messages into columns for every channel
-            df = pd.concat([df.drop("num_messages", axis=1), df["num_messages"].apply(pd.Series)], axis=1)
-
-            # change channel ids to real names, or leave as delete channel
-            names = {}
-            for i, ch_id in enumerate(data["num_messages"][0].keys()):
-                channel = guild.get_channel(ch_id)
-                names[ch_id] = channel.name if channel else f"Deleted Channel {i+1}"
-            df = df.rename(columns=names)
-
-            # set index
-            df = df.set_index("times")
-
-            # make graph and send it
-            fontsize = 30
-            fig = plt.figure(figsize=(50, 30))
-            ax = plt.axes()
-
-            # set date formater for x axis
-            xtick_locator = AutoDateLocator()
-            ax.xaxis.set_major_locator(xtick_locator)
-            ax.xaxis.set_major_formatter(AutoDateFormatter(xtick_locator))
-
-            # define graph and table save paths
-            save_path = str(PATH / f"plot_{ctx.message.id}.png")
-            table_save_path = str(PATH / f"plot_data_{ctx.message.id}.txt")
-
-            # plot each column
-            for col_name, col_data in df.iteritems():
-                plt.plot(df.index, col_name, data=df, linewidth=3, marker="o", markersize=8)
-
-            # make graph look nice
-            plt.title(f"{guild} message history from {end_time} to now", fontsize=fontsize)
-            plt.xlabel("dates (UTC)", fontsize=fontsize)
-            plt.ylabel("messages", fontsize=fontsize)
-            plt.xticks(fontsize=fontsize)
-            plt.yticks(fontsize=fontsize)
-            plt.grid(True)
-
-            plt.legend(bbox_to_anchor=(1.00, 1.0), loc="upper left", prop={"size": 30})
-            fig.tight_layout()
-
-            fig.savefig(save_path, dpi=fig.dpi)
-            plt.close()
-
-        df.to_csv(table_save_path, index=True)
-
-        with open(save_path, "rb") as f, open(table_save_path, "r") as t:
-            files = (discord.File(f, filename="graph.png"), discord.File(t, filename="graph_data.csv"))
-            await ctx.send(files=files)
-
-        os.remove(save_path)
-        os.remove(table_save_path)
-
-    @graphstats.group(name="users")
-    async def graphstats_users(self, ctx):
-        """
-        Graph most active users for channel and entire guild
-        """
-        pass
-
-    @graphstats_users.command(name="channel")
-    async def graphstats_users_channel(self, ctx, channel: discord.TextChannel, *, till: str):
-        """
-        Create a graph of the most active users in a channel
-
-        `till` can be a date or interval
-
-        **Times in graph are all in UTC**
-
-        Dates/times look like:
-            February 14 at 6pm EDT
-            2019-04-13 06:43:00 PST
-            01/20/18 at 21:00:43
-
-        times default to UTC if no timezone provided
-
-         Intervals look like:
-            5 minutes
-            1 minute 30 seconds
-            1 hour
-            2 days
-            30 days
-            5h30m
-            (etc)
-        """
-        interval = parse_timedelta(till)
-        date = None
-        guild = ctx.guild
-        if not interval:
-            try:
-                date = parse_time(till).replace(tzinfo=None)
-            except:
-                await ctx.send("Invalid date or interval! Try again.")
-                return
-
-        # get logs for specified channels
-        log_files = glob.glob(os.path.join(PATH, str(guild.id), "*.log"))
-        # remove audit log entries
-        log_files = [log for log in log_files if "guild" not in log and str(channel.id) in log]
-
-        if interval:
-            end_time = datetime.utcnow() - interval
-        else:
-            end_time = date
-
-        async with ctx.channel.typing():
-            # get messages split by channel
-            messages = await self.loop.run_in_executor(
-                None,
-                functools.partial(
-                    self.log_handler,
-                    log_files,
-                    end_time,
-                ),
-            )
-
-            data = {}
-
-            def process_messages():
-                for message in messages:
-                    # get user id:
-                    try:
-                        user_id = int(message.split("(id:")[1].split(")")[0].strip())
-                    except:
-                        continue
-
-                    user = self.bot.get_user(user_id)
-                    user = user if user is not None else user_id
-
-                    if str(user) not in data:
-                        data[str(user)] = 0
-
-                    data[str(user)] += 1
-
-            await self.loop.run_in_executor(
-                None,
-                functools.partial(
-                    process_messages,
-                ),
-            )
-
-            df = pd.DataFrame(index=data.keys(), data=data.values(), columns=["num_messages"])
-            df.index.name = "user"
-            df = df.sort_values("num_messages", ascending=False)
-
-            # make graph and send it
-            fontsize = 30
-            fig = plt.figure(figsize=(50, 30))
-            ax = plt.axes()
-
-            # define graph and table save paths
-            save_path = str(PATH / f"plot_{ctx.message.id}.png")
-            table_save_path = str(PATH / f"plot_data_{ctx.message.id}.txt")
-
-            graph_data = df.head(10)
-            plt.bar(graph_data.index, graph_data["num_messages"], width=0.5)
-
-            # make graph look nice
-            plt.title(
-                f"Top 10 active users in {channel} from {end_time} till now",
-                fontsize=fontsize,
-            )
-            plt.xlabel("user", fontsize=fontsize)
-            plt.ylabel("# messages", fontsize=fontsize)
-            plt.xticks(graph_data.index, fontsize=fontsize)
-            plt.yticks(fontsize=fontsize)
-            plt.grid(True)
-
-            fig.tight_layout()
-
-            fig.savefig(save_path, dpi=fig.dpi)
-            plt.close()
-
-        df.to_csv(table_save_path, index=True)
-
-        with open(save_path, "rb") as f, open(table_save_path, "r") as t:
-            files = (discord.File(f, filename="graph.png"), discord.File(t, filename="graph_data.csv"))
-            await ctx.send(files=files)
-
-        os.remove(save_path)
-        os.remove(table_save_path)
-
-    @graphstats_users.command(name="guild")
-    async def graphstats_users_guild(self, ctx, *, till: str):
-        """
-        Create a bar graph of most active users in the guild
-
-        `till` can be a date or interval
-
-        **Times in graph are all in UTC**
-
-        Dates/times look like:
-            February 14 at 6pm EDT
-            2019-04-13 06:43:00 PST
-            01/20/18 at 21:00:43
-
-        times default to UTC if no timezone provided
-
-         Intervals look like:
-            5 minutes
-            1 minute 30 seconds
-            1 hour
-            2 days
-            30 days
-            5h30m
-            (etc)
-        """
-        interval = parse_timedelta(till)
-        date = None
-        guild = ctx.guild
-        if not interval:
-            try:
-                date = parse_time(till).replace(tzinfo=None)
-            except:
-                await ctx.send("Invalid date or interval! Try again.")
-                return
-
-        # get logs for specified channels
-        log_files = glob.glob(os.path.join(PATH, str(guild.id), "*.log"))
-        # remove audit log entries
-        log_files = [log for log in log_files if "guild" not in log]
-
-        # remove voice channels
-        text_channel_ids = [str(c.id) for c in guild.text_channels]
-        to_remove = []
-        for l in log_files:
-            found = False
-            for c in text_channel_ids:
-                if c not in l:
-                    continue
-                found = True
-                break
-            if not found:
-                to_remove.append(l)
-
-        log_files = [log for log in log_files if log not in to_remove]
-
-        if interval:
-            end_time = datetime.utcnow() - interval
-        else:
-            end_time = date
-
-        async with ctx.channel.typing():
-            # get messages split by channel
-            messages = await self.loop.run_in_executor(
-                None,
-                functools.partial(
-                    self.log_handler,
-                    log_files,
-                    end_time,
-                ),
-            )
-
-            data = {}
-
-            def process_messages():
-                for message in messages:
-                    # get user id:
-                    try:
-                        user_id = int(message.split("(id:")[1].split(")")[0].strip())
-                    except:
-                        continue
-                    user = self.bot.get_user(user_id)
-                    user = user if user is not None else user_id
-
-                    if str(user) not in data:
-                        data[str(user)] = 0
-
-                    data[str(user)] += 1
-
-            await self.loop.run_in_executor(
-                None,
-                functools.partial(
-                    process_messages,
-                ),
-            )
-
-            df = pd.DataFrame(index=data.keys(), data=data.values(), columns=["num_messages"])
-            df.index.name = "user"
-            df = df.sort_values("num_messages", ascending=False)
-
-            # make graph and send it
-            fontsize = 30
-            fig = plt.figure(figsize=(50, 30))
-            ax = plt.axes()
-
-            # define graph and table save paths
-            save_path = str(PATH / f"plot_{ctx.message.id}.png")
-            table_save_path = str(PATH / f"plot_data_{ctx.message.id}.txt")
-
-            graph_data = df.head(10)
-            plt.bar(graph_data.index, graph_data["num_messages"], width=0.5)
-
-            # make graph look nice
-            plt.title(
-                f"Top 10 active users in {guild} from {end_time} till now",
-                fontsize=fontsize,
-            )
-            plt.xlabel("user", fontsize=fontsize)
-            plt.ylabel("# messages", fontsize=fontsize)
-            plt.xticks(graph_data.index, fontsize=fontsize)
-            plt.yticks(fontsize=fontsize)
-            plt.grid(True)
-
-            fig.tight_layout()
-
-            fig.savefig(save_path, dpi=fig.dpi)
-            plt.close()
-
-        df.to_csv(table_save_path, index=True)
-
-        with open(save_path, "rb") as f, open(table_save_path, "r") as t:
-            files = (discord.File(f, filename="graph.png"), discord.File(t, filename="graph_data.csv"))
-            await ctx.send(files=files)
-
-        os.remove(save_path)
-        os.remove(table_save_path)
+            files = [
+                discord.File(data_file, filename=f"{ctx.guild.name}_graph_data.csv"),
+                discord.File(figure_file, filename=f"{ctx.guild.name}_text_graph.png"),
+            ]
+
+            await ctx.send(files=files, reference=ctx.message)
 
     @graphstats.group(name="hours")
     async def graphstats_hours(self, ctx):
@@ -1491,20 +2193,29 @@ class ActivityLogger(commands.Cog):
         pass
 
     @graphstats_hours.command(name="channel")
-    async def graphstats_hours_channel(self, ctx, channel: discord.TextChannel, *, till: str):
+    async def graphstats_hours_channel(
+        self,
+        ctx: commands.Context,
+        channel: Union[discord.TextChannel, discord.VoiceChannel, discord.Thread],
+        *,
+        till: str,
+    ):
         """
-        Show activate hours for specific text channel.
+        Show active hours for specific text channel.
 
-        `till` can be a date or interval
+        `till` can be a date, an interval, or two different dates split by a **__semicolon__**
 
         **Times in graph are all in UTC**
 
         Dates/times look like:
-            February 14 at 6pm EDT
-            2019-04-13 06:43:00 PST
-            01/20/18 at 21:00:43
+        - February 14 at 6pm EDT
+        - 2019-04-13 06:43:00 PST
+        - 01/20/18 at 21:00:43
 
         times default to UTC if no timezone provided
+
+        Example with 2 dates:
+        - 2021-01-01 11:11:00 EDT;2021-01-01 12:00:00 EDT
 
          Intervals look like:
             5 minutes
@@ -1513,1034 +2224,59 @@ class ActivityLogger(commands.Cog):
             2 days
             30 days
             5h30m
-            (etc)
         """
-        interval = parse_timedelta(till)
-        date = None
-        guild = ctx.guild
-        if not interval:
-            try:
-                date = parse_time(till).replace(tzinfo=None)
-            except:
-                await ctx.send("Invalid date or interval! Try again.")
-                return
-
-        # get logs for specified channels
-        log_files = glob.glob(os.path.join(PATH, str(guild.id), "*.log"))
-        # remove audit log entries
-        log_files = [log for log in log_files if "guild" not in log and str(channel.id) in log]
-
-        if interval:
-            end_time = datetime.utcnow() - interval
-        else:
-            end_time = date
-
-        async with ctx.channel.typing():
-            # get messages split by channel
-            messages = await self.loop.run_in_executor(
-                None,
-                functools.partial(
-                    self.log_handler,
-                    log_files,
-                    end_time,
-                ),
-            )
-
-            # 24 hours, calculate # of messages for each hour of the day
-            data = {"times": [i for i in range(0, 24)], "num_messages": [0 for _ in range(0, 24)]}
-
-            def process_messages():
-                for message in messages:
-                    # get hour:
-                    try:
-                        hour = int(message[11:13])
-                    except:
-                        continue
-                    data["num_messages"][hour] += 1
-
-            await self.loop.run_in_executor(
-                None,
-                functools.partial(
-                    process_messages,
-                ),
-            )
-
-            # voice channels and minutes spent in channel per channel
-            df = pd.DataFrame(data)
-            df = df.set_index("times")
-
-            # make graph and send it
-            fontsize = 30
-            fig = plt.figure(figsize=(50, 30))
-            ax = plt.axes()
-
-            # define graph and table save paths
-            save_path = str(PATH / f"plot_{ctx.message.id}.png")
-            table_save_path = str(PATH / f"plot_data_{ctx.message.id}.txt")
-
-            plt.bar(df.index, df["num_messages"], width=0.5)
-
-            # make graph look nice
-            plt.title(
-                f"Active hours for {channel} from {end_time} till now",
-                fontsize=fontsize,
-            )
-            plt.xlabel("hour", fontsize=fontsize)
-            plt.ylabel("# messages", fontsize=fontsize)
-            plt.xticks(df.index, fontsize=fontsize)
-            plt.yticks(fontsize=fontsize)
-            plt.grid(True)
-
-            fig.tight_layout()
-
-            fig.savefig(save_path, dpi=fig.dpi)
-            plt.close()
-
-        df.to_csv(table_save_path, index=True)
-
-        with open(save_path, "rb") as f, open(table_save_path, "r") as t:
-            files = (discord.File(f, filename="graph.png"), discord.File(t, filename="graph_data.csv"))
-            await ctx.send(files=files)
-
-        os.remove(save_path)
-        os.remove(table_save_path)
-
-    @graphstats_hours.command(name="guild")
-    async def graphstats_hours_guild(self, ctx, *, till: str):
-        """
-        Show activate hours for entire guild.
-
-        `till` can be a date or interval
-
-        **Times in graph are all in UTC**
-
-        Dates/times look like:
-            February 14 at 6pm EDT
-            2019-04-13 06:43:00 PST
-            01/20/18 at 21:00:43
-
-        times default to UTC if no timezone provided
-
-         Intervals look like:
-            5 minutes
-            1 minute 30 seconds
-            1 hour
-            2 days
-            30 days
-            5h30m
-            (etc)
-        """
-        interval = parse_timedelta(till)
-        date = None
-        guild = ctx.guild
-        if not interval:
-            try:
-                date = parse_time(till).replace(tzinfo=None)
-            except:
-                await ctx.send("Invalid date or interval! Try again.")
-                return
-
-        # get logs for specified channels
-        log_files = glob.glob(os.path.join(PATH, str(guild.id), "*.log"))
-
-        # remove audit log entries
-        log_files = [log for log in log_files if "guild" not in log]
-
-        # remove voice channels
-        text_channel_ids = [str(c.id) for c in guild.text_channels]
-        to_remove = []
-        for l in log_files:
-            found = False
-            for c in text_channel_ids:
-                if c not in l:
-                    continue
-                found = True
-                break
-            if not found:
-                to_remove.append(l)
-
-        log_files = [log for log in log_files if log not in to_remove]
-
-        if interval:
-            end_time = datetime.utcnow() - interval
-        else:
-            end_time = date
-
-        async with ctx.channel.typing():
-            # get messages split by channel
-            messages = await self.loop.run_in_executor(
-                None,
-                functools.partial(
-                    self.log_handler,
-                    log_files,
-                    end_time,
-                ),
-            )
-
-            # 24 hours, calculate # of messages for each hour of the day
-            data = {"times": [i for i in range(0, 24)], "num_messages": [0 for _ in range(0, 24)]}
-
-            def process_messages():
-                for message in messages:
-                    # get hour:
-                    try:
-                        hour = int(message[11:13])
-                    except:
-                        continue
-                    data["num_messages"][hour] += 1
-
-            await self.loop.run_in_executor(
-                None,
-                functools.partial(
-                    process_messages,
-                ),
-            )
-
-            df = pd.DataFrame(data)
-            df = df.set_index("times")
-
-            # make graph and send it
-            fontsize = 30
-            fig = plt.figure(figsize=(50, 30))
-
-            # define graph and table save paths
-            save_path = str(PATH / f"plot_{ctx.message.id}.png")
-            table_save_path = str(PATH / f"plot_data_{ctx.message.id}.txt")
-
-            plt.bar(df.index, df["num_messages"], width=0.5)
-
-            # make graph look nice
-            plt.title(
-                f"Active hours for {guild} from {end_time} till now",
-                fontsize=fontsize,
-            )
-            plt.xlabel("hour", fontsize=fontsize)
-            plt.ylabel("# messages", fontsize=fontsize)
-            plt.xticks(df.index, fontsize=fontsize)
-            plt.yticks(fontsize=fontsize)
-            plt.grid(True)
-
-            fig.tight_layout()
-
-            fig.savefig(save_path, dpi=fig.dpi)
-            plt.close()
-
-        df.to_csv(table_save_path, index=True)
-
-        with open(save_path, "rb") as f, open(table_save_path, "r") as t:
-            files = (discord.File(f, filename="graph.png"), discord.File(t, filename="graph_data.csv"))
-            await ctx.send(files=files)
-
-        os.remove(save_path)
-        os.remove(table_save_path)
-
-    @graphstats.command(name="retention")
-    async def graphstats_retention(self, ctx):
-        """
-        Graph a histogram of how long members have been in the guild
-        """
-        guild = ctx.guild
-
-        data = {}
-        for member in guild.members:
-            since_joined = (ctx.message.created_at - member.joined_at).days
-            data[str(member)] = since_joined
-
-        df = pd.DataFrame(index=data.keys(), data=data.values(), columns=["days in server"])
-
-        # make graph and send it
-        fontsize = 30
-        fig = plt.figure(figsize=(50, 30))
-        ax = plt.axes()
-
-        # define graph and table save paths
-        save_path = str(PATH / f"plot_{ctx.message.id}.png")
-        table_save_path = str(PATH / f"plot_data_{ctx.message.id}.txt")
-
-        # split into 20 bins
-        bins = np.linspace(df["days in server"].min(), df["days in server"].max(), num=20)
-        hist = ax.hist(df["days in server"], bins=bins, rwidth=0.5)
-        for i in range(len(bins) - 1):
-            ax.text(hist[1][i], hist[0][i], str(int(hist[0][i])), fontsize=fontsize)
-
-        # make graph look nice
-        plt.title(
-            f"Member retention of all members in {guild}",
-            fontsize=fontsize,
-        )
-        plt.xlabel("days", fontsize=fontsize)
-        plt.ylabel("# of members", fontsize=fontsize)
-        plt.xticks(bins, fontsize=fontsize)
-        plt.yticks(fontsize=fontsize)
-        plt.grid(True)
-
-        fig.tight_layout()
-
-        fig.savefig(save_path, dpi=fig.dpi)
-        plt.close()
-
-        df.to_csv(table_save_path, index=True)
-
-        with open(save_path, "rb") as f, open(table_save_path, "r") as t:
-            files = (discord.File(f, filename="graph.png"), discord.File(t, filename="graph_data.csv"))
-            await ctx.send(files=files)
-
-        os.remove(save_path)
-        os.remove(table_save_path)
-
-    @graphstats.group(name="correlation")
-    async def graphstats_corr(self, ctx):
-        """
-        Graph correlation graphs between users
-        """
-        pass
-
-    @graphstats_corr.command(name="weights")
-    async def graphstats_correlation_weights(self, ctx):
-        """
-        Set weights for correlation calculation
-        """
-        corr_weights = await self.config.guild(ctx.guild).corr_weights()
-        corr_weights_msg = "\n".join([f"{k}: {v}" for k, v in corr_weights.items()])
-        await ctx.send(
-            info(
-                f"Current weights:\n{box(corr_weights_msg)}\nPlease define the new weight that is greater than or equal to zero for `replying`."
-            ),
-            delete_after=300,
-        )
-
-        pred = MessagePredicate.same_context(ctx)
-        try:
-            msg = await self.bot.wait_for("message", check=pred, timeout=121)
-        except asyncio.TimeoutError:
-            await ctx.send(error("Took too long, cancelling weight change!"), delete_after=30)
+        start_time, end_time = self.interval_parser(till)
+        if not start_time:
+            await ctx.send(error("Invalid date or interval! Try again."), delete_after=30, reference=ctx.message)
             return
 
-        try:
-            reply = float(msg.content)
-        except:
-            await ctx.send(
-                error(
-                    "Weight could not be parsed, please make sure it is a decimal value greater than or equal to zero."
-                ),
-                delete_after=30,
-            )
-            return
-
-        await ctx.send(info("Please define the new weight for being in VC per minute."), delete_after=300)
-        pred = MessagePredicate.same_context(ctx)
-        try:
-            msg = await self.bot.wait_for("message", check=pred, timeout=121)
-        except asyncio.TimeoutError:
-            await ctx.send(error("Took too long, cancelling weight change!"), delete_after=30)
-            return
-
-        try:
-            vc_per_minute = float(msg.content)
-        except:
-            await ctx.send(
-                error(
-                    "Weight could not be parsed, please make sure it is a decimal value greater than or equal to zero."
-                ),
-                delete_after=30,
-            )
-            return
-
-        await ctx.send(
-            info(
-                "Please define the the multiplier per person in VC for the VC per minute weight. Values between 0 and 1 will reduce the correlation weight between people the more people that are in VC, while values greater than 1 will increase the weight per person in VC."
-            ),
-            delete_after=300,
-        )
-        pred = MessagePredicate.same_context(ctx)
-        try:
-            msg = await self.bot.wait_for("message", check=pred, timeout=121)
-        except asyncio.TimeoutError:
-            await ctx.send(error("Took too long, cancelling weight change!"), delete_after=30)
-            return
-
-        try:
-            vc_people_multiplier = float(msg.content)
-        except:
-            await ctx.send(
-                error(
-                    "Weight could not be parsed, please make sure it is a decimal value greater than or equal to zero."
-                ),
-                delete_after=30,
-            )
-            return
-
-        await ctx.send(
-            info(
-                "Lastly, please define the weights for correlation between messages sent in a text channel. It should be a comma seperated list of decimal values, with the first value being the weight of the message closest, and the last weight being the weight of the farthest message. Max of 5 weights"
-            ),
-            delete_after=300,
-        )
-        pred = MessagePredicate.same_context(ctx)
-        try:
-            msg = await self.bot.wait_for("message", check=pred, timeout=121)
-        except asyncio.TimeoutError:
-            await ctx.send(error("Took too long, cancelling weight change!"), delete_after=30)
-            return
-
-        try:
-            messages = [float(f.strip()) for f in msg.content.split(",")][:5]
-        except:
-            await ctx.send(
-                error(
-                    "Weights could not be parsed, please make sure each one is a decimal value greater than or equal to zero and values are seperated by a comma."
-                ),
-                delete_after=30,
-            )
-            return
-
-        new_corr_weights = {
-            "reply": reply,
-            "messages": [1] + messages,  # in order of closest to farthest
-            "vc_per_minute": vc_per_minute,
-            "vc_people_multiplier": vc_people_multiplier,
-        }
-
-        await self.config.guild(ctx.guild).corr_weights.set(new_corr_weights)
-        await ctx.send(info("New correlation weights saved."), delete_after=30)
-
-    @graphstats_corr.command(name="guild")
-    async def graphstats_correlation_guild(self, ctx):
-        """
-        Create a table of how all members correlate with each other.
-
-        Because of the nature of drawing graphs, this will only output a csv file.
-
-        Please use the generated file with Gephi.
-        """
-        # build adjency matrix for graph
-        # edge weight is how many times someone replied with or has been in vc with someone else
-        # each node is a person
-        guild = ctx.guild
-        members = {m: i for i, m in enumerate(guild.members)}
-        adj_matrix = np.zeros((len(members), len(members)))
-        adj_matrix_voice = np.zeros((len(members), len(members)))
-
-        corr_weights = await self.config.guild(guild).corr_weights()
-
-        # remove audit log entries
-        log_files = glob.glob(os.path.join(PATH, str(guild.id), "*.log"))
-        log_files = [log for log in log_files if "guild" not in log]
-
-        # get messages split by channel
-        messages = await self.loop.run_in_executor(
-            None,
-            functools.partial(
-                self.log_handler,
-                log_files,
-                guild.created_at,
-                split_channels=True,
-            ),
-        )
-
-        async def process_messages():
-            progress_msg_str = "Processed {}/{} channels."
-            progress_msg = await ctx.send(progress_msg_str.format(0, len(messages)))
-            progress_index = 0
-            for ch_id, data in messages.items():
-                channel = guild.get_channel(ch_id)
-                # channel may be deleted, but still want to include message data
-                if isinstance(channel, discord.VoiceChannel):
-                    joined_at = {}
-                    # ignore for now, need to figure out how to filter out when the bot fails to log a user leaving
-                    for message in data:
-                        try:
-                            user_id = int(message.split("(id")[-1].split(")")[0].strip().strip(":"))
-                            user = guild.get_member(user_id)
-                            if not user:
-                                continue
-
-                            if "Voice channel join:" in message:
-                                join_time = parse_time_naive(message[:19])
-                                if join_time is None:
-                                    continue
-                                joined_at[user] = join_time
-                                # check others in VC to make sure a leave wasnt missed, 24 hours should be a fine time
-                                to_delete = []
-                                for other_user, join_time in joined_at.items():
-                                    time_in_vc = datetime.utcnow() - joined_at[user]
-                                    if time_in_vc > VOICE_TIME_LIMIT:
-                                        to_delete.append(other_user)
-                                for u in to_delete:
-                                    del joined_at[u]
-                            elif "Voice channel leave:" in message and user in joined_at:
-                                leave_time = parse_time_naive(message[:19])
-                                if leave_time is None:
-                                    continue
-                                time_in_vc = leave_time - joined_at[user]
-                                minutes = np.floor(time_in_vc.total_seconds() / 60)
-                                if len(joined_at) > 2:
-                                    corr_weight = (
-                                        corr_weights["vc_per_minute"]
-                                        * corr_weights["vc_people_multiplier"]
-                                        / (len(joined_at) - 2)
-                                    ) * minutes
-                                else:
-                                    corr_weight = corr_weights["vc_per_minute"] * minutes
-
-                                # add correlation data to everyone in the vc when someone leaves
-                                for other_user, join_time in joined_at.items():
-                                    if user == other_user:
-                                        continue
-                                    adj_matrix_voice[members[user], members[other_user]] += corr_weight
-                                    adj_matrix_voice[members[other_user], members[user]] += corr_weight
-
-                                del joined_at[user]
-                        except IndexError:
-                            pass
-                        except KeyError:  # happens if user rejoins after running this command
-                            pass
-                        except ValueError:
-                            pass
-                        await asyncio.sleep(0)
-                else:
-                    to_delete = []
-                    for message in data:
-                        # delete things like message edits
-                        if "edited message from" in message and "to read:" in message:
-                            to_delete.append(message)
-                        elif " deleted message from " in message:
-                            to_delete.append(message)
-                        await asyncio.sleep(0)
-
-                    for msg in to_delete:
-                        data.remove(msg)
-                        await asyncio.sleep(0)
-
-                    for i, message in enumerate(data):
-                        try:
-                            user1_id = int(message.split("(id:")[1].split(")")[0])
-                            user1 = guild.get_member(user1_id)
-                        except IndexError:
-                            pass
-                        except KeyError:
-                            pass
-                        if user1 is None:
-                            continue
-
-                        curr_msg_time = parse_time_naive(message[:19])
-                        if curr_msg_time is None:
-                            continue
-
-                        try:
-                            if "replied to" in message.split("(id:")[1].split("):")[0]:
-                                # add correlation to matrix
-                                user2_id = int(message.split("(id:")[2].split("):")[0])
-                                user2 = guild.get_member(user2_id)
-
-                                # don't care about people who arent in the server
-                                if not (user2 is None or user1 == user2):
-                                    adj_matrix[members[user1], members[user2]] += corr_weights["reply"]
-                                    adj_matrix[members[user2], members[user1]] += corr_weights["reply"]
-                                    continue
-                        except IndexError:
-                            pass
-                        except KeyError:  # happens if user rejoins after running this command
-                            pass
-                        except ValueError:
-                            pass
-
-                        # get messages around current message and add weights
-                        for j in range(max(i - 5, 0), i):
-                            try:
-                                prev_message = data[j]
-                                user2 = int(prev_message.split("(id:")[1].split(")")[0])
-                                user2 = guild.get_member(user2)
-                                if user2 is None:
-                                    continue
-
-                                if user1 == user2:
-                                    continue
-
-                                # filter out messages being too far away time wise
-                                prev_msg_time = parse_time_naive(prev_message[:19])
-                                if prev_msg_time is None or curr_msg_time - prev_msg_time > CORR_MSG_DELTA:
-                                    continue
-
-                                adj_matrix[members[user1], members[user2]] += corr_weights["messages"][j - i]
-                            except IndexError:
-                                pass
-                            except KeyError:  # happens if user rejoins after running this command
-                                pass
-                        await asyncio.sleep(0)
-
-                progress_index += 1
-                try:
-                    await progress_msg.edit(content=progress_msg_str.format(progress_index, len(messages)))
-                except:
-                    progress_msg = await ctx.send(progress_msg_str.format(0, len(messages)))
-
-        await process_messages()
-
-        # define table save paths
-        table_save_path = str(PATH / f"plot_data_{ctx.message.id}")
-
-        member_names = [m.name for m in members.keys()]
-        adj_matrix = pd.DataFrame(data=adj_matrix, index=member_names, columns=member_names)
-        adj_matrix_voice = pd.DataFrame(data=adj_matrix_voice, index=member_names, columns=member_names)
-        adj_matrix_all = adj_matrix + adj_matrix_voice
-
-        adj_matrix.to_csv(table_save_path + "_text.txt", index=True)
-        adj_matrix_voice.to_csv(table_save_path + "_voice.txt", index=True)
-        adj_matrix_all.to_csv(table_save_path + "_all.txt", index=True)
-
-        with open(table_save_path + "_text.txt", "r") as t, open(table_save_path + "_voice.txt", "r") as v, open(
-            table_save_path + "_all.txt", "r"
-        ) as a:
-            files = (
-                discord.File(t, filename="graph_data_text.csv"),
-                discord.File(v, filename="graph_data_voice.csv"),
-                discord.File(a, filename="graph_data_all.csv"),
-            )
-            await ctx.send(files=files)
-
-        os.remove(table_save_path + "_text.txt")
-        os.remove(table_save_path + "_voice.txt")
-        os.remove(table_save_path + "_all.txt")
-
-        # extra info
-        await ctx.send(
-            info(
-                "It is impossible to display the graph properly with large numbers of users, which would apply for most servers even with a handful of members. If you want to see the entire graph and interactively analyze it, please download the csv file and this software: https://gephi.org/\n\nThis software is available on all platforms and easy to visualize the entire graph.\n\nWhen you open gephi, go to `File > Import from spreadsheet` and select the `graph_data.csv` file generated. Then under the `Layout` panel on the left side, select the `Fruchterman Reingold` algorithm which will format the graph with the selected user in the middle and everyone else around them. You can then edit the labels and size of the graph using the icons on the bottom bar to visualize it."
-            )
-        )
-
-    @graphstats_corr.command(name="user")
-    async def graphstats_correlation_user(self, ctx, member: discord.Member):
-        """
-        Create a graph of how much a user interacts with others
-        """
-        # build adjency matrix for graph
-        # edge weight is how many times someone replied with or has been in vc with someone else
-        # each node is a person
-        guild = ctx.guild
-        members = {m: i for i, m in enumerate(guild.members)}
-        adj_matrix = np.zeros((len(members), len(members)))
-        adj_matrix_voice = np.zeros((len(members), len(members)))
-
-        corr_weights = await self.config.guild(guild).corr_weights()
-
-        # remove audit log entries
-        log_files = glob.glob(os.path.join(PATH, str(guild.id), "*.log"))
-        log_files = [log for log in log_files if "guild" not in log]
-
-        # get messages split by channel
-        messages = await self.loop.run_in_executor(
-            None,
-            functools.partial(
-                self.log_handler,
-                log_files,
-                guild.created_at,
-                split_channels=True,
-            ),
-        )
-
-        async def process_messages():
-            progress_msg_str = "Processed {}/{} channels."
-            progress_msg = await ctx.send(progress_msg_str.format(0, len(messages)))
-            progress_index = 0
-            for ch_id, data in messages.items():
-                channel = guild.get_channel(ch_id)
-                # channel may be deleted, but still want to include message data
-                if isinstance(channel, discord.VoiceChannel):
-                    joined_at = {}
-                    # ignore for now, need to figure out how to filter out when the bot fails to log a user leaving
-                    for message in data:
-                        try:
-                            user_id = int(message.split("(id")[-1].split(")")[0].strip().strip(":"))
-                            user = guild.get_member(user_id)
-                            if not user:
-                                continue
-
-                            if "Voice channel join:" in message:
-                                join_time = parse_time_naive(message[:19])
-                                if join_time is None:
-                                    continue
-                                joined_at[user] = join_time
-                                # check others in VC to make sure a leave wasnt missed, 24 hours should be a fine time
-                                to_delete = []
-                                for other_user, join_time in joined_at.items():
-                                    time_in_vc = datetime.utcnow() - joined_at[user]
-                                    if time_in_vc > VOICE_TIME_LIMIT:
-                                        to_delete.append(other_user)
-                                for u in to_delete:
-                                    del joined_at[u]
-                            elif "Voice channel leave:" in message and user in joined_at:
-                                leave_time = parse_time_naive(message[:19])
-                                if leave_time is None:
-                                    continue
-                                time_in_vc = leave_time - joined_at[user]
-                                minutes = np.floor(time_in_vc.total_seconds() / 60)
-                                if len(joined_at) > 2:
-                                    corr_weight = (
-                                        corr_weights["vc_per_minute"]
-                                        * corr_weights["vc_people_multiplier"]
-                                        / (len(joined_at) - 2)
-                                    ) * minutes
-                                else:
-                                    corr_weight = corr_weights["vc_per_minute"] * minutes
-
-                                # add correlation data to everyone in the vc when someone leaves
-                                if user == member:
-                                    for other_user, join_time in joined_at.items():
-                                        if user == other_user:
-                                            continue
-                                        adj_matrix_voice[members[user], members[other_user]] += corr_weight
-                                        adj_matrix_voice[members[other_user], members[user]] += corr_weight
-                                else:
-                                    for other_user, join_time in joined_at.items():
-                                        if user == other_user or other_user != member:
-                                            continue
-                                        adj_matrix_voice[members[user], members[other_user]] += corr_weight
-                                        adj_matrix_voice[members[other_user], members[user]] += corr_weight
-
-                                del joined_at[user]
-                        except IndexError:
-                            pass
-                        except KeyError:  # happens if user rejoins after running this command
-                            pass
-                        except ValueError:
-                            pass
-                        await asyncio.sleep(0)
-                else:
-                    to_delete = []
-                    for message in data:
-                        # delete things like message edits
-                        if "edited message from" in message and "to read:" in message:
-                            to_delete.append(message)
-                        elif " deleted message from " in message:
-                            to_delete.append(message)
-                        await asyncio.sleep(0)
-
-                    for msg in to_delete:
-                        data.remove(msg)
-                        await asyncio.sleep(0)
-
-                    for i, message in enumerate(data):
-                        user1_id = int(message.split("(id:")[1].split(")")[0])
-                        user1 = guild.get_member(user1_id)
-                        if user1 is None:
-                            continue
-
-                        curr_msg_time = parse_time_naive(message[:19])
-                        if curr_msg_time is None:
-                            continue
-
-                        try:
-                            if "replied to" in message.split("(id:")[1].split("):")[0]:
-                                # add correlation to matrix
-                                user2_id = int(message.split("(id:")[2].split("):")[0])
-                                user2 = guild.get_member(user2_id)
-
-                                # don't care about people who arent in the server
-                                if not (user2 is None or user1 == user2) and (user1 == member or user2 == member):
-                                    adj_matrix[members[user1], members[user2]] += corr_weights["reply"]
-                                    adj_matrix[members[user2], members[user1]] += corr_weights["reply"]
-                                    continue
-                        except IndexError:
-                            pass
-                        except KeyError:  # happens if user rejoins after running this command
-                            pass
-                        except ValueError:
-                            pass
-                        await asyncio.sleep(0)
-                        # get messages around current message and add weights
-                        for j in range(max(i - 5, 0), i):
-                            try:
-                                prev_message = data[j]
-                                user2 = int(prev_message.split("(id:")[1].split(")")[0])
-                                user2 = guild.get_member(user2)
-                                if user2 is None:
-                                    continue
-
-                                if user1 == user2:
-                                    continue
-
-                                if user1 != member and user2 != member:
-                                    continue
-
-                                # filter out messages being too far away time wise
-                                prev_msg_time = parse_time_naive(prev_message[:19])
-                                if prev_msg_time is None or curr_msg_time - prev_msg_time > CORR_MSG_DELTA:
-                                    continue
-
-                                adj_matrix[members[user1], members[user2]] += corr_weights["messages"][j - i]
-                            except IndexError:
-                                pass
-                            except KeyError:  # happens if user rejoins after running this command
-                                pass
-                        await asyncio.sleep(0)
-
-                progress_index += 1
-                try:
-                    await progress_msg.edit(content=progress_msg_str.format(progress_index, len(messages)))
-                except:
-                    progress_msg = await ctx.send(progress_msg_str.format(0, len(messages)))
-
-        await process_messages()
-
-        member_names = [m.name for m in members.keys()]
-        adj_matrix = pd.DataFrame(data=adj_matrix, index=member_names, columns=member_names)
-        adj_matrix_voice = pd.DataFrame(data=adj_matrix_voice, index=member_names, columns=member_names)
-        adj_matrix_all = adj_matrix + adj_matrix_voice  # have to add first otherwise tables dont line up for addition
-
-        # drop users who do not correlate to anyone else
-        for column in adj_matrix.columns:
-            try:
-                if (adj_matrix.loc[member.name, column] == 0).all() and column != member.name:
-                    adj_matrix = adj_matrix.drop(columns=column)
-                    adj_matrix = adj_matrix.drop(index=column)
-
-                if (adj_matrix_voice.loc[member.name, column] == 0).all() and column != member.name:
-                    adj_matrix_voice = adj_matrix_voice.drop(columns=column)
-                    adj_matrix_voice = adj_matrix_voice.drop(index=column)
-
-                if (adj_matrix_all.loc[member.name, column] == 0).all() and column != member.name:
-                    adj_matrix_all = adj_matrix_all.drop(columns=column)
-                    adj_matrix_all = adj_matrix_all.drop(index=column)
-            except KeyError:  # not sure why this happens... TODO figure it out
-                continue
-
-        # only graph the most correlated people, since otherwise the graph is unreadable
-        sums = adj_matrix_all.sum().sort_values(ascending=False)
-        graph_cols = sums[:20]
-        # fix because networkx is dumb, see https://stackoverflow.com/questions/69349516/using-a-square-matrix-with-networkx-but-keep-getting-adjacency-matrix-not-square
-        stack = adj_matrix_all.loc[graph_cols.index, graph_cols.index].stack()
-        stack = stack[stack >= 1].rename_axis(("source", "target")).reset_index(name="weight")
-
-        graph = nx.from_pandas_edgelist(stack, edge_attr=True)
-
-        # make graph and send it
-        fontsize = 30
-        fig = plt.figure(figsize=(30, 30))
-        plt.axis("off")
-
-        # define graph and table save paths
-        save_path = str(PATH / f"plot_{ctx.message.id}.png")
-        table_save_path = str(PATH / f"plot_data_{ctx.message.id}")
-
-        widths = nx.get_edge_attributes(graph, "weight")
-        widths = np.array(list(widths.values()))
-        # clamp widths
-        widths = np.clip(widths, 1, 15)
-
-        pos = nx.spring_layout(graph, k=4)
-
-        nx.draw(graph, pos=pos, with_labels=True, width=widths, font_size=fontsize, node_size=fontsize * 2500)
-
-        # make graph look nice
-        plt.title(
-            f"Member correlation for {member} in {guild}",
-            fontsize=fontsize,
-        )
-
-        fig.savefig(save_path, dpi=fig.dpi)
-        plt.close()
-
-        adj_matrix.to_csv(table_save_path + "_text.txt", index=True)
-        adj_matrix_voice.to_csv(table_save_path + "_voice.txt", index=True)
-        adj_matrix_all.to_csv(table_save_path + "_all.txt", index=True)
-
-        with open(table_save_path + "_text.txt", "r") as t, open(table_save_path + "_voice.txt", "r") as v, open(
-            table_save_path + "_all.txt", "r"
-        ) as a, open(save_path, "rb") as f:
-            files = (
-                discord.File(t, filename="graph_data_text.csv"),
-                discord.File(v, filename="graph_data_voice.csv"),
-                discord.File(a, filename="graph_data_all.csv"),
-                discord.File(f, filename="graph.png"),
-            )
-            await ctx.send(files=files)
-
-        os.remove(table_save_path + "_text.txt")
-        os.remove(table_save_path + "_voice.txt")
-        os.remove(table_save_path + "_all.txt")
-        os.remove(save_path)
-
-        # extra info
-        await ctx.send(
-            info(
-                "The following graph is only shows the most correlated people, as for most servers it is impossible to display the graph properly with large numbers of users. If you want to see the entire graph and interactively analyze it, please download the csv file and this software: https://gephi.org/\n\nThis software is available on all platforms and easy to visualize the entire graph.\n\nWhen you open gephi, go to `File > Import from spreadsheet` and select the `graph_data.csv` file generated. Then under the `Layout` panel on the left side, select the `Fruchterman Reingold` algorithm which will format the graph with the selected user in the middle and everyone else around them. You can then edit the labels and size of the graph using the icons on the bottom bar to visualize it."
-            )
-        )
-
-    @staticmethod
-    def log_handler(log_files: list, end_time: datetime, start: datetime = None, split_channels: bool = False):
-        """
-        gets messages up to a specified end time, with optional start time.
-
-        returns a list of messages.
-
-        if the split_channels is true, returns a dictionary of
-        channel ids -> messages
-        """
-        if split_channels:
-            messages = {}
-        else:
-            messages = []
-
-        parsed_logs = []
-        log_files.sort(reverse=True)
-
-        for log in log_files:
-            if split_channels:
-                channel_id = int(log.split("_")[-1].strip(".log"))
-                if channel_id not in messages:
-                    messages[channel_id] = []
-            with open(log, "r") as f:
-                lines = f.readlines()
-
-            # binary search to find where the cutoff for messages is
-            index = bisect_left(lines, end_time.strftime(TIMESTAMP_FORMAT))
-
-            lines = lines[index:]
-            lines.reverse()
-            if split_channels:
-                messages[channel_id].extend(lines)
-            else:
-                messages.extend(lines)
-
-        # reverse messages to get correct order
-        if split_channels:
-            for ch_id in messages.keys():
-                messages[ch_id].reverse()
-        else:
-            messages.reverse()
-
-        return messages
-
-    async def log_sender(self, ctx, log_files, end_time, user=None, start=None):
-        log_path = os.path.join(PATH, str(ctx.guild.id))
-
-        await ctx.send(warning("**__Generating logs, please wait...__**"))
-        # runs in descending order, with most recent log file first
-        messages = await self.loop.run_in_executor(
-            None,
-            functools.partial(
-                self.log_handler,
-                log_files,
-                end_time,
-                start=start,
-            ),
-        )
-
-        if user:
-            messages = [message for message in messages if str(user.id) in message]
-
-        message_chunks = [
-            messages[i * MAX_LINES : (i + 1) * MAX_LINES] for i in range((len(messages) + MAX_LINES - 1) // MAX_LINES)
+        handler = self.database_handlers[ctx.guild.id]
+        # get logs
+        columns = [
+            "message_id",
+            "channel_id",
+            "author_id",
+            "datetime",
         ]
 
-        if not message_chunks:
-            await ctx.send(error("No logs found for the specified location and time period!"))
-            return
+        filters = {
+            "datetime": {"gte": start_time, "lte": end_time},
+            "channel_id": channel.id,
+        }
+        async with ctx.typing():
+            data = await handler.run_in_thread(handler.query, "messages", columns, filters=filters)
+            data = sorted(data, key=lambda r: r["datetime"])
 
-        for msgs in message_chunks:
-            temp_file = os.path.join(log_path, datetime.utcnow().strftime("%Y%m%d%X").replace(":", "") + ".txt")
-            with open(temp_file, encoding="utf-8", mode="w") as f:
-                f.writelines(msgs)
+            data_file, figure_file = await asyncio.to_thread(plot_hourly_heatmap, data, channel)
+            if not data_file or not figure_file:
+                await ctx.send(warning("No data found for that time period."), delete_after=30, reference=ctx.author)
+                return
 
-            await ctx.channel.send(file=discord.File(temp_file))
-            os.remove(temp_file)
+            files = [
+                discord.File(data_file, filename=f"{channel.name}_activity_graph_data.csv"),
+                discord.File(figure_file, filename=f"{channel.name}_activity_graph.png"),
+            ]
 
-    @commands.group(aliases=["log"])
-    @commands.guild_only()
-    @checks.admin_or_permissions(administrator=True)
-    async def logs(self, ctx):
-        pass
+            await ctx.send(files=files, reference=ctx.message)
 
-    # log rotation independent
-    @logs.command(name="from")
-    async def logs_channel_interval(self, ctx, channel: discord.TextChannel, *, till: str):
+    @graphstats_hours.command(name="guild")
+    async def graphstats_hours_guild(self, ctx: commands.Context, *, till: str):
         """
-        Logs for an entire channel going back to a specific interval or date/time.
+        Show active hours for entire guild.
 
-         Dates/times look like:
-            February 14 at 6pm EDT
-            2019-04-13 06:43:00 PST
-            01/20/18 at 21:00:43
+        `till` can be a date, an interval, or two different dates split by a **__semicolon__**
+
+        **Times in graph are all in UTC**
+
+        Dates/times look like:
+        - February 14 at 6pm EDT
+        - 2019-04-13 06:43:00 PST
+        - 01/20/18 at 21:00:43
 
         times default to UTC if no timezone provided
 
-         Intervals look like:
-            5 minutes
-            1 minute 30 seconds
-            1 hour
-            2 days
-            30 days
-            5h30m
-            (etc)
-        """
-        interval = parse_timedelta(till)
-        date = None
-        if not interval:
-            try:
-                date = parse_time(till).replace(tzinfo=None)
-            except:
-                await ctx.send("Invalid date or interval! Try again.")
-                return
-
-        guild = ctx.guild
-        log_files = glob.glob(os.path.join(PATH, str(guild.id), "*{}*.log".format(channel.id)))
-
-        if interval:
-            end_time = datetime.utcnow() - interval
-        else:
-            end_time = date
-
-        await self.log_sender(ctx, log_files, end_time)
-
-    @logs.command(name="in")
-    async def logs_channel_in(self, ctx, channel: discord.TextChannel, *, date: str):
-        """
-        Logs for an entire channel in between the specified dates
-        Seperate dates with a **__semicolon__**.
-
-         times look like:
-            February 14 at 6pm EDT
-            2019-04-13 06:43:00 PST
-            01/20/18 at 21:00:43
-
-        times default to UTC if no timezone provided.
-        """
-        try:
-            dates = date.split(";")
-            dates = [dates[0].strip(), dates[1].strip()]  # only use 2 dates
-            start, end = [parse_time(date).replace(tzinfo=None) for date in dates]
-            # order doesnt matter, so check which date is older than the other
-            # end time should be the newest date since logs are processed in reverse
-            if start < end:  # start is before end date
-                start, end = end, start  # swap order
-        except:
-            await ctx.send("Invalid dates! Try again.")
-            return
-
-        guild = ctx.guild
-        log_files = glob.glob(os.path.join(PATH, str(guild.id), "*{}*.log".format(channel.id)))
-
-        await self.log_sender(ctx, log_files, end, start=start)
-
-    @logs.group(name="user")
-    async def logs_users(self, ctx):
-        """Gets messages from a user"""
-        pass
-
-    @logs_users.command(name="from")
-    async def logs_users_channel_interval(self, ctx, user: discord.Member, *, till: str):
-        """
-        User's messages accross the guild going back to a specific interval or date/time.
-
-         Dates/times look like:
-            February 14 at 6pm EDT
-            2019-04-13 06:43:00 PST
-            01/20/18 at 21:00:43
-
-        times default to UTC if no timezone provided
+        Example with 2 dates:
+        - 2021-01-01 11:11:00 EDT;2021-01-01 12:00:00 EDT
 
          Intervals look like:
             5 minutes
@@ -2549,1151 +2285,850 @@ class ActivityLogger(commands.Cog):
             2 days
             30 days
             5h30m
-            (etc)
         """
-        interval = parse_timedelta(till)
-        date = None
-        if not interval:
-            try:
-                date = parse_time(till).replace(tzinfo=None)
-            except:
-                await ctx.send("Invalid date or interval! Try again.")
+        start_time, end_time = self.interval_parser(till)
+        if not start_time:
+            await ctx.send(error("Invalid date or interval! Try again."), delete_after=30, reference=ctx.message)
+            return
+
+        handler = self.database_handlers[ctx.guild.id]
+        # get logs
+        columns = [
+            "message_id",
+            "channel_id",
+            "author_id",
+            "datetime",
+        ]
+
+        filters = {
+            "datetime": {"gte": start_time, "lte": end_time},
+        }
+        async with ctx.typing():
+            data = await handler.run_in_thread(handler.query, "messages", columns, filters=filters)
+            data = sorted(data, key=lambda r: r["datetime"])
+
+            data_file, figure_file = await asyncio.to_thread(plot_hourly_heatmap, data, ctx.guild)
+            if not data_file or not figure_file:
+                await ctx.send(warning("No data found for that time period."), delete_after=30, reference=ctx.author)
                 return
 
-        guild = ctx.guild
-        log_files = glob.glob(os.path.join(PATH, str(guild.id), "*.log"))
-        log_files = [log for log in log_files if "guild" not in log]
+            files = [
+                discord.File(data_file, filename=f"{ctx.guild.name}_activity_graph_data.csv"),
+                discord.File(figure_file, filename=f"{ctx.guild.name}_activity_graph.png"),
+            ]
 
-        if interval:
-            end_time = datetime.utcnow() - interval
-        else:
-            end_time = date
+            await ctx.send(files=files, reference=ctx.message)
 
-        await self.log_sender(ctx, log_files, end_time, user=user)
-
-    @logs_users.command(name="in")
-    async def logs_users_channel_in(self, ctx, user: discord.Member, *, date: str):
-        """
-        User's messages accross the guild in between the specified dates
-        Seperate dates with a **__semicolon__**.
-
-         times look like:
-            February 14 at 6pm EDT
-            2019-04-13 06:43:00 PST
-            01/20/18 at 21:00:43
-
-        times default to UTC if no timezone provided.
-        """
-        try:
-            dates = date.split(";")
-            dates = [dates[0].strip(), dates[1].strip()]  # only use 2 dates
-            start, end = [parse_time(date).replace(tzinfo=None) for date in dates]
-            # order doesnt matter, so check which date is older than the other
-            # end time should be the newest date since logs are processed in reverse
-            if start < end:  # start is before end date
-                start, end = end, start  # swap order
-        except:
-            await ctx.send("Invalid dates! Try again.")
-            return
-
-        guild = ctx.guild
-        log_files = glob.glob(os.path.join(PATH, str(guild.id), "*.log"))
-        log_files = [log for log in log_files if "guild" not in log]
-
-        await self.log_sender(ctx, log_files, end, start=start, user=user)
-
-    @logs.group(name="audit")
-    async def logs_audit(self, ctx):
-        """Gets audit logs"""
-        pass
-
-    @logs_audit.command(name="from")
-    async def logs_audit_from(self, ctx, *, till: str):
-        """
-        Audit logs for server going back a time or to a specific data.
-        Gets all role and name changes, mutes, etc.
-        Also gets audit actions (deleting messages, bans, etc)
-
-        Date/times look like:
-            February 14 at 6pm EDT
-            2019-04-13 06:43:00 PST
-            01/20/18 at 21:00:43
-
-        times default to UTC if no timezone provided.
-
-        Intervals look like:
-            5 minutes
-            1 minute 30 seconds
-            1 hour
-            2 days
-            30 days
-            5h30m
-            (etc)
-        """
-        interval = parse_timedelta(till)
-        date = None
-        if not interval:
-            try:
-                date = parse_time(till).replace(tzinfo=None)
-            except:
-                await ctx.send("Invalid date or interval! Try again.")
-                return
-
-        guild = ctx.guild
-        log_files = glob.glob(os.path.join(PATH, str(guild.id), "*guild*.log"))
-
-        if interval:
-            end_time = datetime.utcnow() - interval
-        else:
-            end_time = date
-
-        await self.log_sender(ctx, log_files, end_time)
-
-    @logs_audit.command(name="in")
-    async def logs_audit_in(self, ctx, *, date: str):
-        """
-        Audit logs for server in between specified dates.
-        Gets all role and name changes, mutes, etc.
-        Also gets audit actions (deleting messages, bans, etc)
-
-        Seperate dates with a **semicolon**.
-
-        Date/times look like:
-            February 14 at 6pm EDT
-            2019-04-13 06:43:00 PST
-            01/20/18 at 21:00:43
-
-        times default to UTC if no timezone provided.
-        """
-        try:
-            dates = date.split(";")
-            dates = [dates[0].strip(), dates[1].strip()]  # only use 2 dates
-            start, end = [parse_time(date).replace(tzinfo=None) for date in dates]
-            # order doesnt matter, so check which date is older than the other
-            # end time should be the newest date since logs are processed in reverse
-            if start < end:  # start is before end date
-                start, end = end, start  # swap order
-        except:
-            await ctx.send("Invalid dates! Try again.")
-            return
-
-        guild = ctx.guild
-        log_files = glob.glob(os.path.join(PATH, str(guild.id), "*guild*.log"))
-        await self.log_sender(ctx, log_files, end, start=start)
-
-    @logs_audit.group(name="user")
-    async def logs_audit_user(self, ctx):
-        """Audit logs pertaining a user."""
-        pass
-
-    @logs_audit_user.command(name="from")
-    async def logs_audit_user_from(self, ctx, user: discord.Member, *, till: str):
-        """
-        Audit logs for server from user going back a time or to a specified date.
-        Gets all role and name changes, mutes, etc.
-        Also gets audit actions (deleting messages, bans, etc)
-
-        Date/times look like:
-            February 14 at 6pm EDT
-            2019-04-13 06:43:00 PST
-            01/20/18 at 21:00:43
-
-        times default to UTC if no timezone provided.
-
-         Intervals look like:
-            5 minutes
-            1 minute 30 seconds
-            1 hour
-            2 days
-            30 days
-            5h30m
-            (etc)
-        """
-        interval = parse_timedelta(till)
-        date = None
-        if not interval:
-            try:
-                date = parse_time(till).replace(tzinfo=None)
-            except:
-                await ctx.send("Invalid date or interval! Try again.")
-                return
-
-        guild = ctx.guild
-        log_files = glob.glob(os.path.join(PATH, str(guild.id), "*guild*.log"))
-
-        if interval:
-            end_time = datetime.utcnow() - interval
-        else:
-            end_time = date
-
-        await self.log_sender(ctx, log_files, end_time, user=user)
-
-    @logs_audit_user.command(name="in")
-    async def logs_audit_user_in(self, ctx, user: discord.Member = None, *, date: str):
-        """
-        Audit logs for server from user in between dates.
-        Gets all role and name changes, mutes, etc.
-        Also gets audit actions (deleting messages, bans, etc)
-
-        Seperate dates with a **semicolon**.
-
-         times look like:
-            February 14 at 6pm EDT
-            2019-04-13 06:43:00 PST
-            01/20/18 at 21:00:43
-
-        times default to UTC if no timezone provided.
-        """
-        try:
-            dates = date.split(";")
-            dates = [dates[0].strip(), dates[1].strip()]  # only use 2 dates
-            start, end = [parse_time(date).replace(tzinfo=None) for date in dates]
-            # order doesnt matter, so check which date is older than the other
-            # end time should be the newest date since logs are processed in reverse
-            if start < end:  # start is before end date
-                start, end = end, start  # swap order
-        except:
-            await ctx.send("Invalid dates! Try again.")
-            return
-
-        guild = ctx.guild
-        log_files = glob.glob(os.path.join(PATH, str(guild.id), "*guild*.log"))
-
-        await self.log_sender(ctx, log_files, end, start=start, user=user)
-
-    @logs.group(name="voice")
-    async def logs_voice(self, ctx):
-        """Gets voice chat logs (leave, join, mutes, etc)"""
-        pass
-
-    @logs_voice.command(name="from")
-    async def logs_voice_from(self, ctx, channel_id: int, *, till: str):
-        """
-        Logs for a voice channel going back the specified interval.
-
-         Intervals look like:
-            5 minutes
-            1 minute 30 seconds
-            1 hour
-            2 days
-            30 days
-            5h30m
-            (etc)
-        """
-        interval = parse_timedelta(till)
-        date = None
-        if not interval:
-            try:
-                date = parse_time(till).replace(tzinfo=None)
-            except:
-                await ctx.send("Invalid date or interval! Try again.")
-                return
-
-        guild = ctx.guild
-        channel = self.bot.get_channel(channel_id)
-        if not channel:
-            await ctx.send("Invalid channel!")
-            return
-        log_files = glob.glob(os.path.join(PATH, str(guild.id), "*{}*.log".format(channel.id)))
-
-        if interval:
-            end_time = datetime.utcnow() - interval
-        else:
-            end_time = date
-
-        await self.log_sender(ctx, log_files, end_time)
-
-    @logs_voice.command(name="in")
-    async def logs_voice_in(self, ctx, channel_id: int, *, date: str):
-        """
-        Logs for an entire channel in between the specified dates
-        Seperate dates with a **semicolon**.
-
-         times look like:
-            February 14 at 6pm EDT
-            2019-04-13 06:43:00 PST
-            01/20/18 at 21:00:43
-
-        times default to UTC if no timezone provided.
-        """
-        try:
-            dates = date.split(";")
-            dates = [dates[0].strip(), dates[1].strip()]  # only use 2 dates
-            start, end = [parse_time(date).replace(tzinfo=None) for date in dates]
-            # order doesnt matter, so check which date is older than the other
-            # end time should be the newest date since logs are processed in reverse
-            if start < end:  # start is before end date
-                start, end = end, start  # swap order
-        except:
-            await ctx.send("Invalid dates! Try again.")
-            return
-
-        guild = ctx.guild
-        channel = self.bot.get_channel(channel_id)
-        if not channel:
-            await ctx.send("Invalid channel!")
-            return
-        log_files = glob.glob(os.path.join(PATH, str(guild.id), "*{}*.log".format(channel.id)))
-
-        await self.log_sender(ctx, log_files, end, start=start)
-
-    @commands.group()
-    @checks.is_owner()
-    async def logset(self, ctx):
-        """
-        Change activity logging settings
-        """
-        pass
-
-    @logset.command(name="check-audit")
-    async def set_audit_check(self, ctx, on_off: bool = None):
-        """
-        Set whether to access audit logs to get who does what audit action
-
-        Turning this off means audit actions are saved but who did those actions are not saved.
-        This should be turned off for bots in large amount of servers since you will hit global ratelimits very quickly.
-        """
-        if on_off is not None:
-            async with self.config.attrs() as attrs:
-                attrs["check_audit"] = on_off
-            self.cache["check_audit"] = on_off
-
-        status = self.cache["check_audit"]
-        if status:
-            await ctx.send("Checking audit logs is enabled.")
-        else:
-            await ctx.send("Checking audit logs is disabled.")
-
-    @logset.command(name="everything", aliases=["global"])
-    async def set_everything(self, ctx, on_off: bool = None):
-        """
-        Global override for all logging
-        """
-        if on_off is not None:
-            async with self.config.attrs() as attrs:
-                attrs["everything"] = on_off
-            self.cache["everything"] = on_off
-
-        status = self.cache["everything"]
-        if status:
-            await ctx.send("Global logging override is enabled.")
-        else:
-            await ctx.send("Global logging override is disabled.")
-
-    @logset.command(name="default")
-    async def set_default(self, ctx, on_off: bool = None):
-        """
-        Sets whether logging is on or off where unset
-
-        guild overrides, global override, and attachments don't use this.
-        """
-        if on_off is not None:
-            async with self.config.attrs() as attrs:
-                attrs["default"] = on_off
-            self.cache["default"] = on_off
-
-        status = self.cache["default"]
-        if status:
-            await ctx.send("Logging is enabled by default.")
-        else:
-            await ctx.send("Logging is disabled by default.")
-
-    @logset.command(name="dm")
-    async def set_direct(self, ctx, on_off: bool = None):
-        """
-        Log direct messages?
-        """
-        if on_off is not None:
-            async with self.config.attrs() as attrs:
-                attrs["direct"] = on_off
-            self.cache["direct"] = on_off
-
-        status = self.cache["direct"]
-
-        if status:
-            await ctx.send("Logging of direct messages is enabled.")
-        else:
-            await ctx.send("Logging of direct messages is disabled.")
-
-    @logset.command(name="attachments")
-    async def set_attachments(self, ctx, on_off: bool = None):
-        """
-        Download message attachments?
-        """
-        if on_off is not None:
-            async with self.config.attrs() as attrs:
-                attrs["attachments"] = on_off
-            self.cache["attachments"] = on_off
-
-        status = self.cache["attachments"]
-        if status:
-            await ctx.send("Downloading of attachments is enabled.")
-        else:
-            await ctx.send("Downloading of attachments is disabled.")
-
-    @logset.command(name="channel")
-    @commands.guild_only()
-    async def set_channel(self, ctx, on_off: bool, channel: discord.TextChannel = None):
-        """
-        Sets channel logging on or off (channel optional)
-
-        To enable or disable all channels at once, use `logset server`.
-        """
-        if channel is None:
-            channel = ctx.channel
-
-        guild = channel.guild
-
-        self.cache[channel.id]["enabled"] = on_off
-        await self.config.channel(channel).enabled.set(on_off)
-
-        if on_off:
-            await ctx.send("Logging enabled for %s" % channel.mention)
-        else:
-            await ctx.send("Logging disabled for %s" % channel.mention)
-
-    @logset.command(name="server")
-    @commands.guild_only()
-    async def set_guild(self, ctx, on_off: bool):
-        """
-        Sets logging on or off for all channels and server events
-        """
-        guild = ctx.guild
-
-        self.cache[guild.id]["all_s"] = on_off
-        await self.config.guild(guild).all_s.set(on_off)
-
-        if on_off:
-            await ctx.send("Logging enabled for %s" % guild)
-        else:
-            await ctx.send("Logging disabled for %s" % guild)
-
-    @logset.command(name="voice")
-    @commands.guild_only()
-    async def set_voice(self, ctx, on_off: bool):
-        """
-        Sets logging on or off for ALL voice channel events
-        """
-        guild = ctx.guild
-
-        self.cache[guild.id]["voice"] = on_off
-        await self.config.guild(guild).voice.set(on_off)
-
-        if on_off:
-            await ctx.send("Voice event logging enabled for %s" % guild)
-        else:
-            await ctx.send("Voice event logging disabled for %s" % guild)
-
-    @logset.command(name="events")
-    @commands.guild_only()
-    async def set_events(self, ctx, on_off: bool):
-        """
-        Sets logging on or off for guild events
-        """
-        guild = ctx.guild
-
-        self.cache[guild.id]["events"] = on_off
-        await self.config.guild(guild).events.set(on_off)
-
-        if on_off:
-            await ctx.send("Logging enabled for guild events in %s" % guild)
-        else:
-            await ctx.send("Logging disabled for guild events in %s" % guild)
-
-    @logset.command(name="prefixes")
-    @commands.guild_only()
-    async def set_prefixes(self, ctx, *, prefixes: str = None):
-        """Set list of prefixes to mark messages as bot commands for user stats.
-        Seperate prefixes with spaces
-        """
-        if not prefixes:
-            curr = [f"`{p}`" for p in self.cache[ctx.guild.id]["prefixes"]]
-            if not curr:
-                await ctx.send("No prefixes set, setting this bot's prefix.")
-                await self.config.guild(ctx.guild).prefixes.set([ctx.clean_prefix])
-                self.cache[ctx.guild.id]["prefixes"] = [ctx.clean_prefix]
-                return
-            await ctx.send("Current Prefixes: " + humanize_list(curr))
-            return
-
-        prefixes = [p for p in prefixes.split(" ")]
-        await self.config.guild(ctx.guild).prefixes.set(prefixes)
-        self.cache[ctx.guild.id]["prefixes"] = prefixes
-        prefixes = [f"`{p}`" for p in prefixes]
-        await ctx.send("Prefixes set to: " + humanize_list(prefixes))
-
-    @logset.command(name="rotation")
-    async def set_rotation(self, ctx, freq: str = None):
-        """
-        Show, disable, or set the log rotation period
-
-        Days start at 00:00 UTC. Attachment folders are still shared.
-        When enabled, log filenames will be prepended with their ISO 8601 date and period.
-        Example: if monthly, logs for July in channel ID 1234 would be in 20180701--P1M_1234.log
-
-        Valid options are:
-        - none: disable rotation
-        - d: one log file per day (starts 00:00Z each day)
-        - w: one log file per week (starts 00:00Z each Monday)
-        - m: one log file per month (starts 00:00Z on first day of month)
-        - y: one log file per year (starts 00:00Z Jan 1)
-        """
-        if freq:
-            freq = freq.lower().strip("\"'` ")
-
-        if freq in ("d", "w", "m", "y", "none", "disable"):
-            adj = "now"
-
-            if freq in ("none", "disable"):
-                freq = None
-
-            async with self.config.attrs() as attrs:
-                attrs["rotation"] = freq
-            self.cache["rotation"] = freq
-
-        elif freq:
-            await self.bot.send_cmd_help(ctx)
-            return
-        else:
-            adj = "currently"
-            freq = self.cache["rotation"]
-
-        if not freq:
-            await ctx.send("Log rotation is %s disabled." % adj)
-        else:
-            desc = {"d": "daily", "w": "weekly", "m": "monthly", "y": "yearly"}[freq]
-
-            await ctx.send("Log rotation period is %s %s." % (adj, desc))
-
-    @staticmethod
-    def format_rotation_string(timestamp, rotation_code, filename=None):
-        kwargs = dict(hour=0, minute=0, second=0, microsecond=0)
-
-        if not rotation_code:
-            return filename or ""
-
-        if rotation_code == "y":
-            kwargs.update(day=1, month=1)
-            start = timestamp.replace(**kwargs)
-        elif rotation_code == "m":
-            kwargs.update(day=1)
-            start = timestamp.replace(**kwargs)
-        elif rotation_code == "w":
-            start = timestamp - relativedelta(days=timestamp.weekday())
-
-        spec = start.strftime("%Y%m%d")
-
-        if rotation_code == "w":
-            spec += "--P7D"
-        else:
-            spec += "--P1%c" % rotation_code.upper()
-
-        if filename:
-            return "%s_%s" % (spec, filename)
-        else:
-            return spec
-
-    @staticmethod
-    def get_voice_flags(voice_state):
-        flags = []
-        for f in ("deaf", "mute", "self_deaf", "self_mute", "self_stream", "self_video"):
-            if getattr(voice_state, f, None):
-                flags.append(f)
-
-        return flags
-
-    @staticmethod
-    def format_overwrite(target, channel, before, after, user=None):
-        if user:
-            target_str = "Channel overwrites by @{1.name}#{1.discriminator}(id:{1.id}): {0.name} ({0.id}): ".format(
-                channel, user
-            )
-        else:
-            target_str = "Channel overwrites: {0.name} ({0.id}): ".format(channel)
-        target_str += "role" if isinstance(target, discord.Role) else "member"
-        target_str += " {0.name} ({0.id})".format(target)
-
-        if before:
-            bpair = [x.value for x in before.pair()]
-
-        if after:
-            apair = [x.value for x in after.pair()]
-
-        if before and after:
-            fmt = " updated to values %i, %i (was %i, %i)"
-            return target_str + fmt % tuple(apair + bpair)
-        elif after:
-            return target_str + " added with values %i, %i" % tuple(apair)
-        elif before:
-            return target_str + " removed (was %i, %i)" % tuple(bpair)
-
-    def gethandle(self, path, mode="a"):
-        """Manages logfile handles, culling stale ones and creating folders"""
-        if path in self.handles:
-            if os.path.exists(path):
-                return self.handles[path]
-            else:  # file was deleted?
-                try:  # try to close, no guarantees tho
-                    self.handles[path].close()
-                except Exception:
-                    pass
-
-                del self.handles[path]
-                return self.gethandle(path, mode)
-        else:
-            # Clean up excess handles before creating a new one
-            if len(self.handles) >= 256:
-                chrono = sorted(self.handles.items(), key=lambda x: x[1].time)
-                oldest_path, oldest_handle = chrono[0]
-                oldest_handle.close()
-                del self.handles[oldest_path]
-
-            dirname, _ = os.path.split(path)
-
-            try:
-                if not os.path.exists(dirname):
-                    os.makedirs(dirname)
-
-                handle = LogHandle(path, mode=mode)
-            except Exception:
-                raise
-
-            self.handles[path] = handle
-            return handle
-
-    def should_log(self, location):
-        if not self.cache:
-            # cache is empty, still booting
-            return False
-
-        if self.cache.get("everything", False):
-            return True
-
-        default = self.cache.get("default", False)
-
-        if type(location) is discord.Guild:
-            loc = self.cache[location.id]
-            return loc.get("all_s", False) or loc.get("events", default)
-
-        elif type(location) is discord.TextChannel:
-            loc = self.cache[location.guild.id]
-            opts = [loc.get("all_s", False), self.cache[location.id].get("enabled", default)]
-            return any(opts)
-
-        elif type(location) is discord.VoiceChannel:
-            loc = self.cache[location.guild.id]
-            opts = [loc.get("all_s", False), loc.get("voice", False)]
-
-            return any(opts)
-
-        elif isinstance(location, discord.abc.PrivateChannel):
-            return self.cache.get("direct", default)
-
-        else:  # can't log other types
-            return False
-
-    def should_download(self, msg):
-        return self.should_log(msg.channel) and self.cache.get("attachments", False)
-
-    def process_attachment(self, message, a):
-        aid = a.id
-        aname = a.filename
-        url = a.url
-        channel = message.channel
-        path = str(PATH)
-
-        if type(channel) is discord.TextChannel:
-            guildid = channel.guild.id
-        elif isinstance(channel, discord.abc.PrivateChannel):
-            guildid = "direct"
-
-        path = os.path.join(path, str(guildid), str(channel.id) + "_attachments")
-        filename = str(aid) + "_" + aname
-
-        if len(filename) > 255:
-            target_len = 255 - len(aid) - 4
-            part_a = target_len // 2
-            part_b = target_len - part_a
-            filename = aid + "_" + aname[:part_a] + "..." + aname[-part_b:]
-            truncated = True
-        else:
-            truncated = False
-
-        return aid, url, path, filename, truncated
-
-    async def log(self, location, text, timestamp=None, force=False, subfolder=None, mode="a"):
-        if not timestamp:
-            timestamp = datetime.utcnow()
-
-        if self.lock or not (force or self.should_log(location)):
-            return
-
-        path = []
-        entry = [timestamp.strftime(TIMESTAMP_FORMAT)]
-        rotation = self.cache["rotation"]
-        if type(location) is discord.Guild:
-            path += [str(location.id), "guild.log"]
-        elif type(location) is discord.TextChannel or type(location) is discord.VoiceChannel:
-            guildid = str(location.guild.id)
-            entry.append("#" + location.name)
-            path += [guildid, str(location.id) + ".log"]
-        elif isinstance(location, discord.abc.PrivateChannel):
-            path += ["direct", str(location.id) + ".log"]
-        elif type(location) is discord.User or type(location) is discord.Member:
-            path += ["usernames", "usernames.log"]
-        else:
-            return
-
-        if subfolder:
-            path.insert(-1, str(subfolder))
-
-        text = text.replace("\n", "\\n")
-        entry.append(text)
-
-        if rotation:
-            path[-1] = self.format_rotation_string(timestamp, rotation, path[-1])
-
-        fname = os.path.join(PATH, *path)
-        handle = self.gethandle(fname, mode=mode)
-        await handle.write(" ".join(entry) + "\n")
-
-    async def message_handler(self, message, *args, force_attachments=None, **kwargs):
-        dl_attachment = self.should_download(message)
-        attachments = []
-
-        if force_attachments is not None:
-            dl_attachment = force_attachments
-
-        if message.attachments and dl_attachment:
-            for a in message.attachments:
-                attachments += [self.process_attachment(message, a)]
-
-            entry = DOWNLOAD_TEMPLATE.format(
-                message, [a[3] + " (filename truncated)" if a[4] else a[3] for a in attachments]
-            )
-
-        elif message.attachments:
-            urls = ",".join(a.url for a in message.attachments)
-            entry = ATTACHMENT_TEMPLATE.format(message, urls)
-        else:
-            if message.reference:
-                ref_channel = message.guild.get_channel(message.reference.channel_id)
-                ref_message = None
-                if ref_channel:
-                    ref_message = await ref_channel.fetch_message(message.reference.message_id)
-                if ref_message:
-                    entry = REPLY_TEMPLATE.format(message, ref_message)
-                else:
-                    entry = MESSAGE_TEMPLATE.format(message)
-            else:
-                entry = MESSAGE_TEMPLATE.format(message)
-
-        # don't calculate bot stats and make sure this isnt dm message
-        if message.author.id != self.bot.user.id and isinstance(message.author, discord.Member):
-            is_bot_msg = False
-            async with self.config.member(message.author).stats() as stats:
-                stats["total_msg"] += 1
-                if len(message.content) > 0:
-                    for prefix in self.cache[message.guild.id]["prefixes"]:
-                        if prefix == message.content[: len(prefix)]:
-                            stats["bot_cmd"] += 1
-                            is_bot_msg = True
-                            break
-                    if not is_bot_msg:
-                        stats["avg_len"] += len(message.content.split(" "))
-
-        if message.attachments and dl_attachment:
-            for i, data in enumerate(attachments):
-                aid, url, path, filename, truncated = data
-                if not os.path.exists(path):
-                    os.mkdir(path)
-
-                dl_path = os.path.join(path, filename)
-                if not os.path.exists(dl_path):
-                    try:
-                        await message.attachments[i].save(dl_path)
-                    except:
-                        entry += f" (file: {filename} failed to save)"
-
-        await self.log(message.channel, entry, message.created_at, *args, **kwargs)
-
-    # Listeners
+    ### Listeners ###
     @commands.Cog.listener()
-    async def on_message(self, message):
+    async def on_message(self, message: discord.Message):
         if await self.bot.cog_disabled_in_guild(self, message.guild):
             return
-        await self.message_handler(message)
+        if not (self.should_log(message.channel) or self.should_log(message.guild)):
+            return
+        if type(message.channel) in [discord.abc.PrivateChannel, discord.channel.DMChannel] or message.guild is None:
+            await self.log("global", global_table="message", update=False, message=message)
+        else:
+            await self.log("message", guild=message.guild, update=False, message=message)
 
     @commands.Cog.listener()
-    async def on_message_edit(self, before, after):
+    async def on_message_edit(self, before: discord.Message, after: discord.Message):
         if await self.bot.cog_disabled_in_guild(self, after.guild):
             return
-        timestamp = before.created_at.strftime(TIMESTAMP_FORMAT)
-        entry = EDIT_TEMPLATE.format(before, after, timestamp)
-        await self.log(after.channel, entry, after.edited_at)
+        if not (self.should_log(after.channel) or self.should_log(after.guild)):
+            return
+        if type(before.channel) in [discord.abc.PrivateChannel, discord.channel.DMChannel] or before.guild is None:
+            await self.log("global", global_table="message", update=True, message=before, after=after)
+        else:
+            await self.log("message", guild=before.guild, update=True, message=before, after=after)
 
     @commands.Cog.listener()
-    async def on_message_delete(self, message):
+    async def on_message_delete(self, message: discord.Message):
         if await self.bot.cog_disabled_in_guild(self, message.guild):
             return
-        if not self.should_log(message.channel):
+        if not (self.should_log(message.channel) or self.should_log(message.guild)):
             return
-        entry_s = None
-        timestamp = message.created_at.strftime(TIMESTAMP_FORMAT)
-        if self.cache["check_audit"]:
-            try:
-                async for entry in message.guild.audit_logs(limit=2):
-                    # target is user who had message deleted
-                    if entry.action is discord.AuditLogAction.message_delete:
-                        if (
-                            entry.target.id == message.author.id
-                            and entry.extra.channel.id == message.channel.id
-                            and entry.created_at.timestamp() > time.time() - 3000
-                            and entry.extra.count >= 1
-                        ):
-                            entry_s = DELETE_AUDIT_TEMPLATE.format(entry.user, message, message.author, timestamp)
-                            break
-            except:
-                pass
 
-        if not entry_s:
-            entry_s = DELETE_TEMPLATE.format(message, timestamp)
+        if type(message.channel) in [discord.abc.PrivateChannel, discord.channel.DMChannel] or message.guild is None:
+            await self.log("global", global_table="message", update=True, message=message, deleted_by=message.author)
+            return
 
-        await self.log(message.channel, entry_s)
+        entry = await self.get_audit_entry(
+            message.guild,
+            lambda e: e.action is discord.AuditLogAction.message_delete,
+            lambda e: e.target.id == message.author.id,
+            lambda e: e.extra.channel.id == message.channel.id if e.extra else False,
+            lambda e: e.created_at >= discord.utils.utcnow() - timedelta(seconds=500),
+            lambda e: e.extra.count >= 1 if e.extra else False,
+        )
+        deleted_by = entry.user if entry is not None else message.author
+
+        await self.log("message", guild=message.guild, update=True, message=message, deleted_by=deleted_by)
 
     @commands.Cog.listener()
-    async def on_guild_join(self, guild):
+    async def on_guild_join(self, guild: discord.Guild):
         if await self.bot.cog_disabled_in_guild(self, guild):
             return
-        entry = "this bot joined the guild"
-        await self.log(guild, entry)
-
-    @commands.Cog.listener()
-    async def on_guild_remove(self, guild):
-        if await self.bot.cog_disabled_in_guild(self, guild):
+        if guild.id in self.database_handlers:
             return
-        entry = "this bot left the guild"
-        await self.log(guild, entry)
+
+        # setup guild database
+        database_conf = await self.config.database_config()
+
+        # key ids for these should be ints
+        if database_conf["backend"] == "sqlite":
+            handler = DatabaseHandler(str(guild.id), data_path=str(self.data_path))
+        elif database_conf["backend"] == "mysql":
+            handler = DatabaseHandler(str(guild.id), **database_conf)
+        else:  # shouldn't happen
+            handler = None
+        self.database_handlers[guild.id] = handler
 
     @commands.Cog.listener()
-    async def on_guild_update(self, before, after):
+    async def on_guild_update(self, before: discord.Guild, after: discord.Guild):
         if await self.bot.cog_disabled_in_guild(self, after):
             return
         if not self.should_log(before):
             return
 
-        entries = []
-        user = None
-        if self.cache["check_audit"]:
-            try:
-                async for entry in after.audit_logs(limit=1):
-                    if entry.action is discord.AuditLogAction.guild_update:
-                        user = entry.user
-            except:
-                pass
+        action = "guild_update"
+        category = "update"
+        audit_entry = None
+        attribute = []
+        old_value = []
+        new_value = []
+        audit_entry = await self.get_audit_entry(
+            after,
+            lambda e: e.action is discord.AuditLogAction.guild_update,
+        )
 
+        author: User | Member | None = audit_entry.user if audit_entry else before.me
         if before.owner != after.owner:
-            if user:
-                entries.append(
-                    "guild owner changed by @{2.name}#{2.discriminator}(id:{2.id}), from {0.owner} (id {0.owner.id}) to {1.owner} (id {1.owner.id})"
-                )
-            else:
-                entries.append("guild owner changed from {0.owner} (id {0.owner.id}) to {1.owner} (id {1.owner.id})")
-
-        if before.region != after.region:
-            if user:
-                entries.append(
-                    "guild region changed by @{2.name}#{2.discriminator}(id:{2.id}), from {0.region} to {1.region}"
-                )
-            else:
-                entries.append("guild region changed from {0.region} to {1.region}")
+            attribute.append("owner")
+            old_value.append(before.owner.id if before.owner else None)
+            new_value.append(after.owner.id if after.owner else None)
 
         if before.name != after.name:
-            if user:
-                entries.append(
-                    'guild name changed by @{2.name}#{2.discriminator}(id:{2.id}), from "{0.name}" to "{1.name}"'
-                )
-            else:
-                entries.append('guild name changed from "{0.name}" to "{1.name}"')
+            attribute.append("name")
+            old_value.append(before.name)
+            new_value.append(after.name)
 
-        if before.icon_url != after.icon_url:
-            if user:
-                entries.append(
-                    "guild icon changed by @{2.name}#{2.discriminator}(id:{2.id}), from {0.icon_url} to {1.icon_url}"
-                )
-            else:
-                entries.append("guild icon changed from {0.icon_url} to {1.icon_url}")
+        if before.icon != after.icon:
+            attribute.append("guild_icon")
+            old_value.append(before.icon.url if before.icon else None)
+            new_value.append(after.icon.url if after.icon else None)
 
         if before.splash != after.splash:
-            if user:
-                entries.append(
-                    "guild splash changed by @{2.name}#{2.discriminator}(id:{2.id}), from {0.splash} to {1.splash}"
-                )
-            else:
-                entries.append("guild splash changed from {0.splash} to {1.splash}")
+            attribute.append("splash")
+            old_value.append(before.splash.url if before.splash else None)
+            new_value.append(after.splash.url if after.splash else None)
 
-        for e in entries:
-            if user:
-                await self.log(before, e.format(before, after, user))
-            else:
-                await self.log(before, e.format(before, after))
+        for attr, old, new in zip(attribute, old_value, new_value):
+            await self.log(
+                "audit",
+                guild=after,
+                update=False,
+                audit=audit_entry,
+                action=action,
+                category=category,
+                author=author,
+                attribute=attr,
+                before=old,
+                after=new,
+            )
 
     @commands.Cog.listener()
-    async def on_guild_role_create(self, role):
+    async def on_guild_emojis_update(
+        self,
+        guild: discord.Guild,
+        before: Sequence[discord.Emoji],
+        after: Sequence[discord.Emoji],
+    ):
+        if await self.bot.cog_disabled_in_guild(self, guild):
+            return
+        if not self.should_log(guild):
+            return
+
+        # Determine added and removed emojis
+        before_ids = {e.id for e in before}
+        after_ids = {e.id for e in after}
+
+        added = [emoji for emoji in after if emoji.id not in before_ids]
+        removed = [emoji for emoji in before if emoji.id not in after_ids]
+
+        for emoji in added:
+            audit_entry = await self.get_audit_entry(
+                guild,
+                lambda e: e.action == discord.AuditLogAction.emoji_create,
+                lambda e: e.target.id == emoji.id,
+            )
+            author: User | Member | None = audit_entry.user if audit_entry else guild.me
+            await self.log(
+                "audit",
+                guild=guild,
+                update=False,
+                audit=audit_entry,
+                action="emoji_create",
+                category="create",
+                author=author,
+                attribute="emoji",
+                before=None,
+                after=emoji.id,
+            )
+        for emoji in removed:
+            audit_entry = await self.get_audit_entry(
+                guild,
+                lambda e: e.action == discord.AuditLogAction.emoji_delete,
+                lambda e: e.target.id == emoji.id,
+            )
+            author: User | Member | None = audit_entry.user if audit_entry else guild.me
+            await self.log(
+                "audit",
+                guild=guild,
+                update=False,
+                audit=audit_entry,
+                action="emoji_delete",
+                category="delete",
+                author=author,
+                attribute="emoji",
+                before=emoji.id,
+                after=emoji.name,
+            )
+
+    @commands.Cog.listener()
+    async def on_guild_stickers_update(
+        self, guild: discord.Guild, before: Sequence[discord.GuildSticker], after: Sequence[discord.GuildSticker]
+    ):
+        if await self.bot.cog_disabled_in_guild(self, guild):
+            return
+        if not self.should_log(guild):
+            return
+
+        # Determine added and removed stickers
+        before_ids = {s.id for s in before}
+        after_ids = {s.id for s in after}
+
+        added = [sticker for sticker in after if sticker.id not in before_ids]
+        removed = [sticker for sticker in before if sticker.id not in after_ids]
+
+        for sticker in added:
+            audit_entry = await self.get_audit_entry(
+                guild,
+                lambda e: e.action == discord.AuditLogAction.sticker_create,
+                lambda e: e.target.id == sticker.id,
+            )
+            author: User | Member | None = audit_entry.user if audit_entry else guild.me
+            await self.log(
+                "audit",
+                guild=guild,
+                update=False,
+                audit=audit_entry,
+                action="sticker_create",
+                category="create",
+                author=author,
+                attribute="sticker",
+                before=None,
+                after=sticker.id,
+            )
+        for sticker in removed:
+            audit_entry = await self.get_audit_entry(
+                guild,
+                lambda e: e.action == discord.AuditLogAction.sticker_delete,
+                lambda e: e.target.id == sticker.id,
+            )
+            author: User | Member | None = audit_entry.user if audit_entry else guild.me
+            await self.log(
+                "audit",
+                guild=guild,
+                update=False,
+                audit=audit_entry,
+                action="sticker_delete",
+                category="delete",
+                author=author,
+                attribute="sticker",
+                before=sticker.id,
+                after=sticker.name,
+            )
+
+    @commands.Cog.listener()
+    async def on_audit_log_entry_create(self, entry: discord.AuditLogEntry):
+        # not logged directly, but used for checking other logging events
+        if entry.guild.id not in self.audit_logs:
+            self.audit_logs[entry.guild.id] = deque([entry], maxlen=AUDIT_QUEUE_LEN)
+        else:
+            self.audit_logs[entry.guild.id].appendleft(entry)
+
+    @commands.Cog.listener()
+    async def on_invite_create(self, invite: discord.Invite):
+        if await self.bot.cog_disabled_in_guild(self, invite.guild):
+            return
+        if not self.should_log(invite.guild):
+            return
+
+        audit_entry = await self.get_audit_entry(
+            invite.guild,
+            lambda e: e.action == discord.AuditLogAction.invite_create,
+            lambda e: e.target.id == invite.id,
+        )
+
+        await self.log(
+            "audit",
+            guild=invite.guild,
+            update=False,
+            audit=audit_entry,
+            action="invite_create",
+            category="create",
+            author=invite.inviter if invite.inviter else invite.guild.me,
+            attribute="invite",
+            before=None,
+            after=invite.code,
+        )
+
+    @commands.Cog.listener()
+    async def on_invite_delete(self, invite: discord.Invite):
+        if invite.guild is not None and await self.bot.cog_disabled_in_guild(self, invite.guild):
+            return
+        if not self.should_log(invite.guild):
+            return
+
+        audit_entry = await self.get_audit_entry(
+            invite.guild,
+            lambda e: e.action == discord.AuditLogAction.invite_delete,
+            lambda e: e.target.id == invite.id,
+        )
+        author: User | Member | None = audit_entry.user if audit_entry else invite.guild.me
+
+        await self.log(
+            "audit",
+            guild=invite.guild,
+            update=False,
+            audit=audit_entry,
+            action="invite_delete",
+            category="delete",
+            author=author,
+            attribute="invite",
+            before=invite.code,
+            after=None,
+        )
+
+    @commands.Cog.listener()
+    async def on_bulk_message_delete(self, messages: List[discord.Message]):
+        if not messages:
+            return
+        guild = messages[0].guild
+        if guild is None:
+            return
+        if await self.bot.cog_disabled_in_guild(self, guild):
+            return
+        if not self.should_log(guild):
+            return
+
+        channel = messages[0].channel
+        audit_entry = await self.get_audit_entry(
+            guild,
+            lambda e: e.action == discord.AuditLogAction.message_bulk_delete,
+            lambda e: e.target.id == channel.id,
+        )
+        deleted_by: User | Member | None = audit_entry.user if audit_entry else guild.me
+
+        for msg in messages:
+            await self.log("message", guild=guild, update=True, message=msg, deleted_by=deleted_by)
+
+    @commands.Cog.listener()
+    async def on_scheduled_event_create(self, event: discord.ScheduledEvent):
+        if event.guild is None or await self.bot.cog_disabled_in_guild(self, event.guild):
+            return
+        if not self.should_log(event.guild):
+            return
+
+        audit_entry = await self.get_audit_entry(
+            event.guild,
+            lambda e: e.action == discord.AuditLogAction.scheduled_event_create,
+            lambda e: e.target.id == event.id,
+        )
+        author: User | Member | None = audit_entry.user if audit_entry else event.guild.me
+
+        await self.log(
+            "audit",
+            guild=event.guild,
+            update=False,
+            audit=None,
+            action="scheduled_event_create",
+            category="create",
+            author=author,
+            attribute="event",
+            before=None,
+            after=event.id,
+        )
+
+    @commands.Cog.listener()
+    async def on_scheduled_event_delete(self, event: discord.ScheduledEvent):
+        if event.guild is None or await self.bot.cog_disabled_in_guild(self, event.guild):
+            return
+        if not self.should_log(event.guild):
+            return
+
+        audit_entry = await self.get_audit_entry(
+            event.guild,
+            lambda e: e.action == discord.AuditLogAction.scheduled_event_delete,
+            lambda e: e.target.id == event.id,
+        )
+        author: User | Member | None = audit_entry.user if audit_entry else event.guild.me
+
+        await self.log(
+            "audit",
+            guild=event.guild,
+            update=False,
+            audit=None,
+            action="scheduled_event_delete",
+            category="delete",
+            author=author,
+            attribute="event",
+            before=event.id,
+            after=event.name,
+        )
+
+    @commands.Cog.listener()
+    async def on_scheduled_event_update(self, before: discord.ScheduledEvent, after: discord.ScheduledEvent):
+        guild = after.guild
+        if guild is None or await self.bot.cog_disabled_in_guild(self, guild):
+            return
+        if not self.should_log(guild):
+            return
+
+        attribute = []
+        old_value = []
+        new_value = []
+
+        if before.name != after.name:
+            attribute.append("name")
+            old_value.append(before.name)
+            new_value.append(after.name)
+        if before.description != after.description:
+            attribute.append("description")
+            old_value.append(before.description)
+            new_value.append(after.description)
+        if before.start_time != after.start_time:
+            attribute.append("start_time")
+            old_value.append(str(before.start_time))
+            new_value.append(str(after.start_time))
+        if before.end_time != after.end_time:
+            attribute.append("end_time")
+            old_value.append(str(before.end_time) if before.end_time is not None else None)
+            new_value.append(str(after.end_time) if after.end_time is not None else None)
+        if before.channel != after.channel:
+            attribute.append("channel")
+            old_value.append(str(before.channel.id) if before.channel else None)
+            new_value.append(str(after.channel.id) if after.channel else None)
+        if before.status != after.status:
+            attribute.append("status")
+            old_value.append(str(before.status))
+            new_value.append(str(after.status))
+        if before.cover_image != after.cover_image:
+            attribute.append("cover_image")
+            old_value.append(before.cover_image.url if before.cover_image else None)
+            new_value.append(after.cover_image.url if after.cover_image else None)
+
+        audit_entry = await self.get_audit_entry(
+            before.guild,
+            lambda e: e.action == discord.AuditLogAction.scheduled_event_update,
+            lambda e: e.target.id == before.id,
+        )
+        author: User | Member | None = audit_entry.user if audit_entry else guild.me
+
+        for attr, old, new in zip(attribute, old_value, new_value):
+            await self.log(
+                "audit",
+                guild=guild,
+                update=False,
+                audit=audit_entry,
+                action="scheduled_event_update",
+                category="update",
+                author=author,
+                attribute=attr,
+                before=old,
+                after=new,
+                force_new_id=True,
+            )
+
+    @commands.Cog.listener()
+    async def on_soundboard_sound_create(self, sound: discord.SoundboardSound):
+        if await self.bot.cog_disabled_in_guild(self, sound.guild):
+            return
+        if not self.should_log(sound.guild):
+            return
+
+        audit_entry = await self.get_audit_entry(
+            sound.guild,
+            lambda e: e.action == discord.AuditLogAction.soundboard_sound_create,
+            lambda e: e.after.id == sound.id,
+        )
+        author: User | Member | None = audit_entry.user if audit_entry else sound.guild.me
+
+        await self.log(
+            "audit",
+            guild=sound.guild,
+            update=False,
+            audit=audit_entry,
+            action="soundboard_sound_create",
+            category="create",
+            author=author,
+            attribute="sound",
+            before=None,
+            after=sound.id,
+        )
+
+    @commands.Cog.listener()
+    async def on_soundboard_sound_delete(self, sound: discord.SoundboardSound):
+        if await self.bot.cog_disabled_in_guild(self, sound.guild):
+            return
+        if not self.should_log(sound.guild):
+            return
+
+        audit_entry = await self.get_audit_entry(
+            sound.guild,
+            lambda e: e.action == discord.AuditLogAction.soundboard_sound_delete,
+            lambda e: e.before.id == sound.id,
+        )
+        author: User | Member | None = audit_entry.user if audit_entry else sound.guild.me
+
+        await self.log(
+            "audit",
+            guild=sound.guild,
+            update=False,
+            audit=audit_entry,
+            action="soundboard_sound_delete",
+            category="delete",
+            author=author,
+            attribute="sound",
+            before=sound.id,
+            after=sound.name,
+        )
+
+    @commands.Cog.listener()
+    async def on_soundboard_sound_update(self, before: discord.SoundboardSound, after: discord.SoundboardSound):
+        guild = after.guild
+        if await self.bot.cog_disabled_in_guild(self, guild):
+            return
+        if not self.should_log(guild):
+            return
+
+        attribute = []
+        old_value = []
+        new_value = []
+
+        if before.name != after.name:
+            attribute.append("name")
+            old_value.append(before.name)
+            new_value.append(after.name)
+        if before.emoji != after.emoji:
+            attribute.append("emoji")
+            old_value.append(before.emoji.id if before.emoji else None)
+            new_value.append(after.emoji.id if after.emoji else None)
+        if before.volume != after.volume:
+            attribute.append("volume")
+            old_value.append(before.volume)
+            new_value.append(after.volume)
+
+        # for some reason this auditlog entry type has no id on before, after, or target
+        # so hopefully this returns the right sound, as long as multiple edits arent happening at once
+        audit_entry = await self.get_audit_entry(
+            guild,
+            lambda e: e.action == discord.AuditLogAction.soundboard_sound_update,
+            # lambda e: e.target.id == after.id,
+        )
+        author: User | Member | None = audit_entry.user if audit_entry else guild.me
+
+        for attr, old, new in zip(attribute, old_value, new_value):
+            await self.log(
+                "audit",
+                guild=guild,
+                update=False,
+                audit=audit_entry,
+                action="soundboard_sound_update",
+                category="update",
+                author=author,
+                attribute=attr,
+                before=old,
+                after=new,
+                force_new_id=True,
+            )
+
+    @commands.Cog.listener()
+    async def on_guild_role_create(self, role: discord.Role):
         if await self.bot.cog_disabled_in_guild(self, role.guild):
             return
         if not self.should_log(role.guild):
             return
 
-        user = None
-        if self.cache["check_audit"]:
-            try:
-                async for entry in role.guild.audit_logs(limit=2):
-                    if entry.action is discord.AuditLogAction.role_create:
-                        if entry.target.id == role.id:
-                            user = entry.user
-            except:
-                pass
+        action = "role_create"
+        category = "create"
+        audit_entry = None
+        attribute = "role"
+        old_value = None
+        new_value = role.id
+        audit_entry = await self.get_audit_entry(
+            role.guild,
+            lambda e: e.action == discord.AuditLogAction.role_create,
+            lambda e: e.target.id == role.id,
+        )
 
-        if user:
-            entry = "Role created by @{1.name}#{1.discriminator}(id:{1.id}): '{0}' (id {0.id})".format(role, user)
-        else:
-            entry = "Role created: '{0}' (id {0.id})".format(role)
-
-        await self.log(role.guild, entry)
+        author: User | Member | None = audit_entry.user if audit_entry else role.guild.me
+        await self.log(
+            "audit",
+            guild=role.guild,
+            update=False,
+            audit=audit_entry,
+            action=action,
+            category=category,
+            author=author,
+            attribute=attribute,
+            before=old_value,
+            after=new_value,
+        )
 
     @commands.Cog.listener()
-    async def on_guild_role_delete(self, role):
+    async def on_guild_role_delete(self, role: discord.Role):
         if await self.bot.cog_disabled_in_guild(self, role.guild):
             return
         if not self.should_log(role.guild):
             return
 
-        user = None
-        if self.cache["check_audit"]:
-            try:
-                async for entry in role.guild.audit_logs(limit=2):
-                    if entry.action is discord.AuditLogAction.role_delete:
-                        if entry.target.id == role.id:
-                            user = entry.user
-            except:
-                pass
+        action = "role_delete"
+        category = "delete"
+        audit_entry = None
+        attribute = "role"
+        old_value = role.id
+        new_value = None
+        audit_entry = await self.get_audit_entry(
+            role.guild,
+            lambda e: e.action == discord.AuditLogAction.role_delete,
+            lambda e: e.target.id == role.id,
+        )
 
-        if user:
-            entry = "Role deleted by @{1.name}#{1.discriminator}(id:{1.id}): '{0}' (id {0.id})".format(role, user)
-        else:
-            entry = "Role deleted: '{0}' (id {0.id})".format(role)
-
-        await self.log(role.guild, entry)
+        author: User | Member | None = audit_entry.user if audit_entry else role.guild.me
+        await self.log(
+            "audit",
+            guild=role.guild,
+            update=False,
+            audit=audit_entry,
+            action=action,
+            category=category,
+            author=author,
+            attribute=attribute,
+            before=old_value,
+            after=new_value,
+        )
 
     @commands.Cog.listener()
-    async def on_guild_role_update(self, before, after):
+    async def on_guild_role_update(self, before: discord.Role, after: discord.Role):
         if await self.bot.cog_disabled_in_guild(self, after.guild):
             return
         if not self.should_log(before.guild):
             return
 
-        entries = []
-        user = None
-        if self.cache["check_audit"]:
-            try:
-                async for entry in after.guild.audit_logs(limit=2):
-                    if entry.action is discord.AuditLogAction.role_update:
-                        if entry.target.id == after.id:
-                            user = entry.user
-            except:
-                pass
+        action = "role_update"
+        category = "update"
+        audit_entry = None
+        attribute = []
+        old_value = []
+        new_value = []
+
+        audit_entry = await self.get_audit_entry(
+            after.guild,
+            lambda e: e.action == discord.AuditLogAction.role_update,
+            lambda e: e.target.id == after.id,
+        )
 
         if before.name != after.name:
-            if user:
-                entries.append('Role renamed by @{2.name}#{2.discriminator}(id:{2.id}): "{0.name}" to "{1.name}"')
-            else:
-                entries.append('Role renamed: "{0.name}" to "{1.name}"')
+            attribute.append("name")
+            old_value.append(before.name)
+            new_value.append(after.name)
 
         if before.color != after.color:
-            if user:
-                entries.append(
-                    'Role color by @{2.name}#{2.discriminator}(id:{2.id}): "{0}" (id {0.id}) changed from {0.color} to {1.color}'
-                )
-            else:
-                entries.append('Role color: "{0}" (id {0.id}) changed from {0.color} to {1.color}')
+            attribute.append("color")
+            old_value.append(str(before.color))
+            new_value.append(str(after.color))
 
         if before.mentionable != after.mentionable:
-            if after.mentionable:
-                if user:
-                    entries.append(
-                        'Role mentionable by @{2.name}#{2.discriminator}(id:{2.id}): "{1.name}" (id {1.id}) is now mentionable'
-                    )
-                else:
-                    entries.append('Role mentionable: "{1.name}" (id {1.id}) is now mentionable')
-            else:
-                if user:
-                    entries.append(
-                        'Role mentionable by @{2.name}#{2.discriminator}(id:{2.id}): "{1.name}" (id {1.id}) is no longer mentionable'
-                    )
-                else:
-                    entries.append('Role mentionable: "{1.name}" (id {1.id}) is no longer mentionable')
+            attribute.append("mentionable")
+            old_value.append(str(before.mentionable))
+            new_value.append(str(after.mentionable))
 
         if before.hoist != after.hoist:
-            if after.hoist:
-                if user:
-                    entries.append(
-                        'Role hoist by @{2.name}#{2.discriminator}(id:{2.id}): "{1.name}" (id {1.id}) is now shown seperately'
-                    )
-                else:
-                    entries.append('Role hoist: "{1.name}" (id {1.id}) is now shown seperately')
-            else:
-                if user:
-                    entries.append(
-                        'Role hoist by @{2.name}#{2.discriminator}(id:{2.id}): "{1.name}" (id {1.id}) is no longer shown seperately'
-                    )
-                else:
-                    entries.append('Role hoist: "{1.name}" (id {1.id}) is no longer shown seperately')
+            attribute.append("hoist")
+            old_value.append(str(before.hoist))
+            new_value.append(str(after.hoist))
 
         if before.permissions != after.permissions:
-            if user:
-                entries.append(
-                    'Role permissions by @{2.name}#{2.discriminator}(id:{2.id}): "{1.name}" (id {1.id}) changed from {0.permissions.value} '
-                    "to {1.permissions.value}"
-                )
-            else:
-                entries.append(
-                    'Role permissions: "{1.name}" (id {1.id}) changed from {0.permissions.value} '
-                    "to {1.permissions.value}"
-                )
+            attribute.append("permissions")
+            old_value.append(str(before.permissions.value))
+            new_value.append(str(after.permissions.value))
 
         if before.position != after.position:
-            if user:
-                entries.append(
-                    'Role position by @{2.name}#{2.discriminator}(id:{2.id}): "{0}" changed from {0.position} to {1.position}'
-                )
-            else:
-                entries.append('Role position: "{0}" changed from {0.position} to {1.position}')
+            attribute.append("position")
+            old_value.append(str(before.position))
+            new_value.append(str(after.position))
 
-        for e in entries:
-            if user:
-                await self.log(before.guild, e.format(before, after, user))
-            else:
-                await self.log(before.guild, e.format(before, after))
+        author: User | Member | None = audit_entry.user if audit_entry else before.guild.me
+        for attr, old, new in zip(attribute, old_value, new_value):
+            await self.log(
+                "audit",
+                guild=before.guild,
+                update=False,
+                audit=audit_entry,
+                action=action,
+                category=category,
+                author=author,
+                attribute=attr,
+                before=old,
+                after=new,
+                force_new_id=True,
+            )
 
     @commands.Cog.listener()
-    async def on_member_join(self, member):
+    async def on_member_join(self, member: discord.Member):
         if await self.bot.cog_disabled_in_guild(self, member.guild):
             return
-        entry = "Member join: @{0} (id {0.id})".format(member)
 
         async with self.config.user(member).past_names() as past_names:
             if str(member) not in past_names:
                 past_names.append(str(member))
 
-        await self.log(member.guild, entry)
+        if not self.should_log(member.guild):
+            return
+
+        await self.log(
+            "audit",
+            guild=member.guild,
+            update=False,
+            audit=None,
+            action="member_join",
+            category="create",
+            author=member,
+            attribute="join",
+            before=None,
+            after=member.id,
+        )
 
     @commands.Cog.listener()
-    async def on_member_remove(self, member):
+    async def on_member_remove(self, member: discord.Member):
         if await self.bot.cog_disabled_in_guild(self, member.guild):
             return
         if not self.should_log(member.guild):
-            await self.config.member(member).clear()
             return
 
-        user = None
-        if self.cache["check_audit"]:
-            try:
-                async for entry in member.guild.audit_logs(limit=2):
-                    if entry.action is discord.AuditLogAction.kick:
-                        if entry.target.id == member.id:
-                            user = entry.user
-            except:
-                pass
+        audit_entry = await self.get_audit_entry(
+            member.guild,
+            lambda e: e.action == discord.AuditLogAction.kick,
+            lambda e: e.target.id == member.id,
+        )
 
-        if user:
-            entry = "Member kicked by @{1.name}#{1.discriminator}(id:{1.id}): @{0} (id {0.id})".format(member, user)
+        if audit_entry is not None:
+            await self.log(
+                "audit",
+                guild=member.guild,
+                update=False,
+                audit=audit_entry,
+                action="kick",
+                category="create",
+                author=audit_entry.user,
+                attribute="kick",
+                before=member.id,
+                after=None,
+            )
         else:
-            entry = "Member leave: @{0} (id {0.id})".format(member)
-
-        # don't clear stats right away if welcome cog is install so it can pull user stats
-        if self.bot.get_cog("Welcome"):
-            await asyncio.sleep(1)
-
-        await self.config.member(member).clear()
-        await self.log(member.guild, entry)
+            # leave
+            await self.log(
+                "audit",
+                guild=member.guild,
+                update=False,
+                audit=audit_entry,
+                action="member_leave",
+                category="create",
+                author=member,
+                attribute="leave",
+                before=member.id,
+                after=None,
+            )
 
     @commands.Cog.listener()
-    async def on_member_ban(self, guild, member):
+    async def on_member_ban(self, guild: discord.Guild, member: discord.Member):
         if await self.bot.cog_disabled_in_guild(self, guild):
             return
         if not self.should_log(guild):
             return
 
-        user = None
-        if self.cache["check_audit"]:
-            try:
-                async for entry in guild.audit_logs(limit=2):
-                    if entry.action is discord.AuditLogAction.ban:
-                        if entry.target.id == member.id:
-                            user = entry.user
-            except:
-                pass
+        audit_entry = await self.get_audit_entry(
+            guild,
+            lambda e: e.action == discord.AuditLogAction.ban,
+            lambda e: e.target.id == member.id,
+        )
 
-        if user:
-            entry = "Member banned by @{1.name}#{1.discriminator}(id:{1.id}): @{0} (id {0.id})".format(member, user)
-        else:
-            entry = "Member ban: @{0} (id {0.id})".format(member)
-
-        await self.log(guild, entry)
+        author: User | Member | None = audit_entry.user if audit_entry else guild.me
+        await self.log(
+            "audit",
+            guild=guild,
+            update=False,
+            audit=audit_entry,
+            action="ban",
+            category="create",
+            author=author,
+            attribute="ban",
+            before=member.id,
+            after=None,
+        )
 
     @commands.Cog.listener()
-    async def on_member_unban(self, guild, member):
+    async def on_member_unban(self, guild: discord.Guild, member: discord.User):
         if await self.bot.cog_disabled_in_guild(self, guild):
             return
         if not self.should_log(guild):
             return
 
-        user = None
-        if self.cache["check_audit"]:
-            try:
-                async for entry in guild.audit_logs(limit=2):
-                    if entry.action is discord.AuditLogAction.unban:
-                        if entry.target.id == member.id:
-                            user = entry.user
-            except:
-                pass
+        audit_entry = await self.get_audit_entry(
+            guild,
+            lambda e: e.action == discord.AuditLogAction.unban,
+            lambda e: e.target.id == member.id,
+        )
 
-        if user:
-            entry = "Member unbanned by @{1.name}#{1.discriminator}(id:{1.id}): @{0} (id {0.id})".format(member, user)
-        else:
-            entry = "Member unban: @{0} (id {0.id})".format(member)
-
-        await self.log(guild, entry)
+        author: User | Member | None = audit_entry.user if audit_entry else guild.me
+        await self.log(
+            "audit",
+            guild=guild,
+            update=False,
+            audit=audit_entry,
+            action="unban",
+            category="create",
+            author=author,
+            attribute="unban",
+            before=member.id,
+            after=None,
+        )
 
     @commands.Cog.listener()
-    async def on_member_update(self, before, after):
+    async def on_member_update(self, before: discord.Member, after: discord.Member):
         if await self.bot.cog_disabled_in_guild(self, after.guild):
             return
         if not self.should_log(before.guild):
             return
 
-        entries = []
-        user = None
-        if self.cache["check_audit"]:
-            try:
-                async for entry in after.guild.audit_logs(limit=2):
-                    if (
-                        entry.action is discord.AuditLogAction.member_update
-                        or entry.action is discord.AuditLogAction.member_role_update
-                    ):
-                        if entry.target.id == after.id:
-                            user = entry.user
-            except:
-                pass
+        action = "member_update"
+        category = "update"
+        attribute = []
+        old_value = []
+        new_value = []
+
+        audit_entry = await self.get_audit_entry(
+            after.guild,
+            lambda e: e.action == discord.AuditLogAction.member_update or discord.AuditLogAction.member_role_update,
+            lambda e: e.target.id == after.id,
+        )
 
         if before.nick != after.nick:
-            if user:
-                entries.append(
-                    'Member nickname changed by @{2.name}#{2.discriminator}(id:{2.id}): "@{0}" (id {0.id}) nickname change from "{0.nick}" to "{1.nick}"'
-                )
-            else:
-                entries.append('Member nickname: "@{0}" (id {0.id}) changed nickname from "{0.nick}" to "{1.nick}"')
+            attribute.append("nick")
+            old_value.append(before.nick)
+            new_value.append(after.nick)
 
         if before.roles != after.roles:
             broles = set(before.roles)
@@ -3702,250 +3137,485 @@ class ActivityLogger(commands.Cog):
             removed = broles - aroles
 
             for r in added:
-                if user:
-                    entries.append(
-                        'Member role added by @{1.name}#{1.discriminator}(id:{1.id}): "{0}" (id {0.id}) role '
-                        'was added to "@{{0}}" (id {{0.id}})'.format(r, user)
-                    )
-                else:
-                    entries.append(
-                        'Member role add: "{0}" (id {0.id}) role ' 'was added to "@{{0}}" (id {{0.id}})'.format(r)
-                    )
+                attribute.append("role")
+                old_value.append(None)
+                new_value.append(str(r.id))
 
             for r in removed:
-                if user:
-                    entries.append(
-                        'Member role removed by @{1.name}#{1.discriminator}(id:{1.id}): "{0}" (id {0.id}) role was removed from "@{{0}}" (id {{0.id}})'.format(
-                            r, user
-                        )
-                    )
-                else:
-                    entries.append(
-                        'Member role remove: "{0}" (id {0.id}) role '
-                        'was removed from "@{{0}}" (id {{0.id}})'.format(r)
-                    )
+                attribute.append("role")
+                old_value.append(str(r.id))
+                new_value.append(None)
 
-        for e in entries:
-            await self.log(before.guild, e.format(before, after, user))
+        author: User | Member | None = audit_entry.user if audit_entry else before.guild.me
+        for attr, old, new in zip(attribute, old_value, new_value):
+            await self.log(
+                "audit",
+                guild=before.guild,
+                update=False,
+                audit=audit_entry,
+                action=action,
+                category=category,
+                author=author,
+                attribute=attr,
+                before=old,
+                after=new,
+                force_new_id=True,
+            )
 
     @commands.Cog.listener()
-    async def on_user_update(self, before, after):
-        entries = []
+    async def on_user_update(self, before: discord.User, after: discord.User):
+        if not self.should_log(before):
+            return
+        action = "user_update"
+        category = "update"
+        attribute = []
+        old_value = []
+        new_value = []
 
         if before.name != after.name:
-            entries.append('Member username: "@{0}" (id {0.id}) changed username from "{0.name}" to "{1.name}"')
+            attribute.append("username")
+            old_value.append(before.name)
+            new_value.append(after.name)
+            # update past usernames
             async with self.config.user(after).past_names() as past_names:
-                if str(after) not in past_names:
-                    past_names.append(str(after))
+                if after.name not in past_names:
+                    past_names.append(after.name)
 
-        if before.discriminator != after.discriminator:
-            entries.append('Member discriminator: "@{0}" (id {0.id}) changed discriminator from "{0}" to "{1}"')
-            async with self.config.user(after).past_names() as past_names:
-                if str(after) not in past_names:
-                    past_names.append(str(after))
+        if before.avatar != after.avatar:
+            attribute.append("avatar")
+            old_value.append(str(before.avatar) if before.avatar else None)
+            new_value.append(str(after.avatar) if after.avatar else None)
 
-        for e in entries:
-            await self.log(after, e.format(before, after))
+        for attr, old, new in zip(attribute, old_value, new_value):
+            await self.log(
+                "global",
+                global_table="audit",
+                guild=None,
+                update=False,
+                audit=None,
+                action=action,
+                category=category,
+                author=after,
+                attribute=attr,
+                before=old,
+                after=new,
+            )
 
     @commands.Cog.listener()
-    async def on_guild_channel_create(self, channel):
+    async def on_thread_create(self, thread: discord.Thread):
+        if await self.bot.cog_disabled_in_guild(self, thread.guild):
+            return
+        if not self.should_log(thread.guild):
+            return
+
+        audit_entry = await self.get_audit_entry(
+            thread.guild,
+            lambda e: e.action == discord.AuditLogAction.thread_create,
+            lambda e: e.target.id == thread.id,
+        )
+        author: User | Member | None = audit_entry.user if audit_entry else thread.guild.me
+
+        await self.log(
+            "audit",
+            guild=thread.guild,
+            update=False,
+            audit=audit_entry,
+            action="thread_create",
+            category="create",
+            author=author,
+            attribute="thread",
+            before=None,
+            after=thread.id,
+        )
+
+    @commands.Cog.listener()
+    async def on_thread_join(self, thread: discord.Thread):
+        pass
+
+    @commands.Cog.listener()
+    async def on_thread_update(self, before: discord.Thread, after: discord.Thread):
+        guild = after.guild
+        if await self.bot.cog_disabled_in_guild(self, guild):
+            return
+        if not self.should_log(guild):
+            return
+
+        attribute = []
+        old_value = []
+        new_value = []
+
+        if before.name != after.name:
+            attribute.append("name")
+            old_value.append(before.name)
+            new_value.append(after.name)
+        if before.archived != after.archived:
+            attribute.append("archived")
+            old_value.append(str(before.archived))
+            new_value.append(str(after.archived))
+        if before.locked != after.locked:
+            attribute.append("locked")
+            old_value.append(str(before.locked))
+            new_value.append(str(after.locked))
+
+        audit_entry = await self.get_audit_entry(
+            before.guild,
+            lambda e: e.action == discord.AuditLogAction.thread_update,
+            lambda e: e.target.id == before.id,
+        )
+        author: User | Member | None = audit_entry.user if audit_entry else before.guild.me
+
+        for attr, old, new in zip(attribute, old_value, new_value):
+            await self.log(
+                "audit",
+                guild=guild,
+                update=False,
+                audit=audit_entry,
+                action="thread_update",
+                category="update",
+                author=author,
+                attribute=attr,
+                before=old,
+                after=new,
+                force_new_id=True,
+            )
+
+    @commands.Cog.listener()
+    async def on_raw_thread_delete(self, payload: discord.RawThreadDeleteEvent):
+        guild = self.bot.get_guild(payload.guild_id)
+        if guild is None:
+            return
+        if await self.bot.cog_disabled_in_guild(self, guild):
+            return
+        if not self.should_log(guild):
+            return
+
+        audit_entry = await self.get_audit_entry(
+            guild,
+            lambda e: e.action == discord.AuditLogAction.thread_delete,
+            lambda e: e.target.id == payload.thread_id,
+        )
+        author: User | Member | None = audit_entry.user if audit_entry else guild.me
+
+        await self.log(
+            "audit",
+            guild=guild,
+            update=False,
+            audit=audit_entry,
+            action="thread_delete",
+            category="delete",
+            author=author,
+            attribute="thread",
+            before=payload.thread_id,
+            after=payload.parent_id,
+        )
+
+    @commands.Cog.listener()
+    async def on_guild_channel_create(self, channel: discord.abc.GuildChannel):
         if await self.bot.cog_disabled_in_guild(self, channel.guild):
             return
         if not self.should_log(channel.guild):
             return
 
-        user = None
-        if self.cache["check_audit"]:
-            try:
-                async for entry in channel.guild.audit_logs(limit=2):
-                    if entry.action is discord.AuditLogAction.channel_create:
-                        if entry.target.id == after.id:
-                            user = entry.user
-            except:
-                pass
+        action = "channel_create"
+        category = "create"
 
-        if user:
-            entry = 'Channel created by @{1.name}#{1.discriminator}(id:{1.id}): "{0.name}" (id {0.id})'.format(
-                channel, user
-            )
-        else:
-            entry = 'Channel created: "{0.name}" (id {0.id})'.format(channel)
+        audit_entry = await self.get_audit_entry(
+            channel.guild,
+            lambda e: e.action == discord.AuditLogAction.channel_create,
+            lambda e: e.target.id == channel.id,
+        )
 
-        await self.log(channel.guild, entry)
+        author: User | Member | None = audit_entry.user if audit_entry else channel.guild.me
+        await self.log(
+            "audit",
+            guild=channel.guild,
+            update=False,
+            audit=audit_entry,
+            action=action,
+            category=category,
+            author=author,
+            attribute="channel",
+            before=None,
+            after=channel.id,
+        )
 
     @commands.Cog.listener()
-    async def on_guild_channel_delete(self, channel):
+    async def on_guild_channel_delete(self, channel: discord.abc.GuildChannel):
         if await self.bot.cog_disabled_in_guild(self, channel.guild):
             return
         if not self.should_log(channel.guild):
             return
 
-        user = None
-        if self.cache["check_audit"]:
-            try:
-                async for entry in channel.guild.audit_logs(limit=2):
-                    if entry.action is discord.AuditLogAction.channel_delete:
-                        if entry.target.id == after.id:
-                            user = entry.user
-            except:
-                pass
+        action = "channel_delete"
+        category = "delete"
 
-        if user:
-            entry = 'Channel deleted by @{1.name}#{1.discriminator}(id:{1.id}): "{0.name}" (id {0.id})'.format(
-                channel, user
-            )
-        else:
-            entry = 'Channel deleted: "{0.name}" (id {0.id})'.format(channel)
+        audit_entry = await self.get_audit_entry(
+            channel.guild,
+            lambda e: e.action == discord.AuditLogAction.channel_delete,
+            lambda e: e.target.id == channel.id,
+        )
 
-        await self.log(channel.guild, entry)
+        author: User | Member | None = audit_entry.user if audit_entry else channel.guild.me
+        await self.log(
+            "audit",
+            guild=channel.guild,
+            update=False,
+            audit=audit_entry,
+            action=action,
+            category=category,
+            author=author,
+            attribute="channel",
+            before=channel.id,
+            after=None,
+        )
 
     @commands.Cog.listener()
-    async def on_guild_channel_update(self, before, after):
+    async def on_guild_channel_update(self, before: discord.abc.GuildChannel, after: discord.abc.GuildChannel):
         if await self.bot.cog_disabled_in_guild(self, after.guild):
             return
         if not self.should_log(before.guild):
             return
 
-        user = None
-        if self.cache["check_audit"]:
-            try:
-                async for entry in after.guild.audit_logs(limit=2):
-                    if entry.action is discord.AuditLogAction.channel_update:
-                        if entry.target.id == after.id:
-                            user = entry.user
-            except:
-                pass
+        action = "channel_update"
+        category = "update"
+        attribute = []
+        old_value = []
+        new_value = []
 
-        entries = []
+        audit_entry = await self.get_audit_entry(
+            after.guild,
+            lambda e: e.action
+            in [
+                discord.AuditLogAction.channel_update,
+                discord.AuditLogAction.overwrite_create,
+                discord.AuditLogAction.overwrite_delete,
+                discord.AuditLogAction.overwrite_update,
+            ],
+            lambda e: e.target.id == after.id,
+        )
 
+        # common attributes
         if before.name != after.name:
-            if user:
-                entries.append(
-                    'Channel rename by @{2.name}#{2.discriminator}(id:{2.id}): "{0.name}" (id {0.id}) renamed to "{1.name}"'
-                )
-            else:
-                entries.append('Channel rename: "{0.name}" (id {0.id}) renamed to "{1.name}"')
-
-        if isinstance(before, discord.TextChannel):
-            if before.topic != after.topic:
-                if user:
-                    entries.append(
-                        'Channel topic by @{2.name}#{2.discriminator}(id:{2.id}): "{0.name}" (id {0.id}) topic was set to "{1.topic}"'
-                    )
-                else:
-                    entries.append('Channel topic: "{0.name}" (id {0.id}) topic was set to "{1.topic}"')
-
+            attribute.append("name")
+            old_value.append(before.name)
+            new_value.append(after.name)
         if before.position != after.position:
-            if user:
-                entries.append(
-                    'Channel position by @{2.name}#{2.discriminator}(id:{2.id}): "{0.name}" (id {0.id}) moved from {0.position} to {1.position}'
-                )
-            else:
-                entries.append('Channel position: "{0.name}" (id {0.id}) moved from {0.position} to {1.position}')
+            attribute.append("position")
+            old_value.append(str(before.position))
+            new_value.append(str(after.position))
+        if before.nsfw != after.nsfw:
+            attribute.append("nsfw")
+            old_value.append(str(before.nsfw))
+            new_value.append(str(after.nsfw))
 
-        before_ow = dict(before.overwrites)
-        after_ow = dict(after.overwrites)
-        before_ow_set = set(before_ow)
-        after_ow_set = set(after_ow)
+        if isinstance(before, discord.TextChannel) and isinstance(after, discord.TextChannel):
+            if before.topic != after.topic:
+                attribute.append("topic")
+                old_value.append(before.topic)
+                new_value.append(after.topic)
+            if before.slowmode_delay != after.slowmode_delay:
+                attribute.append("slowmode_delay")
+                old_value.append(before.slowmode_delay)
+                new_value.append(after.slowmode_delay)
+            if before.category_id != after.category_id:
+                attribute.append("category_id")
+                old_value.append(before.category_id)
+                new_value.append(after.category_id)
 
-        for old_ow in before_ow_set - after_ow_set:
-            entries.append(self.format_overwrite(old_ow, before, before_ow[old_ow], None, user=user))
+        if (isinstance(before, discord.VoiceChannel) and isinstance(after, discord.VoiceChannel)) or (
+            isinstance(before, discord.StageChannel) and isinstance(after, discord.StageChannel)
+        ):
+            if before.slowmode_delay != after.slowmode_delay:
+                attribute.append("slowmode_delay")
+                old_value.append(before.slowmode_delay)
+                new_value.append(after.slowmode_delay)
+            if before.bitrate != after.bitrate:
+                attribute.append("bitrate")
+                old_value.append(before.bitrate)
+                new_value.append(after.bitrate)
+            if before.category_id != after.category_id:
+                attribute.append("category_id")
+                old_value.append(before.category_id)
+                new_value.append(after.category_id)
+            if before.rtc_region != after.rtc_region:
+                attribute.append("rtc_region")
+                old_value.append(before.rtc_region)
+                new_value.append(after.rtc_region)
+            if before.user_limit != after.user_limit:
+                attribute.append("user_limit")
+                old_value.append(before.user_limit)
+                new_value.append(after.user_limit)
+            if before.video_quality_mode != after.video_quality_mode:
+                attribute.append("video_quality_mode")
+                old_value.append(before.video_quality_mode)
+                new_value.append(after.video_quality_mode)
 
-        for new_ow in after_ow_set - before_ow_set:
-            entries.append(self.format_overwrite(new_ow, before, None, after_ow[new_ow], user=user))
+        if isinstance(before, discord.CategoryChannel) and isinstance(after, discord.CategoryChannel):
+            pass
 
-        for isect_ow in after_ow_set & before_ow_set:
-            if before_ow[isect_ow].pair() == after_ow[isect_ow].pair():
-                continue
+        if isinstance(before, discord.StageChannel) and isinstance(after, discord.StageChannel):
+            if before.topic != after.topic:
+                attribute.append("topic")
+                old_value.append(before.topic)
+                new_value.append(after.topic)
 
-            entries.append(self.format_overwrite(isect_ow, before, before_ow[isect_ow], after_ow[isect_ow], user=user))
+        if isinstance(before, discord.ForumChannel) and isinstance(after, discord.ForumChannel):
+            if before.topic != after.topic:
+                attribute.append("topic")
+                old_value.append(before.topic)
+                new_value.append(after.topic)
+            if before.slowmode_delay != after.slowmode_delay:
+                attribute.append("slowmode_delay")
+                old_value.append(before.slowmode_delay)
+                new_value.append(after.slowmode_delay)
+            if before.category_id != after.category_id:
+                attribute.append("category_id")
+                old_value.append(before.category_id)
+                new_value.append(after.category_id)
+            if before.available_tags != after.available_tags:
+                btags = set(before.available_tags)
+                atags = set(after.available_tags)
+                added = atags - btags
+                removed = btags - atags
 
-        for e in entries:
-            if user:
-                await self.log(before.guild, e.format(before, after, user))
-            else:
-                await self.log(before.guild, e.format(before, after))
+                for r in added:
+                    attribute.append("available_tags")
+                    old_value.append(None)
+                    new_value.append(str(r.name))
+
+                for r in removed:
+                    attribute.append("available_tags")
+                    old_value.append(str(r.name))
+                    new_value.append(None)
+
+        before_ow = before.overwrites
+        after_ow = after.overwrites
+
+        before_keys = set(before_ow.keys())
+        after_keys = set(after_ow.keys())
+
+        added_keys = after_keys - before_keys
+        removed_keys = before_keys - after_keys
+        common_keys = before_keys & after_keys
+
+        added_perms = {}
+        for entity in added_keys:
+            po = after_ow[entity]
+            allow, deny = po.pair()
+            perms = [perm for perm in discord.Permissions.VALID_FLAGS if getattr(allow, perm) or getattr(deny, perm)]
+            added_perms[entity] = perms
+
+        removed_perms = {}
+        for entity in removed_keys:
+            po = before_ow[entity]
+            allow, deny = po.pair()
+            perms = [perm for perm in discord.Permissions.VALID_FLAGS if getattr(allow, perm) or getattr(deny, perm)]
+            removed_perms[entity] = perms
+
+        changed_perms = {}
+        for entity in common_keys:
+            before_po = before_ow[entity]
+            after_po = after_ow[entity]
+
+            changes = compare_permissions(before_po, after_po)
+            if changes:
+                changed_perms[entity] = changes
+
+        overwrite_change_data = build_overwrite_change_log(added_perms, removed_perms, changed_perms)
+
+        if overwrite_change_data:
+            attribute.append("overwrites")
+            old_value.append(json.dumps(serialize_overwrites(before_ow)))
+            new_value.append(json.dumps(overwrite_change_data))  # LONGTEXT-safe
+
+        author: User | Member | None = audit_entry.user if audit_entry else after.guild.me
+        for attr, old, new in zip(attribute, old_value, new_value):
+            await self.log(
+                "audit",
+                guild=after.guild,
+                update=False,
+                audit=audit_entry,
+                action=action,
+                category=category,
+                author=author,
+                attribute=attr,
+                before=old,
+                after=new,
+                force_new_id=True,
+            )
 
     @commands.Cog.listener()
-    async def on_voice_state_update(self, member, before, after):
+    async def on_voice_state_update(
+        self, member: discord.Member, before: discord.VoiceState, after: discord.VoiceState
+    ):
         if await self.bot.cog_disabled_in_guild(self, member.guild):
             return
         if not self.should_log(before.channel):
             return
 
-        # will add audit logging later, just a pain trying to figure it out here
+        await self.log("voice", guild=member.guild, member=member, before=before, after=after)
 
-        if before.channel != after.channel:
-            if before.channel:
-                msg = "Voice channel leave: {0} (id {0.id})"
+    @commands.Cog.listener()
+    async def on_automod_rule_create(self, rule: discord.AutoModRule):
+        if await self.bot.cog_disabled_in_guild(self, rule.guild):
+            return
+        if not self.should_log(rule.guild):
+            return
 
-                async with self.config.member(member).stats() as stats:
-                    if stats["last_vc_time"]:  # incase someone joins when bot is offline
-                        stats["vc_time_sec"] += time.time() - stats["last_vc_time"]
-                        stats["last_vc_time"] = None
+        action = "automod_rule_create"
+        category = "create"
+        await self.log(
+            "audit",
+            guild=rule.guild,
+            update=False,
+            audit=None,
+            action=action,
+            category=category,
+            author=rule.creator,
+            attribute="",
+            before=None,
+            after=rule.id,
+        )
 
-                if after.channel:
-                    msg += " moving to {1.channel}"
+    @commands.Cog.listener()
+    async def on_automod_rule_delete(self, rule: discord.AutoModRule):
+        if await self.bot.cog_disabled_in_guild(self, rule.guild):
+            return
+        if not self.should_log(rule.guild):
+            return
 
-                await self.log(before.channel, msg.format(member, after))
+        action = "automod_rule_create"
+        category = "create"
+        await self.log(
+            "audit",
+            guild=rule.guild,
+            update=False,
+            audit=None,
+            action=action,
+            category=category,
+            author=rule.creator,
+            attribute="",
+            before=None,
+            after=rule.id,
+        )
 
-            if after.channel:
-                msg = "Voice channel join: {0} (id {0.id})"
+    @commands.Cog.listener()
+    async def on_automod_rule_action(self, action: discord.AutoModAction):
+        if await self.bot.cog_disabled_in_guild(self, action.guild):
+            return
+        if not self.should_log(action.guild):
+            return
 
-                async with self.config.member(member).stats() as stats:
-                    stats["last_vc_time"] = time.time()
-
-                if before.channel:
-                    msg += ", moved from {1.channel}"
-
-                flags = self.get_voice_flags(after)
-
-                if flags:
-                    msg += ", flags: %s" % ",".join(flags)
-
-                await self.log(after.channel, msg.format(member, before))
-
-        if before.deaf != after.deaf:
-            verb = "deafen" if after.deaf else "undeafen"
-            await self.log(before.channel, "guild {0}: {1} (id {1.id})".format(verb, member))
-
-        if before.mute != after.mute:
-            verb = "mute" if after.mute else "unmute"
-            await self.log(before.channel, "guild {0}: {1} (id {1.id})".format(verb, member))
-
-        if before.self_deaf != after.self_deaf:
-            verb = "deafen" if after.self_deaf else "undeafen"
-            await self.log(before.channel, "guild self-{0}: {1} (id {1.id})".format(verb, member))
-
-        if before.self_mute != after.self_mute:
-            verb = "mute" if after.self_mute else "unmute"
-            await self.log(before.channel, "guild self-{0}: {1} (id {1.id})".format(verb, member))
-
-        if before.self_stream != after.self_stream:
-            verb = "stop-stream" if not after.self_stream else "start-stream"
-            await self.log(before.channel, "guild self-{0}: {1} (id {1.id})".format(verb, member))
-
-        if before.self_video != after.self_video:
-            verb = "start-video" if after.self_video else "stop-video"
-            await self.log(before.channel, "guild self-{0}: {1} (id {1.id})".format(verb, member))
-
-    # async def red_get_data_for_user(self, user_id: int):
-    # default_user = {"past_names": []}
-    # default_member = {
-    #    "stats": {"total_msg": 0, "bot_cmd": 0, "avg_len": 0.0, "vc_time_sec": 0.0, "last_vc_time": None}
-    #    }
-    # past_names = await self.config.user_from_id(user_id).past_names()
-    # data = {"past_names": past_names}
-
-    # for guild in self.bot.guilds:
-    #    member = guild.get_member(user_id)
-    #    if member:
-    #        data[guild.name] = await self.config.member(member).stats()
-
-    async def red_delete_data_for_user(
-        self,
-        *,
-        requester: Literal["discord_deleted_user", "owner", "user", "user_strict"],
-        user_id: int,
-    ):
-        pass
+        # Log that an automod action was performed; details about the action can be expanded as needed.
+        await self.log(
+            "audit",
+            guild=action.guild,
+            update=False,
+            audit=None,
+            action="automod_rule_action",
+            category="create",
+            author=action.user_id,
+            attribute="automod_action",
+            before=None,
+            after=action.rule_id,
+        )

@@ -1,6 +1,7 @@
 import discord
+import re
 from redbot.core import Config, commands, checks
-from redbot.core.utils.chat_formatting import pagify
+from redbot.core.utils.chat_formatting import pagify, warning
 from typing import Literal
 
 
@@ -13,6 +14,10 @@ class SmartReact(commands.Cog):
         self.bot = bot
         self.conf = Config.get_conf(self, identifier=964952632)
         self.conf.register_guild(**self.default_guild_settings)
+
+    @staticmethod
+    def get_pattern(word: str):
+        return re.compile(rf"\b{re.escape(word)}\b")
 
     @checks.mod_or_permissions(administrator=True)
     @commands.guild_only()
@@ -50,10 +55,13 @@ class SmartReact(commands.Cog):
     async def listreact(self, ctx):
         """List reactions for this server"""
         emojis = await self.conf.guild(ctx.guild).reactions()
-        msg = f"Smart Reactions for {ctx.guild.name}:\n"
+        if not emojis:
+            await ctx.send(warning("There are no smart reactions set in your server!"), delete_after=30)
+            return
+        msg = f"# Smart Reactions for {ctx.guild.name}:\n"
         for emoji in emojis:
             for command in emojis[emoji]:
-                msg += f"{emoji}: {command}\n"
+                msg += f"- {emoji}: {command}\n"
         for page in pagify(msg, delims=["\n"]):
             await ctx.send(page)
 
@@ -73,7 +81,7 @@ class SmartReact(commands.Cog):
             await self.conf.guild(guild).reactions.set(reactions)
             await message.channel.send("Successfully added this reaction.")
 
-        except (discord.errors.HTTPException, discord.errors.InvalidArgument):
+        except (discord.errors.HTTPException, TypeError, ValueError):
             await message.channel.send("That's not an emoji I recognize. " "(might be custom!)")
 
     async def remove_smart_reaction(self, guild, word, emoji, message):
@@ -92,7 +100,7 @@ class SmartReact(commands.Cog):
             else:
                 await message.channel.send("There are no smart reactions which use " "this emoji.")
 
-        except (discord.errors.HTTPException, discord.errors.InvalidArgument):
+        except (discord.errors.HTTPException, TypeError, ValueError):
             await message.channel.send("That's not an emoji I recognize. " "(might be custom!)")
 
     async def clean_dead_emojis(self, guild):
@@ -114,7 +122,7 @@ class SmartReact(commands.Cog):
 
     # Thanks irdumb#1229 for the help making this "more Pythonic"
     @commands.Cog.listener()
-    async def on_message(self, message):
+    async def on_message(self, message: discord.Message):
         if await self.bot.cog_disabled_in_guild(self, message.guild):
             return
         if not message.guild:
@@ -125,19 +133,21 @@ class SmartReact(commands.Cog):
         reacts = await self.conf.guild(guild).reactions()
         if reacts is None:
             return
-        words = message.content.lower().split()
+
         for emoji in reacts:
-            if set(w.lower() for w in reacts[emoji]).intersection(words):
-                emoji = self.fix_custom_emoji(emoji)
-                if not emoji:
-                    await self.clean_dead_emojis(guild)
-                    return
-                try:
-                    await message.add_reaction(emoji)
-                except discord.errors.Forbidden:
-                    pass
-                except discord.errors.InvalidArgument:
-                    pass
+            for w in reacts[emoji]:
+                if self.get_pattern(w).search(message.content):
+                    emoji = self.fix_custom_emoji(emoji)
+                    if not emoji:
+                        await self.clean_dead_emojis(guild)
+                        return
+                    try:
+                        await message.add_reaction(emoji)
+                        break
+                    except discord.errors.Forbidden:
+                        pass
+                    except:
+                        pass
 
     async def red_delete_data_for_user(
         self,

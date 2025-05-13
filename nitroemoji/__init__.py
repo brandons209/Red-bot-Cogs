@@ -6,4 +6,4 @@ __red_end_user_data_statement__ = "This cog will store a user's custom emojis in
 async def setup(bot):
     n = NitroEmoji(bot)
     await n.initialize()
-    bot.add_cog(n)
+    await bot.add_cog(n)
