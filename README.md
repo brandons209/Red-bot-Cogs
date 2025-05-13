@@ -3,62 +3,34 @@
 ![black-checker](https://github.com/brandons209/Red-bot-Cogs/workflows/black-checker/badge.svg)
 
 
-Thank you for taking a look at my cogs, most of these are rewrites of other cogs, with a few of my own.
-
+Thank you for taking a look at my cogs! Open an issue if you run into a problem or need help
 
 ##### Activitylog
-Full V2 port with most of the cog rewritten from [calebj](https://github.com/calebj/calebj-cogs). This is an all in one logger for all sorts of discord messages and events.    
+Detailed logging for channels, audit events, voice activity, and more! Export chat logs to an easy to read HTML for moderation review and archiving. Logs can be stored in either sqlite or mysql databases. A variety of data analyses on logged data is available as well.
 **Features:**
 - Track messages, attachments (url or download), voice channel states, audit log entries, DMs, and also who deletes messages and performs other audit log actions.
-- Customizable log file rotation.
 - Global/per guild/per channel logging preferences
-- Pull logs for a channel or audit logs, with customizeable time ranges either in specifying exact dates or an interval from the current time.
+- Pull logs for a channel or audit logs, with customizable time ranges either in specifying exact dates or an interval from the current time.
 - Track user statistics (how many messages sent, how many bot commands, how long in voice chats) per guild.
 - Track username changes globally.
 - Upgraded userinfo command that includes user stats and number of bans, mutes, and kicks.
 
 
 #### Birthday
-Allow users to set their birthday and have it announced in a channel. Also gives the user a birthday role and sends them a customizeable DM message. Checks for birthdays at UTC midnight everyday. **Bugs fixed!**
+Allow users to set their birthday and have it announced in a channel. Also gives the user a birthday role and sends them a customizable DM message. Checks for birthdays at user's configured timezone.
 
 
-#### Confession
-Modifed from @Jinatku. Adds a tracker room that will send confessions to with names attached for moderation purposes, in case someone may be abusing the room.
-
-
-#### Cost Manager
-Allows dynamically setting costs for any commands registered to Red. Supports setting costs on a hierarchy that follows user > role > guild. Also can set guild wide roles that can use commands for free, and overriding these for certain commands. It also sends receipts to users and edits that message as they run commands so they can track their spending.    
+#### Chatbot Assistant
+Your own chatbot assistant, available using Ollama or OpenAI compatible endpoints. Has built in functionality to use RAG (retrieval augmented generation) databases to dynamically use emojis, learn user profiles, and dynamic example injection into prompts. **Currently in Alpha, some things may not work or not easily customizable**.
 **Features:**
-- DM receipts will only notify the user once if it fails to send the message.
-- Follows hierarchy, checks user cost first, then role cost, then guild wide cost and guild wide free roles.
-- **Planned:** Global cost setting for bots using a global economy system.
+- Chatbot assistant that acts like a member of your community: Customizable dynamic injection into chats, goodbye messages to have the assistant "leave" chats organically, welcoming new users, and more.
+- Summary and TLDR: Generate summaries and TLDRs of chats/threads for moderation or note keeping.
+- RAG: Automatic profile learning of users, proper emoji usage, example injections
+- Fun general commands: Generate compliments or dadjokes on the fly!
 
 
 #### Disable
 Disable all bot commands except for admins in a guild. Customizable error message.
-
-
-#### Economy Trickle
-Currently rewriting parts from [Sinbad](https://github.com/mikeshardmind/SinbadCogs).
-
-Added a decay rate where xp and level decays over time. Also added a failure rate where a trickle has a chance to fail. Cleaned up some of the code as well.
-
-
-#### Events
-Made for a friend, pretty messy as it was my first v3 cog. Send custom events and log time since that event. Unsupported and won't be updated for much else.
-
-
-#### Follower
-Twitter style following system that is guild-agnostic. Allows users to follow someone else in a specific channel. They will get notified when that user speaks or joins the voice chat. Users can follow someone in multiple channels.
-**Features**
-- Users can opt out, allowing no one to follow them
-- Users can block other people from following them
-- To follow someone in a channel they must be able to view the channel (has read_messages or view_channel permission)
-- DM notification includes message link to jump to message.
-- Guild Agnostic: a user can follow a user across different guilds
-- Can't follow a user in every channel automatically (would have to add every channel from every guild), this is to avoid issues arised from users stalking someone else
-- Works from DMs as well as in guilds, use user and channel IDs for easiest use.
-
 
 ### Image Magic
 Image transformation commands to create funny or interesting photos.
@@ -68,35 +40,28 @@ Image transformation commands to create funny or interesting photos.
 - Zoom
 - Black and white
 - Sketch transformation
+- Deepfry
+- Nuke
 
-
-#### Isolate
-Carbon copy of punish cog, except this one will remove all roles from a user and by default sets permissions so they cannot see or talk in any channel except the channel set for isolation.
-
-
-#### Leveler
-Based off of [Malarne's](https://github.com/Malarne/discord_cogs) cog. Has some bug fixes and reduces the starting EXP by 50. Also cleaned up the code a bit, and have features planned.
-
-
-### Markov
-Markov chains! This cog builds markov chain models per channel and optionally per user, allowing for funny and interesting text generation!
+#### MayhemMaker
+Allow your users to cause (controlled) mayhem! Allow for renaming of users, adding configurable roles, and shutting them up for 60 seconds!
+**Features**:
+- Customizable cooldowns for each command for both usage and application
+- Integration with [vrt-cog's levelup](https://github.com/vertyco/vrt-cogs/tree/main/levelup) system for dynamic cooldowns based on level.
 
 
 #### MoreAdmin
 More admin commands that provide various functionality.    
 **Features**:
-- Purge(kick) inactive users with a specific role. Can purge by last message or account age. DM's user with a notice of removal and an invite link to rejoin the guild. ~~Logs purges to modlog.~~(removed logging for now)
-- Send out mass DM to all users who can get purged based on the specified settings.
-- Audit your purge settings, which grabs some users who can be purged and displays your settings to make sure its working properly.
 - Set channel to display online/total users for guild.
+- For communities - add a baited role check where bot accounts usually will select during onboarding that your bot can automatically kick/ban
 - Log "suspicious" users who join. Suspicious users are new accounts, threshold to determine an account as new can be set.
 - Give and remove roles based on user's currents roles. This allows setting a role to be giveable by users who have a specific set role.
 - Set a role to be pingable for a specific amount of time.
 - Hidden say and selfdm commands for setting helpful aliases with these commands.
 - Send, send attachment, edit, and get commands for bot's messages. Useful for sending rules by the bot so that anyone can edit those.
-- List all users with a role/roles quickly and easily.
 - Customized DM message for banning users.
-- Mods/Admins can add notes to users for reference
+- Mods/Admins can add notes to users
 
 
 #### Memeify
@@ -107,16 +72,16 @@ Turn text into memes.
 
 
 #### Nitro Emoji
-Allows nitro boosters to add one emoji to your server. Log's additions and removal of custom emojis to a channel. Can turn this off to stop more people from adding, but those who added can remove their emoji. **New:** allows setting roles that can add a customizeable amount of emojis to the server. If roles are removed/amount of emojis changed, the bot will automatically remove/update user's emojis.
+Allows nitro boosters to add one emoji to your server. Log's additions and removal of custom emojis to a channel. Can turn this off to stop more people from adding, but those who added can remove their emoji. Allows setting roles that can add a customizable amount of emojis to the server. If roles are removed/amount of emojis changed, the bot will automatically remove/update user's emojis.
 
 #### Personal Roles
 Modified from Fixator10, added functionality of automatically creating/deleting personal roles for users who are allowed to have one. Roles automatically created are placed in the hierarchy under an existing role set by the user. It also allows setting roles that allow users to automatically have their personal role created and used. Manual usage is still available as well.
-
 **Features**
 - Users can customize their role name and color through the bot.
 - Blacklist words that aren't allowed in role names.
 - Automatically create/manage personal roles.
 - Users can add and remove role icons if the guild has the feature
+
 
 #### Pony
 Search derpibooru for pony images. Ported from [Alzarath](https://github.com/Alzarath/Booru-Cogs).    
@@ -134,10 +99,6 @@ Port from [calebj](https://github.com/calebj/calebj-cogs) punish cog. Functional
 - Customize channel overrides for the punish role.
 - Creates modlog cases for punishments.
 - Log cases created/updated when manually adding or removing role without the command.
-
-
-#### ReactPoll
-Modified from [flapjax](https://github.com/flapjax/FlapJack-Cogs). Uses base of v2 version ported to v3, with the added functionality of watching reactions on polls to enforce one vote per user and no custom reactions adding. Also supports saving polls to disk in case bot shutdowns during poll and resumes them on boot.
 
 
 #### Role Management
@@ -163,40 +124,12 @@ Assorted roleplay commands. Uses ASCII art.
 - Bap.
 - Improved Flip don't need to @ a user nor use quotes if their name has spaces.
 
-
-#### Role Tracker
-Allows moderators to add certain roles that are set by administrators. Added roles have modlog cases created/update on adding/removing the roles.
-**Features:**
-- Asks for attachment (like a screenshot) when adding roles for added information.
-- Tracks roles if they are manually added and creates/updates modlog cases appropriately.
-- Only add/remove roles set by admins.
-- Doesn't create manual cases if the bot adds the rule, this is so it doesn't conflict with the punish cog or other cogs that modify roles.
-
-#### Rules
-Allows easy access to guild and channel rules for a guild. Admins can set what rules they're for the entire guild, and per channel. Users can easily view these rules using a menu. Rules can be directly accessed by number as well, which allows quickly reminding a user of a rule in chats, instead of telling them to refer to a rules channel or pinned messages for channel rules.
-
-
-#### Scriptgen
-Allows using any aitextgen gpt-2 model to generate text. Can also charge users per word generated. Mainly used for generating scripts for a TV-Show for fun, but you can use it with any model.
-
-
-#### SFX
-Sound effect cog that allows people to play sound effects in voice channels. Sound effects have a customizeable cost, volume, and name. Supports direct files and URLs.
-
-**Notice:** this cog uses the Audio cog built into Red to play sounds. However, since the Audio cog doesn't provide an API to play sounds easily from other cogs, the cog requires injecting some code into the Audio cog that allows playing sounds without some of the restrictions and message embeds that are sent with the Audio cog play commands. Hopefully, this will be changed when a sane API is added to the Audio cog.
-
-Also, since it does use the Audio cog, if users in different VC's queue sfx sounds while the bot is playing a sound, it'll play all sounds in whatever VC is it currently in. This is a limitation of the Audio cog which I am working on fixing.
-
-#### Shootout
-A game cog that rewards players for fast typing. The first player to type a message wins a pot of currency.
-**Features:**
-- Configurable message to type to win.
-- Configurable randomized victory messages.
-- Configurable random time between when the lobby ends and the game starts.
-- Settable pot amount, even zero!
-- Configurable wait time after the first player has joined the game.
-- Shootouts in multiple channels!
-
+#### Subscriber
+Manage role subscriptions for your guild, useful for donator or other type of roles.
+**Features**:
+- Automatic reminders when a user's role is about to expire
+- Easily add, remove, modify user's subscribed roles
+- User's can view their current subscribed roles and when they expire
 
 #### Suggestion
 Modifed from @saurichable. Adds a few features we needed.
@@ -224,6 +157,7 @@ Adds a few features that are needed for my server, modified from the built in wa
 **Added Features**
 - Add context to warnings, if enabled. This allows adding some extra information after giving a warning. We had issues where warnings without context were hard to look back upon. Can send attachments too, included in modlog entry.
 - Shows dates for warnings for both users and mods, and also case number for mods when looking at a user's warnings.
+- Warning points can be set as expired after a time. Warnings are still on record but a user's recorded points for actions will be based on non-expired warnings
 
 
 #### Welcome
