@@ -470,6 +470,8 @@ class MoreAdmin(commands.Cog):
         pass
 
     @notes.command(name="add")
+    @commands.guild_only()
+    @checks.mod()
     async def notes_add(self, ctx, member: discord.Member, *, note: str):
         """
         Add a new note to a user.
@@ -481,6 +483,8 @@ class MoreAdmin(commands.Cog):
         await ctx.tick()
 
     @notes.command(name="list")
+    @commands.guild_only()
+    @checks.mod()
     async def notes_list(self, ctx, member: discord.Member):
         """
         List notes for a user.

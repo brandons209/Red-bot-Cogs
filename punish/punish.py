@@ -102,7 +102,7 @@ class Punish(commands.Cog):
 
     @commands.hybrid_group(invoke_without_command=True)
     @commands.guild_only()
-    @checks.mod()
+    @checks.mod_or_permissions(administrator=True)
     async def punish(
         self,
         ctx: commands.Context,
@@ -123,6 +123,8 @@ class Punish(commands.Cog):
             await self._punish_cmd_common(ctx, user, duration, reason)
 
     @punish.command(name="start")
+    @commands.guild_only()
+    @checks.mod()
     async def punish_start(
         self,
         ctx: commands.Context,
