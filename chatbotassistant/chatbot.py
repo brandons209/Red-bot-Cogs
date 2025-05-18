@@ -505,8 +505,8 @@ class ChatbotAssistant(commands.Cog):
         # allow pulling for multiple guilds
         emoji_map: Dict[str, str] = {}
         for e_guild in self.bot.guilds:
-            for emoji in e_guild.emojis:
-                emoji_map[emoji.name.lower()] = str(emoji)
+            for emoji_guild in e_guild.emojis:
+                emoji_map[emoji_guild.name.lower()] = str(emoji_guild)
         # user_map: Dict[str, str] = {member.display_name.lower(): member.mention for member in guild.members}
 
         # remove possible system bot name prefix n the response:
