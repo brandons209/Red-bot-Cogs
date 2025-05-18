@@ -15,13 +15,15 @@ from sqlalchemy import (
     select,
     and_,
     or_,
+    exc,
 )
 from sqlalchemy.dialects.mysql import LONGTEXT
 from sqlalchemy.orm import sessionmaker, scoped_session
 
-import os, asyncio
+import os, asyncio, re
 from typing import List, Dict, Any, Optional, Union
 from contextlib import contextmanager
+from .utils import generate_unique_id
 
 
 class DatabaseHandler:
@@ -263,14 +265,43 @@ class DatabaseHandler:
             except Exception as e:
                 buffer_session.rollback()
                 print(f"Error during buffered {buffer} to '{table_name}': {e}")
-                if "UNIQUE constraint failed" in str(e) and buffer == "insert":
-                    # try saving buffer with safe insert
-                    for row in working_buffer[table_name]:
-                        self.safe_insert(table_name, row)
-                    print("Buffer saved using safe insert.")
+                if "buffer" == "insert":
+                    if "Duplicate entry" in str(e) or "UNIQUE constraint failed" in str(e):
+                        # pymysql:
+                        if "Duplicate entry" in str(e):
+                            m = re.search(r"Duplicate entry '([^']+)' for key '([^']+)'", str(e))
+                            if m:
+                                duplicate_value, key_name = m.groups()
+                            else:
+                                duplicate_value, key_name = None, None
+                        else:  # sqlite3
+                            m = re.search(r"UNIQUE constraint failed: (.+)", str(e))
+                            if m:
+                                key_name = m.group(1).split(", ")[0]
+                                duplicate_value = None
+                            else:
+                                duplicate_value, key_name = None, None
+
+                        if key_name is not None:
+                            if duplicate_value is not None:
+                                for i in range(len(working_buffer[table_name])):
+                                    if str(working_buffer[table_name][i].get(key_name, None)) == str(duplicate_value):
+                                        working_buffer[table_name][i][key_name] = generate_unique_id()
+                                        break
+                            else:
+                                # have to update all keys
+                                for i in range(len(working_buffer[table_name])):
+                                    working_buffer[table_name][i][key_name] = generate_unique_id()
+                            print("Modified IDs to save buffer.")
+                        else:
+                            print("Unable to save buffer, deleting buffer.")
+                            working_buffer[table_name] = []
+                    else:
+                        print("Deleting buffer.")
+                        working_buffer[table_name] = []
                 else:
                     print("Deleting buffer.")
-                working_buffer[table_name] = []
+                    working_buffer[table_name] = []
             finally:
                 buffer_session.close()
 

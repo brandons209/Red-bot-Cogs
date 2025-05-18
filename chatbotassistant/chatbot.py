@@ -1181,7 +1181,7 @@ class ChatbotAssistant(commands.Cog):
             embed.add_field(
                 name="Revive Channels",
                 value=humanize_list(
-                    [c.mention for c in guild_settings["dead_channels"]]
+                    [ctx.guild.get_channel(c).mention for c in guild_settings["dead_channels"]]
                     if guild_settings["dead_channels"]
                     else ["None"]
                 ),
@@ -1189,7 +1189,7 @@ class ChatbotAssistant(commands.Cog):
             embed.add_field(
                 name="User Learning Blacklist",
                 value=humanize_list(
-                    [c.mention for c in guild_settings["learning_blacklist"]]
+                    [ctx.guild.get_channel(c).mention for c in guild_settings["learning_blacklist"]]
                     if guild_settings["learning_blacklist"]
                     else ["None"]
                 ),

@@ -492,7 +492,8 @@ class ActivityLogger(commands.Cog):
         force_new_id: Optional[bool] = False,
     ):
         audit_data = {
-            "id": audit.id if audit and not force_new_id else generate_unique_id(),
+            # always generate a new id because of issues with duplicate audit ids from discord
+            "id": generate_unique_id(),  # audit.id if audit and not force_new_id else generate_unique_id(),
             "datetime": audit.created_at if audit else discord.utils.utcnow(),
             "action": action,
             "category": category,

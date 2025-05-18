@@ -304,7 +304,7 @@ class ImageMagic(commands.Cog):
             await ctx.reply("That image is too large.", mention_author=False)
             return
 
-    @commands.hybrid_command()
+    @commands.hybrid_group()
     @commands.bot_has_permissions(attach_files=True)
     async def distort(self, ctx):
         """
@@ -315,7 +315,7 @@ class ImageMagic(commands.Cog):
         pass
 
     @distort.command()
-    async def jpeg(self, ctx, intensity: Optional[float] = 10, *, link: Optional[str] = None):
+    async def jpeg(self, ctx, intensity: Optional[int] = 10, *, link: Optional[str] = None):
         """
         Applies JPEG compression to image
         """
@@ -330,7 +330,7 @@ class ImageMagic(commands.Cog):
             await self._command_body(ctx, args=(self._jpeg_compress, img, quality))
 
     @distort.command()
-    async def barrel(self, ctx, intensity: Optional[float] = 10, *, link: Optional[str] = None):
+    async def barrel(self, ctx, intensity: Optional[int] = 10, *, link: Optional[str] = None):
         """
         Bulges the center of the image outward
         """
@@ -356,7 +356,7 @@ class ImageMagic(commands.Cog):
             )
 
     @distort.command()
-    async def implode(self, ctx, intensity: Optional[float] = 10, *, link: Optional[str] = None):
+    async def implode(self, ctx, intensity: Optional[int] = 10, *, link: Optional[str] = None):
         """
         Pinches in the center of the image
         """
@@ -371,7 +371,7 @@ class ImageMagic(commands.Cog):
             await self._command_body(ctx, args=(self._distortion, img, "implode", (amount * intensity,)))
 
     @distort.command()
-    async def swirl(self, ctx, intensity: Optional[float] = 10, *, link: Optional[str] = None):
+    async def swirl(self, ctx, intensity: Optional[int] = 10, *, link: Optional[str] = None):
         """
         Swirls the center of the image
         """
@@ -400,7 +400,7 @@ class ImageMagic(commands.Cog):
             await self._command_body(ctx, args=(self._distortion, img, "swirl", (intensity,)))
 
     @distort.command()
-    async def charcoal(self, ctx, intensity: Optional[float], *, link: Optional[str] = None):
+    async def charcoal(self, ctx, intensity: Optional[int], *, link: Optional[str] = None):
         """
         Makes the image look somewhat like it was drawn with charcoal
         """
@@ -414,7 +414,7 @@ class ImageMagic(commands.Cog):
             await self._command_body(ctx, args=(self._distortion, img, "charcoal", (1.5, 0.5)))
 
     @distort.command()
-    async def sketch(self, ctx, intensity: Optional[float], *, link: Optional[str] = None):
+    async def sketch(self, ctx, intensity: Optional[int], *, link: Optional[str] = None):
         """
         Makes the image look like it is a sketch
         """
@@ -428,7 +428,7 @@ class ImageMagic(commands.Cog):
             await self._command_body(ctx, args=(self._distortion, img, "sketch", (0.5, 0.0, 98.0)))
 
     @distort.command()
-    async def zoom(self, ctx, intensity: Optional[float], *, link: Optional[str] = None):
+    async def zoom(self, ctx, intensity: Optional[int], *, link: Optional[str] = None):
         """
         Zooms in on the center of an image
         """
