@@ -214,10 +214,11 @@ class ActivityLogger(commands.Cog):
         cached_entries = self.audit_logs[guild.id]
         # it seems that cached entries wont contain the updated audit event right when it happens, it seems to fire after the event handler that is in question, may help with high traffic bots though
         for entry in cached_entries:
-            if all(cond(entry) for cond in conditions):
-                return entry
+            if entry is not None:
+                if all(cond(entry) for cond in conditions):
+                    return entry
 
-        # fallback to look at audit log for the guild
+        # fallback to look at audit log for qthe guild
         # print("firing get_audit_entry")
         # print(len(conditions))
         if self.cache["check_audit"]:
@@ -3209,6 +3210,12 @@ class ActivityLogger(commands.Cog):
             return
         if not self.should_log(thread.guild):
             return
+
+        # try to join the thread so we can log
+        try:
+            await thread.join()
+        except:
+            pass
 
         audit_entry = await self.get_audit_entry(
             thread.guild,
