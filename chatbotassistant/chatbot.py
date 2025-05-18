@@ -502,7 +502,11 @@ class ChatbotAssistant(commands.Cog):
         A string where emoji names and user display names (with or without
         leading '@') become proper Discord mentions.
         """
-        emoji_map: Dict[str, str] = {emoji.name.lower(): str(emoji) for emoji in guild.emojis}
+        # allow pulling for multiple guilds
+        emoji_map: Dict[str, str] = {}
+        for e_guild in self.bot.guilds:
+            for emoji in e_guild.emojis:
+                emoji_map[emoji.name.lower()] = str(emoji)
         # user_map: Dict[str, str] = {member.display_name.lower(): member.mention for member in guild.members}
 
         # remove possible system bot name prefix n the response:
@@ -2342,10 +2346,6 @@ class ChatbotAssistant(commands.Cog):
                 )
             )
 
-        # TODO: for testing, remove
-        if channel.id not in [1367715420081229855, 532724833981562890, 703281764923211846]:
-            return
-
         lock = self.channel_lock[channel.id]
         # if the lock is already taken, end after updating history
         if lock.locked():
@@ -2397,7 +2397,7 @@ class ChatbotAssistant(commands.Cog):
                     except:
                         pass
                 else:
-                    msg = await channel.send(response)
+                    msg = await channel.send(response, reference=message, mention_author=False)
 
     @commands.Cog.listener()
     async def on_reaction_add(self, reaction: discord.Reaction, member: Union[discord.Member, discord.User]):

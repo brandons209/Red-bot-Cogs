@@ -210,22 +210,22 @@ class MayhemMaker(commands.Cog):
             target_level: int = await self.level_cog.get_level(target)
             # check level cooldowns, default to global cooldowns otherwise
             lvl_usage_cooldowns = (await self.config.guild(guild).level_integration_usage_cooldowns())[action]
-            lvls = sorted(list(lvl_usage_cooldowns.keys()))
+            lvls = sorted([int(k) for k in lvl_usage_cooldowns.keys()])
             member_usage_cooldown = 0
             if lvl_usage_cooldowns:
-                member_usage_cooldown = bisect.bisect_left(lvls, str(member_level))
+                member_usage_cooldown = bisect.bisect_left(lvls, member_level)
                 if member_usage_cooldown != len(
                     lvl_usage_cooldowns
                 ):  # if false then member has a higher level then configured
-                    member_usage_cooldown = lvl_usage_cooldowns[lvls[member_usage_cooldown]]
+                    member_usage_cooldown = lvl_usage_cooldowns[str(lvls[member_usage_cooldown])]
 
             lvl_applied_cooldowns = (await self.config.guild(guild).level_integration_applied_cooldowns())[action]
-            lvls = sorted(list(lvl_applied_cooldowns.keys()))
+            lvls = sorted([int(k) for k in lvl_applied_cooldowns.keys()])
             target_applied_cooldown = 0
             if lvl_applied_cooldowns:
-                target_applied_cooldown = bisect.bisect_left(lvls, str(target_level))
+                target_applied_cooldown = bisect.bisect_left(lvls, target_level)
                 if target_applied_cooldown != len(lvl_applied_cooldowns):
-                    target_applied_cooldown = lvl_applied_cooldowns[lvls[target_applied_cooldown]]
+                    target_applied_cooldown = lvl_applied_cooldowns[str(lvls[target_applied_cooldown])]
 
             if member_usage_cooldown:
                 usage_cooldown = member_usage_cooldown
@@ -292,12 +292,12 @@ class MayhemMaker(commands.Cog):
         max_duration = await self.config.guild(member.guild).max_duration()
         if self.level_cog is not None:
             lvl_maxduration = await self.config.guild(member.guild).level_integration_max_duration()
-            lvls = sorted(list(lvl_maxduration.keys()))
+            lvls = sorted([int(k) for k in lvl_maxduration.keys()])
             member_level = await self.level_cog.get_level(ctx.author)
             if lvl_maxduration:
-                idx = bisect.bisect_left(lvls, str(member_level))
+                idx = bisect.bisect_left(lvls, member_level)
                 if idx != len(lvl_maxduration):
-                    max_duration = lvl_maxduration[lvls[idx]]
+                    max_duration = lvl_maxduration[str(lvls[idx])]
 
         if action != "shut":
             time = parse_timedelta(duration)
