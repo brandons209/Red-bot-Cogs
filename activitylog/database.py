@@ -272,12 +272,13 @@ class DatabaseHandler:
                             m = re.search(r"Duplicate entry '([^']+)' for key '([^']+)'", str(e))
                             if m:
                                 duplicate_value, key_name = m.groups()
+                                key_name = "message_id" if table_name == "messages" else "id"
                             else:
                                 duplicate_value, key_name = None, None
                         else:  # sqlite3
                             m = re.search(r"UNIQUE constraint failed: (.+)", str(e))
                             if m:
-                                key_name = m.group(1).split(", ")[0]
+                                key_name = "message_id" if table_name == "messages" else "id"
                                 duplicate_value = None
                             else:
                                 duplicate_value, key_name = None, None
