@@ -335,12 +335,16 @@ class MayhemMaker(commands.Cog):
         if action == "name" and isinstance(mayhem_item, str):
             if len(mayhem_item) > 32 or len(mayhem_item) < 2:
                 await ctx.send(
-                    error("Nickname must be 2 to 32 characters in length!"), delete_after=30, reference=ctx.message
+                    error("Nickname must be 2 to 32 characters in length!"),
+                    delete_after=30,
+                    reference=ctx.message,
                 )
                 return
 
             data["old_nick"] = member.nick if member.nick is not None else NO_NICKNAME
             data["new_nick"] = mayhem_item
+
+            old_name = member.display_name
 
             result = await self.apply_action(member, action, mayhem_item)
             if not result:
@@ -356,9 +360,7 @@ class MayhemMaker(commands.Cog):
             async with self.config.guild(ctx.guild).current_changes() as current_changes:
                 current_changes[action][str(member.id)] = data
 
-            await ctx.send(
-                f"`{member.display_name}'s` nickname changed to `{mayhem_item}` until <t:{data['end_time']}>."
-            )
+            await ctx.send(f"`{old_name}`'s nickname changed to `{mayhem_item}` until <t:{data['end_time']}>.")
 
             try:
                 await member.send(

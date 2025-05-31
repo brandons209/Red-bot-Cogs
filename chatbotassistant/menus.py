@@ -21,6 +21,53 @@ async def get_config(cog, model_type: str):
         return await cog.config.general_model_config()
 
 
+class EndChatVote(ui.View):
+    def __init__(self, timeout: int, message: Optional[Message] = None):
+        super().__init__(timeout=timeout)
+        self.message = message
+        self.yes = []
+        self.no = []
+        self.winner = "no"
+
+    def end(self):
+        if len(self.yes) > len(self.no):
+            self.winner = "yes"
+        elif len(self.yes) < len(self.no):
+            self.winner = "no"
+        else:
+            self.winner = "no"
+
+        self.stop()
+
+    @ui.button(label="Yes", style=ButtonStyle.primary)
+    async def yes_button(self, interaction: Interaction, button: ui.Button):
+        if interaction.user.id in self.yes:
+            await interaction.response.send_message("You already voted for this!", ephemeral=True, delete_after=10)
+        else:
+            self.yes.append(interaction.user.id)
+            await interaction.response.send_message(
+                "You have voted to remove the bot from the conversation.",
+                ephemeral=True,
+                delete_after=10,
+            )
+            if interaction.user.id in self.no:
+                self.no.remove(interaction.user.id)
+
+    @ui.button(label="No", style=ButtonStyle.secondary)
+    async def no_button(self, interaction: Interaction, button: ui.Button):
+        if interaction.user.id in self.no:
+            await interaction.response.send_message("You already voted for this!", ephemeral=True, delete_after=10)
+        else:
+            self.no.append(interaction.user.id)
+            await interaction.response.send_message(
+                "You have voted to keep the bot from the conversation.",
+                ephemeral=True,
+                delete_after=10,
+            )
+            if interaction.user.id in self.yes:
+                self.yes.remove(interaction.user.id)
+
+
 class OllamaConfigModal1(ui.Modal, title="Configure Ollama Model -- Page 1"):
     def __init__(self, cog, model_type: str, config: dict, message: Message):
         super().__init__()  # finish Modal setup
