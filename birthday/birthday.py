@@ -34,7 +34,7 @@ class TimezoneConverter(Converter):
             try:
                 zones[i] = ZoneInfo(z)
             except:
-                raise BadArgument(
+                raise TypeError(
                     error(
                         f"Unrecongized timezone `{z}`, please find your timezone name under `TZ database name` column here: <https://en.wikipedia.org/wiki/List_of_tz_database_time_zones>"
                     )

@@ -1,6 +1,7 @@
 from redbot.core import commands, checks, Config
 from redbot.core.utils.chat_formatting import *
 from redbot.core.data_manager import cog_data_path
+from redbot.core.utils.mod import is_mod_or_superior
 from redbot.core.utils.predicates import MessagePredicate
 from redbot.core.utils.menus import menu, DEFAULT_CONTROLS, start_adding_reactions
 from redbot.core.commands.converter import parse_timedelta
@@ -10,7 +11,7 @@ import emoji
 from .model_apis.openai_api import OpenAIModel
 from .model_apis.api import GeneralAPI
 from .model_apis.ollama_api import OllamaModel
-from .menus import ConfigSelectView, ConfigMenuView
+from .menus import ConfigSelectView, ConfigMenuView, EndChatVote
 from .rag import RagDatabase, generate_unique_id, get_metadata_format
 from .prompts import (
     CHAT_PROMPT,
@@ -24,6 +25,8 @@ from .prompts import (
     USER_LEARNING_PROMPT,
     GENERAL_QUERY_PROMPT,
     PARTIAL_SUMMARY_PROMPT,
+    SHUTUP_CHAT_PROMPT,
+    END_CHAT_PROMPT,
 )
 
 from typing import Literal, List, Union, Dict, Optional, Tuple, Any
@@ -62,6 +65,7 @@ class ChatbotAssistant(commands.Cog):
             "welcomes": True,
             "learning_blacklist": [],
             "user_learning_max_time": 0,
+            "ignore_channels": [],
         }
         self.default_channel = {
             "autoreply": False,
@@ -91,7 +95,12 @@ class ChatbotAssistant(commands.Cog):
                 },
             },
             "chat_prompt": CHAT_PROMPT,
-            "other_chat_prompts": {"goodbye": [GOODBYE_PROMPT], "welcome": [WELCOME_PROMPT]},
+            "other_chat_prompts": {
+                "goodbye": [GOODBYE_PROMPT],
+                "welcome": [WELCOME_PROMPT],
+                "end_chat": [END_CHAT_PROMPT],
+                "shutup": [SHUTUP_CHAT_PROMPT],
+            },
             "summarize_prompt": SUMMARIZE_PROMPT,
             "partial_summary_prompt": PARTIAL_SUMMARY_PROMPT,
             "tldr_prompt": TLDR_PROMPT,
@@ -167,6 +176,8 @@ class ChatbotAssistant(commands.Cog):
         self.talking_channels: Dict[int, datetime] = {}
         # maps channel -> last history number of messages objects
         self.history: Dict[int, List[discord.Message]] = {}
+        # channels where end votes are currently running:
+        self.end_voting: Dict[int, discord.Message] = {}
         # when generating for a channel, ignore new messages
         self.channel_lock: Dict[int, asyncio.Lock] = defaultdict(asyncio.Lock)
         # user histories for processing user profiles, per guild (user_id, guild_id)
@@ -1686,6 +1697,28 @@ class ChatbotAssistant(commands.Cog):
         """
         pass
 
+    @chatbot.command(name="ignore")
+    async def chatbot_ignore(
+        self,
+        ctx: commands.Context,
+        *,
+        channel: Union[discord.TextChannel, discord.VoiceChannel, discord.Thread, discord.ForumChannel],
+    ):
+        """
+        Add or remove a channel from the ignore list
+        The bot will not respond to chat requests in the ignore channel
+        """
+        text = ""
+        async with self.config.guild(ctx.guild).ignore_channels() as ignore_channels:
+            if channel.id in ignore_channels:
+                ignore_channels.remove(channel.id)
+                text = info(f"{channel.mention} has been removed from the ignore list.")
+            else:
+                ignore_channels.append(channel.id)
+                text = info(f"{channel.mention} has been added to the ignore list.")
+
+        await ctx.reply(text, mention_author=False, delete_after=30)
+
     @chatbot.command(name="welcomes")
     async def chatbot_welcome(self, ctx: commands.Context, enable: bool):
         """
@@ -2085,6 +2118,130 @@ class ChatbotAssistant(commands.Cog):
             start_adding_reactions(msg, QA_EMOJIS)
             self.qa_data[(msg.id, ctx.channel.id)] = data
 
+    @commands.hybrid_command(name="shutup")
+    @commands.cooldown(1, 60, commands.BucketType.channel)
+    @commands.guild_only()
+    async def shutup(self, ctx: commands.Context, force: Optional[bool] = False):
+        """
+        Remove the bot from the current conversation.
+        If ran by a mod or higher, the bot instantly leaves. Otherwise a vote is issued for users to vote on letting the bot stay or not.
+
+        If force is true, the bot will not reply with a response when leaving. (Mod only)
+        """
+        channel = ctx.channel
+        if channel.id not in self.talking_channels:
+            await ctx.reply("I ain't even talking here!", mention_author=False, delete_after=30)
+            ctx.command.reset_cooldown(ctx)
+            return
+        global_timeout = await self.config.guild(ctx.guild).timeout()
+        channel_timeout = await self.config.channel_from_id(channel.id).timeout()
+        timeout = channel_timeout if channel_timeout > 0 else global_timeout
+        if await is_mod_or_superior(self.bot, ctx.message):
+            try:
+                del self.talking_channels[channel.id]
+            except:
+                pass
+
+            if channel.id in self.end_voting:
+                try:
+                    await self.end_voting[channel.id].delete()
+                except:
+                    pass
+                del self.end_voting[channel.id]
+
+            if not force:
+                prompt = await self.config.other_chat_prompts()
+                prompt = random.choice(prompt["end_chat"])
+                should_qa = await self.config.allow_qa()
+                response = await self.chat(
+                    ctx.guild,
+                    "Create a response.",
+                    self.history[channel.id],
+                    override_prompt=prompt,
+                    return_qa=should_qa,
+                )
+                if should_qa and isinstance(response, dict):
+                    msg = await ctx.send(response["response"])
+                    start_adding_reactions(msg, QA_EMOJIS)
+                    response["channel"] = channel.id
+                    response["message_id"] = msg.id
+                    self.qa_data[(msg.id, channel.id)] = response
+                else:
+                    await ctx.send(response)
+                asyncio.create_task(self.cooldown_lock(channel, timeout))
+            else:
+                asyncio.create_task(self.cooldown_lock(channel, timeout))
+                return await ctx.tick()
+        else:  # vote
+            if channel.id in self.end_voting:
+                await ctx.reply(
+                    warning(f"A vote is already occuring: {self.end_voting[channel.id].jump_url}"),
+                    mention_author=False,
+                    delete_after=15,
+                )
+                return
+            else:
+                # start vote
+                vote_time = 30
+                vote_menu = EndChatVote(vote_time)
+                self.end_voting[channel.id] = await ctx.send(
+                    f"## A vote has been started to remove {ctx.guild.me.mention} from the conversation.\nVote ends in {humanize_timedelta(seconds=vote_time)}.",
+                    view=vote_menu,
+                )
+                prompt = await self.config.other_chat_prompts()
+                prompt = random.choice(prompt["shutup"])
+                should_qa = await self.config.allow_qa()
+                response = await self.chat(
+                    ctx.guild,
+                    "Create a response.",
+                    self.history[channel.id],
+                    override_prompt=prompt,
+                    return_qa=should_qa,
+                )
+                if should_qa and isinstance(response, dict):
+                    msg = await ctx.send(response["response"])
+                    start_adding_reactions(msg, QA_EMOJIS)
+                    response["channel"] = channel.id
+                    response["message_id"] = msg.id
+                    self.qa_data[(msg.id, channel.id)] = response
+                else:
+                    await ctx.send(response)
+                await asyncio.sleep(vote_time + 1)
+                vote_menu.end()
+                try:
+                    await self.end_voting[channel.id].delete()
+                except:
+                    pass
+                finally:
+                    del self.end_voting[channel.id]
+
+                if vote_menu.winner == "yes":
+                    try:
+                        del self.talking_channels[channel.id]
+                    except:
+                        pass
+                    prompt = await self.config.other_chat_prompts()
+                    prompt = random.choice(prompt["end_chat"])
+                    should_qa = await self.config.allow_qa()
+                    response = await self.chat(
+                        ctx.guild,
+                        "Create a response.",
+                        self.history[channel.id],
+                        override_prompt=prompt,
+                        return_qa=should_qa,
+                    )
+                    asyncio.create_task(self.cooldown_lock(channel, timeout))
+                    if should_qa and isinstance(response, dict):
+                        msg = await ctx.send(response["response"])
+                        start_adding_reactions(msg, QA_EMOJIS)
+                        response["channel"] = channel.id
+                        response["message_id"] = msg.id
+                        self.qa_data[(msg.id, channel.id)] = response
+                    else:
+                        return await ctx.send(response)
+                else:
+                    return await ctx.send("Can't get rid of me that easily!")
+
     @commands.hybrid_command(name="summary")
     @checks.mod_or_permissions(administrator=True)
     @commands.guild_only()
@@ -2345,6 +2502,10 @@ class ChatbotAssistant(commands.Cog):
                     self.process_user_history(message.author),
                 )
             )
+
+        ignore_channels = await self.config.guild(guild).ignore_channels()
+        if channel.id in ignore_channels:
+            return
 
         lock = self.channel_lock[channel.id]
         # if the lock is already taken, end after updating history

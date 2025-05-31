@@ -759,8 +759,6 @@ class MoreAdmin(commands.Cog):
                         spoiler=a.is_spoiler(),
                     )
                 )
-        if not files:
-            files = None
 
         try:
             await message.edit(content=msg, attachments=files, allowed_mentions=discord.AllowedMentions.all())
@@ -796,8 +794,7 @@ class MoreAdmin(commands.Cog):
                         spoiler=a.is_spoiler(),
                     )
                 )
-        if not files:
-            files = None
+
         try:
             await channel.send(content=msg, files=files, allowed_mentions=discord.AllowedMentions.all())
             await ctx.tick()
