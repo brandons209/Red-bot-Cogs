@@ -12,6 +12,8 @@ import time
 
 
 class Pony(commands.Cog):
+    __version__ = "5.0.0"
+
     def __init__(self, bot):
         super().__init__()
         self.bot = bot
