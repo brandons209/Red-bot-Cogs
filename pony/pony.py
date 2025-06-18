@@ -2,7 +2,7 @@ import discord
 from redbot.core.utils.chat_formatting import *
 from redbot.core import Config, checks, commands
 from urllib import parse
-from typing import Literal, Optional
+from typing import Literal, Optional, Union
 import aiohttp
 import os
 import traceback
@@ -12,6 +12,8 @@ import time
 
 
 class Pony(commands.Cog):
+    __version__ = "5.0.0"
+
     def __init__(self, bot):
         super().__init__()
         self.bot = bot
@@ -23,9 +25,11 @@ class Pony(commands.Cog):
             "display_artist": False,
             "cooldown": 10,
         }
+        default_channel = {"filters": []}
         self.cooldowns = {}
         self.config.register_guild(**self.default_guild)
         self.config.register_global(**default_global)
+        self.config.register_channel(**default_channel)
 
         self.task = asyncio.create_task(self.init())
 
@@ -127,6 +131,83 @@ class Pony(commands.Cog):
             target_guild = "Default"
         await ctx.send("{} pony filter list contains:```\n{}```".format(target_guild, filter_list))
 
+    @ponyfilter.group(name="channel")
+    async def ponyfilter_channel(self, ctx: commands.Context):
+        """
+        Manage channel override filters
+
+        If filters are a set for a channel they **completely** override server level filters.
+        """
+        pass
+
+    @ponyfilter_channel.command(name="add")
+    async def channel_add_ponyfilter(
+        self,
+        ctx: commands.Context,
+        channel: Union[discord.TextChannel, discord.VoiceChannel, discord.Thread],
+        filter_tag: str,
+    ):
+        """Adds a tag to the channel's pony filter list
+
+        Example: [p]ponyfilter channel #channel add safe"""
+        filters = await self.config.channel(channel).filters()
+        max_filters = await self.config.maxfilters()
+        # if reached limit of max filters, don't add
+        if len(filters) < max_filters:
+            if filter_tag not in filters:
+                async with self.config.channel(channel).filters() as old_filter:
+                    old_filter.append(filter_tag)
+                await ctx.send("Filter '{}' added to the {}'s pony filter list.".format(filter_tag, channel.mention))
+            else:
+                await ctx.send(
+                    "Filter '{}' is already in the {}'s pony filter list.".format(filter_tag, channel.mention)
+                )
+        else:
+            await ctx.send("This channel has exceeded the maximum filters ({}/{}).".format(len(filters), max_filters))
+
+    @ponyfilter_channel.command(name="del")
+    async def channel_del_ponyfilter(
+        self,
+        ctx,
+        channel: Union[discord.TextChannel, discord.VoiceChannel, discord.Thread],
+        filter_tag: str = "",
+    ):
+        """Deletes a tag from the channel's pony filter list
+
+        Without arguments, clears the channel's filters
+
+        Example: [p]ponyfilter channel #channel del safe"""
+        filters = await self.config.channel(channel).filters()
+        if len(filter_tag) > 0:
+            if filter_tag in filters:
+                async with self.config.channel(channel).filters() as old_filter:
+                    old_filter.remove(filter_tag)
+                await ctx.send(
+                    "Filter '{}' deleted from the {}'s pony filter list.".format(filter_tag, channel.mention)
+                )
+            else:
+                await ctx.send(
+                    "Filter '{}' does not exist in the {}'s pony filter list.".format(filter_tag, channel.mention)
+                )
+        else:
+            await self.config.channel(channel).filters.clear()
+            await ctx.send("Cleared {}'s filters.".format(channel.mention))
+
+    @ponyfilter_channel.command(name="list")
+    async def channel_list_ponyfilter(
+        self,
+        ctx: commands.Context,
+        channel: Union[discord.TextChannel, discord.VoiceChannel, discord.Thread],
+    ):
+        """Lists all of the filters currently applied to the current server"""
+        filters = await self.config.channel(channel).filters()
+        target = "{}'s".format(channel.name)
+        if filters:
+            filter_list = "\n".join(sorted(filters))
+        else:
+            filter_list = "***No Filters Set***"
+        await ctx.send("{} pony filter list contains:```\n{}```".format(target, filter_list))
+
     @commands.group()
     @checks.admin()
     async def ponyset(self, ctx):
@@ -193,7 +274,6 @@ class Pony(commands.Cog):
             await ctx.send("Current filter limit: {} filters.".format(max_filters))
             return
 
-        guild = ctx.guild
         await self.config.maxfilters.set(new_max_filters)
         await ctx.send("Maximum filters allowed per server for pony set to '{}'.".format(new_max_filters))
 
@@ -255,7 +335,7 @@ class Pony(commands.Cog):
 
     async def fetch_image(self, ctx, randomize: bool = False, tags: str = "", mascot=False):
         guild = ctx.guild
-
+        channel = ctx.channel
         # check cooldown
         if self.cooldowns[guild.id].get(ctx.author.id, 0) > time.time():
             left = self.cooldowns[guild.id].get(ctx.author.id, 0) - time.time()
@@ -268,6 +348,8 @@ class Pony(commands.Cog):
 
         tags = [t for t in tags.split(",") if t != ""]
         filters = await self.config.guild(guild).filters()
+        channel_filters = await self.config.channel(channel).filters()
+        filters = filters if len(channel_filters) == 0 else channel_filters
         verbose = await self.config.guild(guild).verbose()
         display_artist = await self.config.guild(guild).display_artist()
 
