@@ -1,0 +1,24 @@
+{
+    "name": "CampaignCog",
+    "short": "User feedback campaign management system",
+    "description": "A comprehensive cog for creating and managing user feedback campaigns with customizable questions, input validation, timer functionality, and CSV export capabilities.",
+    "author": [
+        "brandons209"
+    ],
+    "min_bot_version": "3.5.0",
+    "min_python_version": [
+        3,
+        8,
+        0
+    ],
+    "tags": [
+        "feedback",
+        "surveys",
+        "campaigns",
+        "data collection"
+    ],
+    "requirements": [],
+    "hidden": false,
+    "disabled": false,
+    "type": "COG"
+}

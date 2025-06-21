@@ -4,11 +4,14 @@ from redbot.core import Config, commands, checks
 from redbot.core.utils.chat_formatting import pagify, warning
 from typing import Literal
 
+URL_REGEX = re.compile(r"https?://\S+")
+
 
 class SmartReact(commands.Cog):
     """Create automatic reactions when trigger words are typed in chat"""
 
     default_guild_settings = {"reactions": {}}
+    __version__ = "1.0.1"
 
     def __init__(self, bot):
         self.bot = bot
@@ -17,7 +20,7 @@ class SmartReact(commands.Cog):
 
     @staticmethod
     def get_pattern(word: str):
-        return re.compile(rf"\b{re.escape(word)}\b")
+        return re.compile(rf"\b{re.escape(word)}\b", flags=re.IGNORECASE)
 
     @checks.mod_or_permissions(administrator=True)
     @commands.guild_only()
@@ -129,6 +132,10 @@ class SmartReact(commands.Cog):
             return
         if message.author == self.bot.user:
             return
+
+        if URL_REGEX.search(message.content):
+            return
+
         guild = message.guild
         reacts = await self.conf.guild(guild).reactions()
         if reacts is None:
