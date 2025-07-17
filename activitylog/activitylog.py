@@ -1,4 +1,5 @@
 # redbot/discord
+from itertools import chain
 from tokenize import String
 from discord.user import User
 from discord.member import Member
@@ -195,7 +196,7 @@ class ActivityLogger(commands.Cog):
 
         guilds = self.bot.guilds
         for guild in guilds:
-            for channel in guild.channels:
+            for channel in chain(guild.channels, guild.threads):
                 if not channel.id in self.cache.keys():
                     self.cache[channel.id] = self.default_channel.copy()
 
