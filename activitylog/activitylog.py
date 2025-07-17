@@ -278,11 +278,7 @@ class ActivityLogger(commands.Cog):
 
         elif type(location) is discord.TextChannel or type(location) is discord.Thread:
             loc = self.cache[location.guild.id]
-            opts = [
-                loc.get("all_s", False),
-                self.cache[location.id].get("enabled", default),
-            ]
-            return any(opts)
+            return loc.get("all_s", False) or self.cache.get(location.id, {}).get("enabled", default)
 
         elif type(location) is discord.VoiceChannel:
             loc = self.cache[location.guild.id]
