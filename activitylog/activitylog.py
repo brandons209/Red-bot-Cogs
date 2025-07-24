@@ -261,7 +261,14 @@ class ActivityLogger(commands.Cog):
 
     def should_log(
         self,
-        location: Union[discord.Guild, discord.abc.GuildChannel, discord.DMChannel, discord.Thread, discord.User],
+        location: Union[
+            discord.Guild,
+            discord.ForumChannel,
+            discord.abc.GuildChannel,
+            discord.DMChannel,
+            discord.Thread,
+            discord.User,
+        ],
     ) -> bool:
         if not self.cache or not self.is_initalized:
             # cache is empty, still booting
@@ -277,6 +284,8 @@ class ActivityLogger(commands.Cog):
             return loc.get("all_s", False) or loc.get("events", default)
 
         elif type(location) is discord.TextChannel or type(location) is discord.Thread:
+            if type(location) == discord.Thread:
+                location = location.parent
             loc = self.cache[location.guild.id]
             opts = [
                 loc.get("all_s", False),

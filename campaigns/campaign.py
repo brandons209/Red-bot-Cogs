@@ -3,14 +3,13 @@ import re
 import uuid
 import csv
 import io
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Dict, List, Literal, Optional, Any
 
 from dateutil.tz import tzlocal
 import discord
 from redbot.core import commands, config, checks
 from redbot.core.bot import Red
-from redbot.core.utils.chat_formatting import box, pagify
 from redbot.core.commands.converter import parse_timedelta
 
 from .views import CampaignView
@@ -18,8 +17,6 @@ from .views import CampaignView
 
 class Campaign:
     """Represents a feedback campaign."""
-
-    __version__ = "1.0.0"
 
     def __init__(self, campaign_id: str, guild_id: int, name: str, description: str):
         self.campaign_id = campaign_id
@@ -105,6 +102,8 @@ class Campaign:
 
 class CampaignCog(commands.Cog):
     """A cog for creating and managing user feedback campaigns."""
+
+    __version__ = "1.0.1"
 
     def __init__(self, bot: Red):
         self.bot = bot
@@ -454,10 +453,18 @@ class CampaignCog(commands.Cog):
         embed.add_field(name="Questions", value=str(len(campaign.questions)), inline=True)
 
         if campaign.start_time:
-            embed.add_field(name="Started", value=campaign.start_time.strftime("%Y-%m-%d %H:%M UTC"), inline=True)
+            embed.add_field(
+                name="Started",
+                value=f"<t:{int(campaign.start_time.astimezone(tzlocal()).timestamp())}>",
+                inline=True,
+            )
 
         if campaign.end_time:
-            embed.add_field(name="Expires", value=campaign.end_time.strftime("%Y-%m-%d %H:%M UTC"), inline=True)
+            embed.add_field(
+                name="Expires",
+                value=f"<t:{int(campaign.end_time.astimezone(tzlocal()).timestamp())}>",
+                inline=True,
+            )
 
         # Show questions
         if campaign.questions:
@@ -703,7 +710,9 @@ class CampaignCog(commands.Cog):
         embed.add_field(name="Questions", value=f"{len(campaign.questions)} questions available", inline=True)
 
         if campaign.end_time:
-            embed.add_field(name="Expires", value=campaign.end_time.strftime("%Y-%m-%d %H:%M UTC"), inline=True)
+            embed.add_field(
+                name="Expires", value=f"<t:{int(campaign.end_time.astimezone(tzlocal()).timestamp())}>", inline=True
+            )
 
         if user_response:
             answered_count = len(user_response.get("answers", {}))
@@ -756,7 +765,9 @@ class CampaignCog(commands.Cog):
         embed.add_field(name="Questions", value=f"{len(campaign.questions)} questions", inline=True)
 
         if campaign.end_time:
-            embed.add_field(name="Expires", value=campaign.end_time.strftime("%Y-%m-%d %H:%M UTC"), inline=True)
+            embed.add_field(
+                name="Expires", value=f"<t:{int(campaign.end_time.astimezone(tzlocal()).timestamp())}>", inline=True
+            )
 
         embed.add_field(
             name="How to Participate",
