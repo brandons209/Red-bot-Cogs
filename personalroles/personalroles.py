@@ -404,7 +404,7 @@ class PersonalRoles(commands.Cog):
             if isinstance(emoji, discord.Emoji) or isinstance(emoji, discord.PartialEmoji):
                 await emoji.save(emoji_bytes)
                 emoji_bytes.seek(0)
-                await role.edit(display_icon=emoji_bytes)
+                await role.edit(display_icon=emoji_bytes.getvalue())
             elif emoji is not None:
                 emoji = emoji.split()[0]
                 if demojize(emoji) == emoji:
@@ -413,7 +413,7 @@ class PersonalRoles(commands.Cog):
         except discord.Forbidden:
             ctx.command.reset_cooldown(ctx)
             await ctx.send(chat.error(_("Unable to edit role.\nRole must be lower than my top role")))
-        except discord.InvalidArgument:
+        except TypeError:
             await ctx.send(chat.error(_("This image type is unsupported, or link is incorrect")))
         except discord.HTTPException as e:
             ctx.command.reset_cooldown(ctx)
