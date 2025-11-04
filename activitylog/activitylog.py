@@ -44,6 +44,8 @@ ID_FINDER = re.compile(r"\(id\s*(\d+)\)")
 class ActivityLogger(commands.Cog):
     """Log all activities seen by bot"""
 
+    __version__ = "1.1.0"
+
     def __init__(self, bot):
         super().__init__()
         self.data_path = cog_data_path(cog_instance=self)
@@ -1169,7 +1171,7 @@ class ActivityLogger(commands.Cog):
                         else:
                             emoji = None
                     else:
-                        emoji = self.badge_emojis[badge]
+                        emoji = self.badge_emojis.get(badge, None)
                     if emoji:
                         badges += f"{emoji} {badge.replace('_', ' ').title()}\n"
                     else:
