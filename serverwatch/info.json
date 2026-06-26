@@ -1,0 +1,23 @@
+{
+  "author": [
+    "brandons209"
+  ],
+  "bot_version": [
+    3,
+    5,
+    0
+  ],
+  "description": "Tracks TF2 / Source-engine game servers over the A2S protocol, posts live status displays, and pings roles when player-count thresholds are crossed.",
+  "hidden": false,
+  "requirements": [
+    "python-a2s"
+  ],
+  "tags": [
+    "tf2",
+    "source",
+    "a2s",
+    "gameserver",
+    "valve"
+  ],
+  "end_user_data_statement": "This cog does not store personal data. It stores game server connection details (host/port) and notification settings configured by server admins."
+}
