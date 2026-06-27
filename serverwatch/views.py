@@ -156,28 +156,30 @@ class TemplateModal(discord.ui.Modal, title="Channel-name Template"):
 
 
 class IntervalsModal(discord.ui.Modal, title="Timing Settings"):
-    def __init__(self, panel, poll, cooldown, rename):
+    def __init__(self, panel, poll, rearm_grace, rename):
         super().__init__()
         self.panel = panel
         self.poll = discord.ui.TextInput(label="Poll interval (s, min 30)", default=str(poll), required=True, max_length=6)
-        self.cooldown = discord.ui.TextInput(label="Re-ping cooldown (s)", default=str(cooldown), required=True, max_length=7)
+        self.rearm = discord.ui.TextInput(
+            label="Re-arm grace (s below threshold)", default=str(rearm_grace), required=True, max_length=7
+        )
         self.rename = discord.ui.TextInput(
             label="Channel rename interval (s, min 300)", default=str(rename), required=True, max_length=6
         )
         self.add_item(self.poll)
-        self.add_item(self.cooldown)
+        self.add_item(self.rearm)
         self.add_item(self.rename)
 
     async def on_submit(self, interaction):
         try:
             poll = int(self.poll.value.strip())
-            cd = int(self.cooldown.value.strip())
+            rg = int(self.rearm.value.strip())
             rn = int(self.rename.value.strip())
         except ValueError:
             await interaction.response.send_message("All values must be whole numbers (seconds).", ephemeral=True)
             return
         await self.panel.cog._set_interval(self.panel.guild, "poll_interval", poll)
-        await self.panel.cog._set_interval(self.panel.guild, "cooldown", cd)
+        await self.panel.cog._set_interval(self.panel.guild, "rearm_grace", rg)
         await self.panel.cog._set_interval(self.panel.guild, "rename_interval", rn)
         self.panel._notice = "✅ Timing settings updated."
         await self.panel._show(interaction)
@@ -619,9 +621,9 @@ class ServerWatchPanel(discord.ui.View):
         async def cb(interaction):
             gconf = self.cog.config.guild(self.guild)
             poll = await gconf.poll_interval()
-            cd = await gconf.cooldown()
+            rg = await gconf.rearm_grace()
             rn = await gconf.rename_interval()
-            await interaction.response.send_modal(IntervalsModal(self, poll, cd, rn))
+            await interaction.response.send_modal(IntervalsModal(self, poll, rg, rn))
 
         edit.callback = cb
         self.add_item(edit)
@@ -725,13 +727,13 @@ class ServerWatchPanel(discord.ui.View):
     async def _add_intervals_field(self, embed):
         gconf = self.cog.config.guild(self.guild)
         poll = await gconf.poll_interval()
-        cd = await gconf.cooldown()
+        rg = await gconf.rearm_grace()
         rn = await gconf.rename_interval()
         embed.add_field(
             name="Timing (guild-wide)",
             value=(
                 f"Poll interval: **{poll}s**\n"
-                f"Re-ping cooldown: **{cd}s**\n"
+                f"Re-arm grace: **{rg}s** (sustained drop below a threshold before it re-arms)\n"
                 f"Channel-rename interval: **{rn}s**"
             ),
             inline=False,
