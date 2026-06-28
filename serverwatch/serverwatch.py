@@ -44,6 +44,7 @@ class ServerWatch(commands.Cog):
             "servers": {},  # name.lower() -> server dict
             "poll_interval": 60,
             "rearm_grace": 120,  # seconds below a threshold before its alert re-arms
+            "cooldown": 1800,  # minimum seconds between pings of the same rule
             "rename_interval": 360,
         }
         self.config.register_guild(**default_guild)
@@ -170,12 +171,12 @@ class ServerWatch(commands.Cog):
                     "message": message or DEFAULT_THRESHOLD_MESSAGE,
                 }
             )
-            # Prime arm state: if the server is already at/above this count, start disarmed
-            # so an already-full server does not ping until it drains and refills.
+            # Disarm if already at/above the count, so an already-full server doesn't
+            # ping until it drains and refills.
             cached = self._cache.get((guild.id, key))
             cur = cached["info"].player_count if cached and cached.get("info") is not None else None
             armed = not (cur is not None and cur >= count)
-            s["ping_state"][str(rule_id)] = {"armed": armed, "below_since": None}
+            s["ping_state"][str(rule_id)] = {"armed": armed, "below_since": None, "last_ping": 0.0}
         return rule_id
 
     async def _remove_threshold(self, guild, name, rule_id):
@@ -249,7 +250,7 @@ class ServerWatch(commands.Cog):
             seconds = max(MIN_POLL, seconds)
         elif key == "rename_interval":
             seconds = max(MIN_RENAME, seconds)
-        elif key == "rearm_grace":
+        elif key in ("rearm_grace", "cooldown"):
             seconds = max(0, seconds)
         else:
             raise ServerWatchError("Unknown interval setting.")
@@ -274,8 +275,7 @@ class ServerWatch(commands.Cog):
         port = server.get("port")
         if not host or not port:
             return None
-        # ainfo raises asyncio.TimeoutError / a2s.BrokenMessageError / OSError for unreachable
-        # servers; treat any failure as "offline" so the loop never dies on a bad host.
+        # Any failure (timeout, bad host, protocol error) means the server is offline.
         try:
             return await a2s.ainfo((host, int(port)), timeout=QUERY_TIMEOUT)
         except Exception:
@@ -405,6 +405,7 @@ class ServerWatch(commands.Cog):
 
                 rename_interval = max(MIN_RENAME, await gconf.rename_interval())
                 rearm_grace = await gconf.rearm_grace()
+                cooldown = await gconf.cooldown()
                 servers = await gconf.servers()
 
                 for key in list(servers.keys()):
@@ -415,12 +416,11 @@ class ServerWatch(commands.Cog):
                     # Fast: refresh the live status message/embed
                     await self._update_status_message(guild, key, s, info)
                     # Fast: evaluate thresholds (reads/writes live config inside)
-                    await self._evaluate_thresholds(guild, key, info, rearm_grace)
+                    await self._evaluate_thresholds(guild, key, info, rearm_grace, cooldown)
                     # Slow: channel rename, gated by elapsed time per server
                     if (now - self._last_rename.get((guild.id, key), 0)) >= rename_interval:
                         await self._update_channel_name(guild, key, s, info)
-                        # Record the attempt regardless of outcome so a 429 / no-op
-                        # backs off a full interval instead of hammering.
+                        # Record the attempt either way so a 429/no-op backs off a full interval.
                         self._last_rename[(guild.id, key)] = now
 
             await asyncio.sleep(BASE_TICK)
@@ -454,7 +454,7 @@ class ServerWatch(commands.Cog):
         except discord.HTTPException:
             return
 
-    async def _evaluate_thresholds(self, guild, key, info, rearm_grace):
+    async def _evaluate_thresholds(self, guild, key, info, rearm_grace, cooldown):
         async with self.config.guild(guild).servers() as servers:
             s = servers.get(key)
             if not s:
@@ -479,26 +479,24 @@ class ServerWatch(commands.Cog):
 
             for rule in s["thresholds"]:
                 rid = str(rule["id"])
-                st = state.setdefault(rid, {"armed": True, "below_since": None})
+                st = state.setdefault(rid, {"armed": True, "below_since": None, "last_ping": 0.0})
                 threshold = rule["count"]
 
                 if current < threshold:
-                    # Re-arm only after the count has stayed below the threshold for
-                    # `rearm_grace` seconds. A brief dip (e.g. a TF2 map change empties the
-                    # server for a few seconds while players reconnect) must NOT reset the
-                    # alert, or it would ping again every time the map rotates.
+                    # Re-arm only after a sustained drop (>= rearm_grace), so a brief dip
+                    # like a map change doesn't reset the alert and cause a repeat ping.
                     if st.get("below_since") is None:
                         st["below_since"] = now
                     if not st.get("armed", True) and (now - st["below_since"]) >= rearm_grace:
                         st["armed"] = True
                     continue
 
-                # current >= threshold: it's back up, so cancel any pending re-arm.
+                # back above the threshold — cancel any pending re-arm
                 st["below_since"] = None
 
-                # Edge-triggered: fire once on the upward crossing, then stay silent until
-                # the rule re-arms (a sustained drop back under the threshold).
-                if st.get("armed", True):
+                # Fire once per crossing (gated by `armed`), and at most once per `cooldown`
+                # so a population hovering around the threshold can't spam.
+                if st.get("armed", True) and (now - st.get("last_ping", 0.0)) >= cooldown:
                     role = guild.get_role(rule["role_id"])
                     if notify_channel and role:
                         msg = self._format_template(
@@ -512,6 +510,7 @@ class ServerWatch(commands.Cog):
                                 ),
                             )
                             st["armed"] = False
+                            st["last_ping"] = now
                         except discord.HTTPException:
                             pass  # missing perms / deleted channel — retry next poll
 
@@ -909,6 +908,17 @@ class ServerWatch(commands.Cog):
         """
         value = await self._set_interval(ctx.guild, "rearm_grace", seconds)
         await ctx.send(info(f"Re-arm grace set to **{value}s** (a sustained drop below a threshold re-arms its alert)."))
+
+    @sw_set.command(name="cooldown")
+    async def sw_set_cooldown(self, ctx, seconds: int):
+        """
+        Set the minimum time between pings of the same threshold rule.
+
+        Even after a rule re-arms, it won't ping again until this long has passed since its
+        last ping. Stops a population hovering around a threshold from spamming.
+        """
+        value = await self._set_interval(ctx.guild, "cooldown", seconds)
+        await ctx.send(info(f"Re-ping cooldown set to **{value}s** (minimum time between pings of the same rule)."))
 
     @sw_set.command(name="renameinterval")
     async def sw_set_renameinterval(self, ctx, seconds: int):
