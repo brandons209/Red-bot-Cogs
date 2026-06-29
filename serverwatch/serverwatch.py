@@ -36,6 +36,13 @@ class ServerWatch(commands.Cog):
     `[p]serverwatch panel`.
     """
 
+    __version__ = "1.1.0"
+    __author__ = "brandons209"
+
+    def format_help_for_context(self, ctx):
+        pre_processed = super().format_help_for_context(ctx)
+        return f"{pre_processed}\n\nCog Version: {self.__version__}"
+
     def __init__(self, bot):
         self.bot = bot
         self.config = Config.get_conf(self, identifier=IDENTIFIER, force_registration=True)
@@ -43,7 +50,8 @@ class ServerWatch(commands.Cog):
         default_guild = {
             "servers": {},  # name.lower() -> server dict
             "poll_interval": 60,
-            "rearm_grace": 120,  # seconds below a threshold before its alert re-arms
+            "rearm_grace": 120,  # seconds below the re-arm floor before its alert re-arms
+            "rearm_pct": 60,  # alert re-arms only once count drops below this % of its threshold
             "cooldown": 1800,  # minimum seconds between pings of the same rule
             "rename_interval": 360,
         }
@@ -252,6 +260,8 @@ class ServerWatch(commands.Cog):
             seconds = max(MIN_RENAME, seconds)
         elif key in ("rearm_grace", "cooldown"):
             seconds = max(0, seconds)
+        elif key == "rearm_pct":
+            seconds = max(0, min(100, seconds))
         else:
             raise ServerWatchError("Unknown interval setting.")
         await self.config.guild(guild).set_raw(key, value=seconds)
@@ -405,6 +415,7 @@ class ServerWatch(commands.Cog):
 
                 rename_interval = max(MIN_RENAME, await gconf.rename_interval())
                 rearm_grace = await gconf.rearm_grace()
+                rearm_pct = await gconf.rearm_pct()
                 cooldown = await gconf.cooldown()
                 servers = await gconf.servers()
 
@@ -416,7 +427,7 @@ class ServerWatch(commands.Cog):
                     # Fast: refresh the live status message/embed
                     await self._update_status_message(guild, key, s, info)
                     # Fast: evaluate thresholds (reads/writes live config inside)
-                    await self._evaluate_thresholds(guild, key, info, rearm_grace, cooldown)
+                    await self._evaluate_thresholds(guild, key, info, rearm_grace, rearm_pct, cooldown)
                     # Slow: channel rename, gated by elapsed time per server
                     if (now - self._last_rename.get((guild.id, key), 0)) >= rename_interval:
                         await self._update_channel_name(guild, key, s, info)
@@ -454,7 +465,7 @@ class ServerWatch(commands.Cog):
         except discord.HTTPException:
             return
 
-    async def _evaluate_thresholds(self, guild, key, info, rearm_grace, cooldown):
+    async def _evaluate_thresholds(self, guild, key, info, rearm_grace, rearm_pct, cooldown):
         async with self.config.guild(guild).servers() as servers:
             s = servers.get(key)
             if not s:
@@ -482,37 +493,41 @@ class ServerWatch(commands.Cog):
                 st = state.setdefault(rid, {"armed": True, "below_since": None, "last_ping": 0.0})
                 threshold = rule["count"]
 
-                if current < threshold:
-                    # Re-arm only after a sustained drop (>= rearm_grace), so a brief dip
-                    # like a map change doesn't reset the alert and cause a repeat ping.
+                if current >= threshold:
+                    # at/above the threshold — cancel any pending re-arm, then maybe fire.
+                    st["below_since"] = None
+                    # Fire once per crossing (gated by `armed`), at most once per `cooldown`.
+                    if st.get("armed", True) and (now - st.get("last_ping", 0.0)) >= cooldown:
+                        role = guild.get_role(rule["role_id"])
+                        if notify_channel and role:
+                            msg = self._format_template(
+                                rule["message"], server=s, info=info, role=role, threshold=threshold
+                            )
+                            try:
+                                await notify_channel.send(
+                                    msg,
+                                    allowed_mentions=discord.AllowedMentions(
+                                        roles=[role], everyone=False, users=False
+                                    ),
+                                )
+                                st["armed"] = False
+                                st["last_ping"] = now
+                            except discord.HTTPException:
+                                pass  # missing perms / deleted channel — retry next poll
+                    continue
+
+                # Below the threshold: a fired rule re-arms only once the server genuinely
+                # drains past a hysteresis floor (rearm_pct of the threshold) for rearm_grace.
+                # A dip that stays above the floor — like a map-change shuffle — leaves the
+                # alert spent so it can't re-ping.
+                floor = threshold * rearm_pct / 100.0
+                if current < floor:
                     if st.get("below_since") is None:
                         st["below_since"] = now
                     if not st.get("armed", True) and (now - st["below_since"]) >= rearm_grace:
                         st["armed"] = True
-                    continue
-
-                # back above the threshold — cancel any pending re-arm
-                st["below_since"] = None
-
-                # Fire once per crossing (gated by `armed`), and at most once per `cooldown`
-                # so a population hovering around the threshold can't spam.
-                if st.get("armed", True) and (now - st.get("last_ping", 0.0)) >= cooldown:
-                    role = guild.get_role(rule["role_id"])
-                    if notify_channel and role:
-                        msg = self._format_template(
-                            rule["message"], server=s, info=info, role=role, threshold=threshold
-                        )
-                        try:
-                            await notify_channel.send(
-                                msg,
-                                allowed_mentions=discord.AllowedMentions(
-                                    roles=[role], everyone=False, users=False
-                                ),
-                            )
-                            st["armed"] = False
-                            st["last_ping"] = now
-                        except discord.HTTPException:
-                            pass  # missing perms / deleted channel — retry next poll
+                else:
+                    st["below_since"] = None
 
     async def _update_channel_name(self, guild, key, s, info):
         cfg = s.get("channel_name", {})
@@ -900,14 +915,27 @@ class ServerWatch(commands.Cog):
     @sw_set.command(name="rearmgrace", aliases=["rearm"])
     async def sw_set_rearmgrace(self, ctx, seconds: int):
         """
-        Set how long a server must stay BELOW a threshold before that alert re-arms.
+        Set how long a server must stay BELOW the re-arm floor before that alert re-arms.
 
         A rule pings once when the player count crosses its threshold, then goes silent.
-        It will only ping again after the count drops back under the threshold for this
-        long — which stops brief dips (like TF2 map changes) from causing repeat pings.
+        It only pings again after the count drops under the re-arm floor (see `rearmmargin`)
+        for this long — which stops brief dips, like TF2 map changes, from repeat-pinging.
         """
         value = await self._set_interval(ctx.guild, "rearm_grace", seconds)
-        await ctx.send(info(f"Re-arm grace set to **{value}s** (a sustained drop below a threshold re-arms its alert)."))
+        await ctx.send(info(f"Re-arm grace set to **{value}s** (a sustained drop below the re-arm floor re-arms its alert)."))
+
+    @sw_set.command(name="rearmmargin", aliases=["margin"])
+    async def sw_set_rearmmargin(self, ctx, percent: int):
+        """
+        Set the re-arm floor as a percentage of each threshold (0-100).
+
+        A fired rule re-arms only once the count drops below this percentage of its
+        threshold. Lower = the server must empty out more before it can ping again.
+        Example: 60% means a 16-player rule re-arms under 10, so map-change dips that
+        hover near the threshold don't trigger a repeat ping.
+        """
+        value = await self._set_interval(ctx.guild, "rearm_pct", percent)
+        await ctx.send(info(f"Re-arm margin set to **{value}%** of each threshold."))
 
     @sw_set.command(name="cooldown")
     async def sw_set_cooldown(self, ctx, seconds: int):
