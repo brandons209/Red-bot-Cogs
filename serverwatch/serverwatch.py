@@ -484,9 +484,7 @@ class ServerWatch(commands.Cog):
 
             current = info.player_count
             now = time.time()
-            notify_channel = (
-                guild.get_channel(s.get("notify_channel_id")) if s.get("notify_channel_id") else None
-            )
+            notify_channel = guild.get_channel(s.get("notify_channel_id")) if s.get("notify_channel_id") else None
 
             for rule in s["thresholds"]:
                 rid = str(rule["id"])
@@ -506,9 +504,7 @@ class ServerWatch(commands.Cog):
                             try:
                                 await notify_channel.send(
                                     msg,
-                                    allowed_mentions=discord.AllowedMentions(
-                                        roles=[role], everyone=False, users=False
-                                    ),
+                                    allowed_mentions=discord.AllowedMentions(roles=[role], everyone=False, users=False),
                                 )
                                 st["armed"] = False
                                 st["last_ping"] = now
@@ -536,9 +532,7 @@ class ServerWatch(commands.Cog):
         channel = guild.get_channel(cfg["channel_id"])
         if channel is None:
             return False
-        new_name = self._format_template(
-            cfg.get("template", DEFAULT_CHANNELNAME_TEMPLATE), server=s, info=info
-        )[:100]
+        new_name = self._format_template(cfg.get("template", DEFAULT_CHANNELNAME_TEMPLATE), server=s, info=info)[:100]
         if not new_name or channel.name == new_name:
             return False
         try:
@@ -643,9 +637,7 @@ class ServerWatch(commands.Cog):
         except ServerWatchError as e:
             await ctx.reply(error(str(e)), delete_after=30, mention_author=False)
             return
-        await ctx.send(
-            info(f"Connect override {'cleared' if not url else 'set'} for `{name}`.")
-        )
+        await ctx.send(info(f"Connect override {'cleared' if not url else 'set'} for `{name}`."))
         await ctx.tick()
 
     @serverwatch.command(name="list")
@@ -760,7 +752,9 @@ class ServerWatch(commands.Cog):
         cache = self._cache.get((ctx.guild.id, name.lower()))
         if cache and cache.get("info") is not None and count > cache["info"].max_players:
             await ctx.send(
-                warning(f"Heads up: {count} is above the server's max of {cache['info'].max_players} — it may never fire.")
+                warning(
+                    f"Heads up: {count} is above the server's max of {cache['info'].max_players} — it may never fire."
+                )
             )
         await ctx.send(info(f"Added threshold rule **#{rule_id}**: {count}+ players → {role.mention}."))
         await ctx.tick()
@@ -858,9 +852,7 @@ class ServerWatch(commands.Cog):
 
     @sw_channelname.command(name="enable")
     @checks.bot_has_permissions(manage_channels=True)
-    async def sw_channelname_enable(
-        self, ctx, name: str, channel: Union[discord.VoiceChannel, discord.TextChannel]
-    ):
+    async def sw_channelname_enable(self, ctx, name: str, channel: Union[discord.VoiceChannel, discord.TextChannel]):
         """Rename a voice/text channel to show live server info (updates ~every 5-6 min)."""
         try:
             await self._set_channelname_display(ctx.guild, name, enabled=True, channel=channel)
@@ -922,7 +914,9 @@ class ServerWatch(commands.Cog):
         for this long — which stops brief dips, like TF2 map changes, from repeat-pinging.
         """
         value = await self._set_interval(ctx.guild, "rearm_grace", seconds)
-        await ctx.send(info(f"Re-arm grace set to **{value}s** (a sustained drop below the re-arm floor re-arms its alert)."))
+        await ctx.send(
+            info(f"Re-arm grace set to **{value}s** (a sustained drop below the re-arm floor re-arms its alert).")
+        )
 
     @sw_set.command(name="rearmmargin", aliases=["margin"])
     async def sw_set_rearmmargin(self, ctx, percent: int):

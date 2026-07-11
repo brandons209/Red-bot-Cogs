@@ -1,0 +1,9 @@
+[tool.black]
+line-length = 120
+target-version = ["py310", "py311"]
+# black does not read .gitignore, so exclude the vendored patreon-python library
+# and the Claude config dir explicitly. Cache dirs (.git, .pytest_cache, __pycache__)
+# hold no .py source, so black's defaults already skip them.
+extend-exclude = '''
+/(patreon-python|\.claude)/
+'''

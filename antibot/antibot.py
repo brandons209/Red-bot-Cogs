@@ -35,12 +35,37 @@ _MIN_FUZZY_LEN = 12  # normalized-text length below which SimHash near-dup is di
 
 _CASETYPES = [
     {"name": "antibot_spam", "default_setting": True, "image": "\N{FIRE}", "case_str": "AntiBot: Cross-channel spam"},
-    {"name": "antibot_join", "default_setting": True, "image": "\N{BUST IN SILHOUETTE}", "case_str": "AntiBot: Suspicious join"},
+    {
+        "name": "antibot_join",
+        "default_setting": True,
+        "image": "\N{BUST IN SILHOUETTE}",
+        "case_str": "AntiBot: Suspicious join",
+    },
     {"name": "antibot_roleping", "default_setting": True, "image": "\N{BELL}", "case_str": "AntiBot: Role-ping abuse"},
-    {"name": "antibot_spammer", "default_setting": True, "image": "\N{WARNING SIGN}", "case_str": "AntiBot: Suspected spammer"},
-    {"name": "antibot_honeypot", "default_setting": True, "image": "\N{HONEY POT}", "case_str": "AntiBot: Honeypot trip"},
-    {"name": "antibot_signature", "default_setting": True, "image": "\N{ROBOT FACE}", "case_str": "AntiBot: Signature match"},
-    {"name": "antibot_dm", "default_setting": True, "image": "\N{ENVELOPE}", "case_str": "AntiBot: Unusual DM activity"},
+    {
+        "name": "antibot_spammer",
+        "default_setting": True,
+        "image": "\N{WARNING SIGN}",
+        "case_str": "AntiBot: Suspected spammer",
+    },
+    {
+        "name": "antibot_honeypot",
+        "default_setting": True,
+        "image": "\N{HONEY POT}",
+        "case_str": "AntiBot: Honeypot trip",
+    },
+    {
+        "name": "antibot_signature",
+        "default_setting": True,
+        "image": "\N{ROBOT FACE}",
+        "case_str": "AntiBot: Signature match",
+    },
+    {
+        "name": "antibot_dm",
+        "default_setting": True,
+        "image": "\N{ENVELOPE}",
+        "case_str": "AntiBot: Unusual DM activity",
+    },
 ]
 
 
@@ -74,35 +99,51 @@ class AntiBot(commands.Cog):
             "ban_dm_message": None,  # custom DM before a ban action (None = no DM)
             "locked_roles": {},  # role_id(str) -> unlock unix-ts
             "spam": {
-                "enabled": True, "channels": 3, "window": 10, "simhash_distance": 8,
-                "cooldown": 60, "action": _action_cfg("timeout"),
+                "enabled": True,
+                "channels": 3,
+                "window": 10,
+                "simhash_distance": 8,
+                "cooldown": 60,
+                "action": _action_cfg("timeout"),
             },
             "join": {
-                "enabled": True, "age_new_seconds": 604800, "age_kick_seconds": 0,
+                "enabled": True,
+                "age_new_seconds": 604800,
+                "age_kick_seconds": 0,
                 "action": _action_cfg("notify"),
             },
             "spammer": {
-                "enabled": True, "check_on_message": True, "action": _action_cfg("notify"),
+                "enabled": True,
+                "check_on_message": True,
+                "action": _action_cfg("notify"),
             },
             "honeypot": {
-                "enabled": False, "channels": [], "exempt_after_seconds": 604800,
-                "exempt_roles": [], "report_exempt": True,
+                "enabled": False,
+                "channels": [],
+                "exempt_after_seconds": 604800,
+                "exempt_roles": [],
+                "report_exempt": True,
                 "report_immune": False,  # also report (never action) immune posters
                 "action": _action_cfg("notify"),
             },
             "roleping": {
-                "enabled": True, "watched_roles": [], "threshold": 2, "window": 10,
-                "lockdown": True, "lockdown_seconds": 300,
+                "enabled": True,
+                "watched_roles": [],
+                "threshold": 2,
+                "window": 10,
+                "lockdown": True,
+                "lockdown_seconds": 300,
                 # new-member gate: active iff either window > 0. A member is "new"
                 # (and thus actionable) if within the account-age OR the joined window.
-                "new_account_seconds": 0,        # account age (created) counted as "new"
-                "new_member_seconds": 0,          # joined-server-more-recently-than counted as "new"
-                "min_role_members": 0,            # only act on pings of roles with >= this many members
+                "new_account_seconds": 0,  # account age (created) counted as "new"
+                "new_member_seconds": 0,  # joined-server-more-recently-than counted as "new"
+                "min_role_members": 0,  # only act on pings of roles with >= this many members
                 "notice_message": _ROLEPING_NOTICE,  # public "it was a bot" notice (blank = off)
                 "action": _action_cfg("timeout"),
             },
             "signatures": {
-                "enabled": True, "simhash_distance": 8,
+                "enabled": True,
+                "simhash_distance": 8,
                 "weights": dict(signatures.DEFAULT_WEIGHTS),
                 # Non-destructive defaults so a fresh install never auto-kicks/bans while
                 # being configured. Strongest default is `role` (reversible quarantine).
@@ -118,10 +159,10 @@ class AntiBot(commands.Cog):
                 # the observable proxy. Off by default (DMs are lower-evidence); notify
                 # default. Either-window gate (see detectors.dm_new_actionable).
                 "enabled": False,
-                "new_account_seconds": 604800,   # account younger than this -> "new"
-                "new_member_seconds": 86400,      # joined more recently than this -> "new"
-                "min_messages": 1,                # DMs to the bot before it fires
-                "ignore_commands": True,          # skip DMs that are bot command invocations
+                "new_account_seconds": 604800,  # account younger than this -> "new"
+                "new_member_seconds": 86400,  # joined more recently than this -> "new"
+                "min_messages": 1,  # DMs to the bot before it fires
+                "ignore_commands": True,  # skip DMs that are bot command invocations
                 "action": _action_cfg("notify"),
             },
             "signature_store": [],
@@ -186,8 +227,12 @@ class AntiBot(commands.Cog):
             message_texts = list(self._recent_texts.get((guild.id, member.id), []))
         recent = self._recent_roles.get((guild.id, member.id))
         sig = signatures.build_signature(
-            member, label=label, created_by=created_by, trust=trust,
-            message_texts=message_texts, recent_roles=recent,
+            member,
+            label=label,
+            created_by=created_by,
+            trust=trust,
+            message_texts=message_texts,
+            recent_roles=recent,
         )
         await self._store_add(guild, sig)
         return sig
@@ -320,8 +365,9 @@ class AntiBot(commands.Cog):
         sp = conf.get("spammer", {})
         if sp.get("enabled") and sp.get("check_on_message", True):
             if getattr(message.author.public_flags, "spammer", False) and not self._member_verified(member, conf):
-                await actions.take_action(self, guild, member, sp["action"],
-                                          "Discord suspected-spammer flag", "antibot_spammer")
+                await actions.take_action(
+                    self, guild, member, sp["action"], "Discord suspected-spammer flag", "antibot_spammer"
+                )
                 return
 
         # role-ping abuse
@@ -351,22 +397,35 @@ class AntiBot(commands.Cog):
         sc = conf.get("spam", {})
         if sc.get("enabled"):
             tripped, evidence = self.cross.record(
-                guild.id, member.id, message.channel.id, message.id, _norm_hash(content_key), sh, now,
-                channels=sc["channels"], window=sc["window"],
-                simhash_distance=sc["simhash_distance"], cooldown=sc["cooldown"],
+                guild.id,
+                member.id,
+                message.channel.id,
+                message.id,
+                _norm_hash(content_key),
+                sh,
+                now,
+                channels=sc["channels"],
+                window=sc["window"],
+                simhash_distance=sc["simhash_distance"],
+                cooldown=sc["cooldown"],
             )
             if tripped:
                 await actions.take_action(
-                    self, guild, member, sc["action"],
+                    self,
+                    guild,
+                    member,
+                    sc["action"],
                     f"Posted the same content across {sc['channels']}+ channels quickly",
-                    "antibot_spam", evidence=evidence,
+                    "antibot_spam",
+                    evidence=evidence,
                 )
                 return
 
         sig = conf.get("signatures", {})
         if sig.get("enabled") and not self._member_verified(member, conf):
             feats = signatures.extract_message_features(
-                member, message.content,
+                member,
+                message.content,
                 recent_roles=self._recent_roles.get((guild.id, member.id)),
             )
             await self._match_signature(guild, member, feats, sig)
@@ -384,8 +443,9 @@ class AntiBot(commands.Cog):
 
         sp = conf.get("spammer", {})
         if sp.get("enabled") and getattr(member.public_flags, "spammer", False):
-            await actions.take_action(self, guild, member, sp["action"],
-                                      "Discord suspected-spammer flag (join)", "antibot_spammer")
+            await actions.take_action(
+                self, guild, member, sp["action"], "Discord suspected-spammer flag (join)", "antibot_spammer"
+            )
             return
 
         age = (discord.utils.utcnow() - member.created_at).total_seconds()
@@ -393,9 +453,13 @@ class AntiBot(commands.Cog):
             akick = jc.get("age_kick_seconds", 0)
             if akick and age < akick:
                 await actions.take_action(
-                    self, guild, member, jc["action"],
+                    self,
+                    guild,
+                    member,
+                    jc["action"],
                     f"Account age {humanize_timedelta(seconds=int(age))} is below the "
-                    f"{humanize_timedelta(seconds=akick)} threshold", "antibot_join",
+                    f"{humanize_timedelta(seconds=akick)} threshold",
+                    "antibot_join",
                 )
                 return
 
@@ -430,8 +494,9 @@ class AntiBot(commands.Cog):
             sp = conf.get("spammer", {})
             if not sp.get("enabled") or self.is_immune(member) or self._whitelisted(member, conf):
                 continue
-            await actions.take_action(self, guild, member, sp["action"],
-                                      "Discord suspected-spammer flag (post-join)", "antibot_spammer")
+            await actions.take_action(
+                self, guild, member, sp["action"], "Discord suspected-spammer flag (post-join)", "antibot_spammer"
+            )
 
     # --- detector handlers ------------------------------------------------ #
     async def _handle_bot_dm(self, message):
@@ -459,8 +524,10 @@ class AntiBot(commands.Cog):
             account_age = (now - member.created_at).total_seconds()
             member_age = (now - member.joined_at).total_seconds() if member.joined_at else None
             if not detectors.dm_new_actionable(
-                account_age, member_age,
-                dm.get("new_account_seconds", 0), dm.get("new_member_seconds", 0),
+                account_age,
+                member_age,
+                dm.get("new_account_seconds", 0),
+                dm.get("new_member_seconds", 0),
             ):
                 continue
             # Count only non-command DMs; fire once the threshold is reached.
@@ -474,13 +541,16 @@ class AntiBot(commands.Cog):
             snippet = (message.content or "").replace("`", "'").replace("\n", " ").strip()
             atts = message.attachments
             await actions.take_action(
-                self, guild, member, dm["action"],
-                "New/just-joined member DM'd the bot", "antibot_dm",
+                self,
+                guild,
+                member,
+                dm["action"],
+                "New/just-joined member DM'd the bot",
+                "antibot_dm",
                 extra_fields={
                     "Via": "DM to bot",
                     "Message": snippet[:300] if snippet else "(no text)",
-                    "Attachments": (f"{len(atts)}: " + ", ".join(a.filename for a in atts))[:300]
-                    if atts else "none",
+                    "Attachments": (f"{len(atts)}: " + ", ".join(a.filename for a in atts))[:300] if atts else "none",
                 },
             )
             return
@@ -502,16 +572,22 @@ class AntiBot(commands.Cog):
         if immune:
             # Only reached when report_immune is on. Never action a trusted account;
             # just flag that it tripped the honeypot (compromised-staff tripwire).
-            await actions.report(self, guild, member, "antibot_honeypot",
-                                 f"Immune member posted in honeypot <#{message.channel.id}> (no action)",
-                                 extra_fields={"Trigger": "immune"})
+            await actions.report(
+                self,
+                guild,
+                member,
+                "antibot_honeypot",
+                f"Immune member posted in honeypot <#{message.channel.id}> (no action)",
+                extra_fields={"Trigger": "immune"},
+            )
             return
         has_exempt = any(r.id in hp.get("exempt_roles", []) for r in member.roles)
         joined = member.joined_at
         joined_seconds = (discord.utils.utcnow() - joined).total_seconds() if joined else None
         decision = detectors.honeypot_decision(
             has_exempt_role=has_exempt,
-            joined_seconds=joined_seconds, exempt_after=hp.get("exempt_after_seconds", 604800),
+            joined_seconds=joined_seconds,
+            exempt_after=hp.get("exempt_after_seconds", 604800),
         )
         if decision == "report":
             if hp.get("report_exempt", True):
@@ -522,13 +598,22 @@ class AntiBot(commands.Cog):
                     trigger = "no join data"
                 else:
                     trigger = "age (time in server)"
-                await actions.report(self, guild, member, "antibot_honeypot",
-                                     f"Exempt member posted in honeypot <#{message.channel.id}> (no action)",
-                                     extra_fields={"Trigger": trigger})
+                await actions.report(
+                    self,
+                    guild,
+                    member,
+                    "antibot_honeypot",
+                    f"Exempt member posted in honeypot <#{message.channel.id}> (no action)",
+                    extra_fields={"Trigger": trigger},
+                )
             return
         await actions.take_action(
-            self, guild, member, hp["action"],
-            f"Posted in honeypot channel <#{message.channel.id}>", "antibot_honeypot",
+            self,
+            guild,
+            member,
+            hp["action"],
+            f"Posted in honeypot channel <#{message.channel.id}>",
+            "antibot_honeypot",
             evidence={"messages": [(message.channel.id, message.id)]},
         )
 
@@ -559,8 +644,12 @@ class AntiBot(commands.Cog):
         if not hits:
             return False
         tripped, role_id, evidence = self.roleping.record(
-            message.guild.id, member.id, hits, now,
-            threshold=rp.get("threshold", 2), window=rp.get("window", 10),
+            message.guild.id,
+            member.id,
+            hits,
+            now,
+            threshold=rp.get("threshold", 2),
+            window=rp.get("window", 10),
             # Re-fire cooldown is the window, not the lockdown length: if the user can
             # still ping (lockdown failed, or they have mention perms) they keep getting
             # actioned instead of going silent.
@@ -572,9 +661,13 @@ class AntiBot(commands.Cog):
         role = guild.get_role(role_id)
         rolename = role.name if role else role_id
         await actions.take_action(
-            self, guild, member, rp["action"],
+            self,
+            guild,
+            member,
+            rp["action"],
             f"Pinged role @{rolename} {rp.get('threshold', 2)}+ times across channels",
-            "antibot_roleping", evidence=evidence,
+            "antibot_roleping",
+            evidence=evidence,
         )
         if rp.get("lockdown", True) and role is not None:
             await self._lock_role(guild, role, rp.get("lockdown_seconds", 300))
@@ -643,8 +736,13 @@ class AntiBot(commands.Cog):
         name = matched.get("label") or matched.get("id")
         extra = {"Confidence": f"{conf:.2f}", "Signature": name, "Signals": ", ".join(why) or "-"}
         await actions.take_action(
-            self, guild, member, action_cfg,
-            f"Matched bot signature '{name}' ({conf:.0%})", "antibot_signature", extra_fields=extra,
+            self,
+            guild,
+            member,
+            action_cfg,
+            f"Matched bot signature '{name}' ({conf:.0%})",
+            "antibot_signature",
+            extra_fields=extra,
         )
 
     async def _ok(self, ctx, msg):
@@ -759,7 +857,9 @@ class AntiBot(commands.Cog):
 
     @ab_whitelist.command(name="channel")
     async def ab_wl_channel(
-        self, ctx, action: str,
+        self,
+        ctx,
+        action: str,
         channel: Union[discord.TextChannel, discord.VoiceChannel, discord.StageChannel, discord.Thread],
     ):
         """add/remove a whitelisted (ignored) channel for the content detectors."""
@@ -875,7 +975,9 @@ class AntiBot(commands.Cog):
         secs = _dur(duration)
         async with self.config.guild(ctx.guild).roleping() as r:
             r["new_account_seconds"] = secs
-        await self._ok(ctx, f"Role-ping new-account window: {'disabled' if not secs else humanize_timedelta(seconds=secs)}.")
+        await self._ok(
+            ctx, f"Role-ping new-account window: {'disabled' if not secs else humanize_timedelta(seconds=secs)}."
+        )
 
     @ab_rp.command(name="newmember")
     async def ab_rp_newmember(self, ctx, *, duration: str):
@@ -886,7 +988,9 @@ class AntiBot(commands.Cog):
         secs = _dur(duration)
         async with self.config.guild(ctx.guild).roleping() as r:
             r["new_member_seconds"] = secs
-        await self._ok(ctx, f"Role-ping new-member window: {'disabled' if not secs else humanize_timedelta(seconds=secs)}.")
+        await self._ok(
+            ctx, f"Role-ping new-member window: {'disabled' if not secs else humanize_timedelta(seconds=secs)}."
+        )
 
     @ab_rp.command(name="minmembers")
     async def ab_rp_minmembers(self, ctx, count: int):
@@ -995,11 +1099,15 @@ class AntiBot(commands.Cog):
 
     @ab_hp.command(name="channel")
     async def ab_hp_channel(
-        self, ctx, action: str,
+        self,
+        ctx,
+        action: str,
         channel: Union[discord.TextChannel, discord.VoiceChannel, discord.StageChannel],
     ):
         """add/remove a honeypot channel (text OR voice/stage chat)."""
-        await self._list_edit_nested(ctx, "honeypot", "channels", action, channel.id, getattr(channel, "mention", str(channel)))
+        await self._list_edit_nested(
+            ctx, "honeypot", "channels", action, channel.id, getattr(channel, "mention", str(channel))
+        )
 
     @ab_hp.command(name="exemptafter")
     async def ab_hp_exemptafter(self, ctx, *, duration: str):
@@ -1060,10 +1168,15 @@ class AntiBot(commands.Cog):
                     if len(texts) >= 5:
                         break
         sig = await self.capture_signature(
-            member, trust="confirmed", label=label or str(member),
-            created_by=ctx.author.id, message_texts=texts,
+            member,
+            trust="confirmed",
+            label=label or str(member),
+            created_by=ctx.author.id,
+            message_texts=texts,
         )
-        await self._ok(ctx, f"Captured signature `{sig['id']}` for {member} ({len(texts)} sample message(s) across channels).")
+        await self._ok(
+            ctx, f"Captured signature `{sig['id']}` for {member} ({len(texts)} sample message(s) across channels)."
+        )
 
     @ab_sig.command(name="seed")
     async def ab_sig_seed(self, ctx, *, text: str):
@@ -1072,7 +1185,9 @@ class AntiBot(commands.Cog):
         Paste the exact spam text. Then add more messages with `sig addtext <id> <text>`
         and attach the account (even a banned/gone ID) with `sig account <id> <user_id>`."""
         sig = signatures.build_manual(
-            message_texts=[text], label=f"seed by {ctx.author.display_name}", created_by=ctx.author.id,
+            message_texts=[text],
+            label=f"seed by {ctx.author.display_name}",
+            created_by=ctx.author.id,
         )
         await self._store_add(ctx.guild, sig)
         p = ctx.clean_prefix
@@ -1255,7 +1370,9 @@ class AntiBot(commands.Cog):
     async def _report_match(self, ctx, conf_cfg, feats):
         sig_cfg = conf_cfg["signatures"]
         conf, matched, why = signatures.compare_store(
-            feats, conf_cfg["signature_store"], sig_cfg.get("weights"),
+            feats,
+            conf_cfg["signature_store"],
+            sig_cfg.get("weights"),
             simhash_dist=sig_cfg.get("simhash_distance", 8),
         )
         if matched is None:
@@ -1320,6 +1437,7 @@ class AntiBot(commands.Cog):
 def build_settings_embed(guild, c, colour):
     """Render the full guild config as an embed. Shared by the `settings` command
     and the interactive panel's overview page (`c` = `config.guild(guild).all()`)."""
+
     def ch(i):
         x = guild.get_channel_or_thread(i) if i else None
         return x.mention if x else (f"`{i}`" if i else "none")
@@ -1375,13 +1493,23 @@ def build_settings_embed(guild, c, colour):
         f"**Whitelist channels:** {chs(c['whitelist_channels'])}"
     )
     sp = c["spam"]
-    e.add_field(name="🔥 Cross-channel spam", inline=False, value=(
-        f"enabled={sp['enabled']} · action={act(sp)}\n"
-        f"{sp['channels']} channels / {dur(sp['window'])} · distance={sp['simhash_distance']} · cooldown={dur(sp['cooldown'])}"))
+    e.add_field(
+        name="🔥 Cross-channel spam",
+        inline=False,
+        value=(
+            f"enabled={sp['enabled']} · action={act(sp)}\n"
+            f"{sp['channels']} channels / {dur(sp['window'])} · distance={sp['simhash_distance']} · cooldown={dur(sp['cooldown'])}"
+        ),
+    )
     jn = c["join"]
-    e.add_field(name="👤 Suspicious join", inline=False, value=(
-        f"enabled={jn['enabled']} · action={act(jn)}\n"
-        f"new≤{dur(jn['age_new_seconds'])} · kick={'off' if not jn['age_kick_seconds'] else dur(jn['age_kick_seconds'])}"))
+    e.add_field(
+        name="👤 Suspicious join",
+        inline=False,
+        value=(
+            f"enabled={jn['enabled']} · action={act(jn)}\n"
+            f"new≤{dur(jn['age_new_seconds'])} · kick={'off' if not jn['age_kick_seconds'] else dur(jn['age_kick_seconds'])}"
+        ),
+    )
     rp = c["roleping"]
     gate_parts = []
     if rp.get("new_account_seconds"):
@@ -1389,14 +1517,22 @@ def build_settings_embed(guild, c, colour):
     if rp.get("new_member_seconds"):
         gate_parts.append(f"joined<{dur(rp['new_member_seconds'])}")
     gate = " or ".join(gate_parts) if gate_parts else "off (all members)"
-    e.add_field(name="🔔 Role-ping abuse", inline=False, value=(
-        f"enabled={rp['enabled']} · action={act(rp)} · new-only: {gate}\n"
-        f"threshold={rp['threshold']} / {dur(rp['window'])} · min role size={rp.get('min_role_members', 0) or 'any'}\n"
-        f"lockdown={rp['lockdown']} {dur(rp['lockdown_seconds'])} · notice={'on' if rp.get('notice_message') else 'off'}\n"
-        f"watched: {rls(rp['watched_roles']) if rp['watched_roles'] else 'all mentionable'}"))
+    e.add_field(
+        name="🔔 Role-ping abuse",
+        inline=False,
+        value=(
+            f"enabled={rp['enabled']} · action={act(rp)} · new-only: {gate}\n"
+            f"threshold={rp['threshold']} / {dur(rp['window'])} · min role size={rp.get('min_role_members', 0) or 'any'}\n"
+            f"lockdown={rp['lockdown']} {dur(rp['lockdown_seconds'])} · notice={'on' if rp.get('notice_message') else 'off'}\n"
+            f"watched: {rls(rp['watched_roles']) if rp['watched_roles'] else 'all mentionable'}"
+        ),
+    )
     sm = c["spammer"]
-    e.add_field(name="⚠️ Spammer badge", inline=False, value=(
-        f"enabled={sm['enabled']} · action={act(sm)} · on-message={sm['check_on_message']}"))
+    e.add_field(
+        name="⚠️ Spammer badge",
+        inline=False,
+        value=(f"enabled={sm['enabled']} · action={act(sm)} · on-message={sm['check_on_message']}"),
+    )
     dm = c.get("dmflag", {})
     dm_gate = []
     if dm.get("new_account_seconds"):
@@ -1404,25 +1540,40 @@ def build_settings_embed(guild, c, colour):
     if dm.get("new_member_seconds"):
         dm_gate.append(f"joined<{dur(dm['new_member_seconds'])}")
     dm_gate = " or ".join(dm_gate) if dm_gate else "off (never fires)"
-    e.add_field(name="📨 Unusual DM activity", inline=False, value=(
-        f"enabled={dm.get('enabled', False)} · action={act(dm)} · new: {dm_gate}\n"
-        f"min messages={dm.get('min_messages', 1)} · ignore commands={dm.get('ignore_commands', True)}"))
+    e.add_field(
+        name="📨 Unusual DM activity",
+        inline=False,
+        value=(
+            f"enabled={dm.get('enabled', False)} · action={act(dm)} · new: {dm_gate}\n"
+            f"min messages={dm.get('min_messages', 1)} · ignore commands={dm.get('ignore_commands', True)}"
+        ),
+    )
     hp = c["honeypot"]
-    e.add_field(name="🍯 Honeypot", inline=False, value=(
-        f"enabled={hp['enabled']} · action={act(hp)} · report_exempt={hp['report_exempt']} · "
-        f"report_immune={hp.get('report_immune', False)}\n"
-        f"channels: {chs(hp['channels'])}\n"
-        f"exempt ≥ {dur(hp['exempt_after_seconds'])} in server · exempt roles: {rls(hp['exempt_roles'])}"))
+    e.add_field(
+        name="🍯 Honeypot",
+        inline=False,
+        value=(
+            f"enabled={hp['enabled']} · action={act(hp)} · report_exempt={hp['report_exempt']} · "
+            f"report_immune={hp.get('report_immune', False)}\n"
+            f"channels: {chs(hp['channels'])}\n"
+            f"exempt ≥ {dur(hp['exempt_after_seconds'])} in server · exempt roles: {rls(hp['exempt_roles'])}"
+        ),
+    )
     sg = c["signatures"]
-    tiers = " · ".join(f"≥{t['min']:.2f}→{t['action']['action']}"
-                       for t in sorted(sg["tiers"], key=lambda t: t["min"], reverse=True))
+    tiers = " · ".join(
+        f"≥{t['min']:.2f}→{t['action']['action']}" for t in sorted(sg["tiers"], key=lambda t: t["min"], reverse=True)
+    )
     weights = ", ".join(f"{k}={v}" for k, v in sg.get("weights", {}).items())
-    e.add_field(name="🤖 Signatures", inline=False, value=(
-        f"enabled={sg['enabled']} · distance={sg.get('simhash_distance', 8)} · saved={len(c['signature_store'])}\n"
-        f"tiers: {tiers}\nweights: {weights}"))
+    e.add_field(
+        name="🤖 Signatures",
+        inline=False,
+        value=(
+            f"enabled={sg['enabled']} · distance={sg.get('simhash_distance', 8)} · saved={len(c['signature_store'])}\n"
+            f"tiers: {tiers}\nweights: {weights}"
+        ),
+    )
     if c["locked_roles"]:
-        e.add_field(name="🔒 Currently locked roles", inline=False,
-                    value=rls([int(r) for r in c["locked_roles"]]))
+        e.add_field(name="🔒 Currently locked roles", inline=False, value=rls([int(r) for r in c["locked_roles"]]))
     return e
 
 

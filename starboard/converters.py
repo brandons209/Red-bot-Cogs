@@ -18,9 +18,7 @@ class StarboardExists(commands.Converter):
         try:
             starboard = cog.starboards[guild.id][argument.lower()]
         except KeyError:
-            raise commands.BadArgument(
-                _("There is no starboard named {name}").format(name=argument)
-            )
+            raise commands.BadArgument(_("There is no starboard named {name}").format(name=argument))
         return starboard
 
 

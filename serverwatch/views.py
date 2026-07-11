@@ -66,9 +66,7 @@ class ConnectionModal(discord.ui.Modal, title="Edit Connection"):
             await self.panel.cog._set_connection(
                 self.panel.guild, self.panel.server_name, self.host.value.strip(), port
             )
-            await self.panel.cog._set_connect_url(
-                self.panel.guild, self.panel.server_name, self.connect.value
-            )
+            await self.panel.cog._set_connect_url(self.panel.guild, self.panel.server_name, self.connect.value)
             self.panel._notice = "✅ Connection updated."
         except ServerWatchError as e:
             self.panel._notice = f"⚠️ {e}"
@@ -96,9 +94,7 @@ class ThresholdModal(discord.ui.Modal, title="Add Threshold"):
             if count <= 0:
                 raise ValueError
         except ValueError:
-            await interaction.response.send_message(
-                "Player count must be a positive whole number.", ephemeral=True
-            )
+            await interaction.response.send_message("Player count must be a positive whole number.", ephemeral=True)
             return
         self.panel._pending_threshold = {"count": count, "message": self.msg.value.strip() or None}
         self.panel.page = "pick_role"
@@ -159,7 +155,9 @@ class IntervalsModal(discord.ui.Modal, title="Timing Settings"):
     def __init__(self, panel, poll, rearm_grace, rearm_pct, cooldown, rename):
         super().__init__()
         self.panel = panel
-        self.poll = discord.ui.TextInput(label="Poll interval (s, min 30)", default=str(poll), required=True, max_length=6)
+        self.poll = discord.ui.TextInput(
+            label="Poll interval (s, min 30)", default=str(poll), required=True, max_length=6
+        )
         self.rearm = discord.ui.TextInput(
             label="Re-arm grace (s below floor)", default=str(rearm_grace), required=True, max_length=7
         )

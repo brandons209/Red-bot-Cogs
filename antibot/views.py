@@ -95,6 +95,7 @@ class AntiBotPanel(discord.ui.View):
             self.page = page
             self._notice = None
             await self._show(interaction)
+
         return cb
 
     def _add_back(self, row=4):
@@ -105,7 +106,8 @@ class AntiBotPanel(discord.ui.View):
     def _add_action_select(self, detector, conf, row=0):
         current = conf[detector]["action"]["action"]
         sel = discord.ui.Select(
-            placeholder=f"Action: {current}", row=row,
+            placeholder=f"Action: {current}",
+            row=row,
             options=[_opt(a, current) for a in _ACTIONS],
         )
 
@@ -192,7 +194,9 @@ class AntiBotPanel(discord.ui.View):
 
     def _build_global(self, conf):
         notify = discord.ui.ChannelSelect(
-            placeholder="Notify channel…", min_values=0, max_values=1,
+            placeholder="Notify channel…",
+            min_values=0,
+            max_values=1,
             channel_types=[discord.ChannelType.text, discord.ChannelType.news],
             default_values=self._chan_defaults([conf["notify_channel"]]),
         )
@@ -206,8 +210,13 @@ class AntiBotPanel(discord.ui.View):
         notify.callback = notify_cb
         self.add_item(notify)
 
-        nrole = discord.ui.RoleSelect(placeholder="Notify role (ping on alerts)…", min_values=0, max_values=1,
-                                      default_values=self._role_defaults([conf["notify_role"]]), row=1)
+        nrole = discord.ui.RoleSelect(
+            placeholder="Notify role (ping on alerts)…",
+            min_values=0,
+            max_values=1,
+            default_values=self._role_defaults([conf["notify_role"]]),
+            row=1,
+        )
 
         async def nrole_cb(interaction):
             await self.cog._set_top(self.guild, "notify_role", nrole.values[0].id if nrole.values else None)
@@ -217,8 +226,13 @@ class AntiBotPanel(discord.ui.View):
         nrole.callback = nrole_cb
         self.add_item(nrole)
 
-        qrole = discord.ui.RoleSelect(placeholder="Quarantine role (for `role` action)…", min_values=0, max_values=1,
-                                      default_values=self._role_defaults([conf["quarantine_role"]]), row=2)
+        qrole = discord.ui.RoleSelect(
+            placeholder="Quarantine role (for `role` action)…",
+            min_values=0,
+            max_values=1,
+            default_values=self._role_defaults([conf["quarantine_role"]]),
+            row=2,
+        )
 
         async def qrole_cb(interaction):
             if qrole.values and qrole.values[0] >= self.guild.me.top_role:
@@ -231,8 +245,7 @@ class AntiBotPanel(discord.ui.View):
         qrole.callback = qrole_cb
         self.add_item(qrole)
 
-        self._add_toggle("Cog enabled", conf["enabled"],
-                         lambda v: self.cog._set_top(self.guild, "enabled", v), row=3)
+        self._add_toggle("Cog enabled", conf["enabled"], lambda v: self.cog._set_top(self.guild, "enabled", v), row=3)
         wlr = discord.ui.Button(label="Whitelist roles…", style=discord.ButtonStyle.secondary, row=3)
         wlr.callback = self._nav("global_wl_roles")
         self.add_item(wlr)
@@ -243,15 +256,22 @@ class AntiBotPanel(discord.ui.View):
         self._add_back()
 
     def _build_global_wl_roles(self, conf):
-        sel = discord.ui.RoleSelect(placeholder="Immune roles (replaces the list)…", min_values=0, max_values=25,
-                                    default_values=self._role_defaults(conf["whitelist_roles"]))
+        sel = discord.ui.RoleSelect(
+            placeholder="Immune roles (replaces the list)…",
+            min_values=0,
+            max_values=25,
+            default_values=self._role_defaults(conf["whitelist_roles"]),
+        )
         self._add_list_select(sel, "whitelist_roles", row=0)
         self._add_back()
 
     def _build_global_wl_channels(self, conf):
         sel = discord.ui.ChannelSelect(
-            placeholder="Ignored channels (replaces the list)…", min_values=0, max_values=25,
-            channel_types=_CONTENT_CHANNEL_TYPES, default_values=self._chan_defaults(conf["whitelist_channels"]),
+            placeholder="Ignored channels (replaces the list)…",
+            min_values=0,
+            max_values=25,
+            channel_types=_CONTENT_CHANNEL_TYPES,
+            default_values=self._chan_defaults(conf["whitelist_channels"]),
         )
         self._add_list_select(sel, "whitelist_channels", row=0)
         self._add_back()
@@ -274,10 +294,16 @@ class AntiBotPanel(discord.ui.View):
         self._add_toggle("Enabled", rp["enabled"], self._sect("roleping", "enabled"), row=1)
         self._add_toggle("DM", rp["action"].get("dm", True), self._flag("roleping", "dm"), row=1)
         self._add_toggle("Modlog", rp["action"].get("modlog", True), self._flag("roleping", "modlog"), row=1)
-        self._add_toggle("Delete", rp["action"].get("delete_messages", True), self._flag("roleping", "delete_messages"), row=1)
+        self._add_toggle(
+            "Delete", rp["action"].get("delete_messages", True), self._flag("roleping", "delete_messages"), row=1
+        )
         self._add_toggle("Lockdown", rp.get("lockdown", True), self._sect("roleping", "lockdown"), row=1)
-        watched = discord.ui.RoleSelect(placeholder="Watched roles (empty = all mentionable)…",
-                                        min_values=0, max_values=25, default_values=self._role_defaults(rp["watched_roles"]))
+        watched = discord.ui.RoleSelect(
+            placeholder="Watched roles (empty = all mentionable)…",
+            min_values=0,
+            max_values=25,
+            default_values=self._role_defaults(rp["watched_roles"]),
+        )
         self._add_list_select(watched, ("roleping", "watched_roles"), row=2)
         self._add_modal_button("Detection…", lambda: RolePingDetectModal(self, rp), row=3)
         self._add_modal_button("Lockdown & notice…", lambda: RolePingLockModal(self, rp), row=3)
@@ -287,7 +313,9 @@ class AntiBotPanel(discord.ui.View):
         sm = conf["spammer"]
         self._add_action_select("spammer", conf, row=0)
         self._add_toggle("Enabled", sm["enabled"], self._sect("spammer", "enabled"), row=1)
-        self._add_toggle("On-message", sm.get("check_on_message", True), self._sect("spammer", "check_on_message"), row=1)
+        self._add_toggle(
+            "On-message", sm.get("check_on_message", True), self._sect("spammer", "check_on_message"), row=1
+        )
         self._add_toggle("DM", sm["action"].get("dm", True), self._flag("spammer", "dm"), row=1)
         self._add_toggle("Modlog", sm["action"].get("modlog", True), self._flag("spammer", "modlog"), row=1)
         self._add_modal_button("Timeout length…", lambda: TimeoutModal(self, "spammer", sm), row=2)
@@ -297,8 +325,9 @@ class AntiBotPanel(discord.ui.View):
         dm = conf["dmflag"]
         self._add_action_select("dmflag", conf, row=0)
         self._detector_flag_row("dmflag", conf, row=1, delete=False)
-        self._add_toggle("Ignore commands", dm.get("ignore_commands", True),
-                         self._sect("dmflag", "ignore_commands"), row=1)
+        self._add_toggle(
+            "Ignore commands", dm.get("ignore_commands", True), self._sect("dmflag", "ignore_commands"), row=1
+        )
         self._add_modal_button("Detection…", lambda: DmModal(self, dm), row=2)
         self._add_back()
 
@@ -309,17 +338,27 @@ class AntiBotPanel(discord.ui.View):
         self._add_toggle("Report-exempt", hp.get("report_exempt", True), self._sect("honeypot", "report_exempt"), row=1)
         self._add_toggle("DM", hp["action"].get("dm", True), self._flag("honeypot", "dm"), row=1)
         self._add_toggle("Modlog", hp["action"].get("modlog", True), self._flag("honeypot", "modlog"), row=1)
-        self._add_toggle("Delete", hp["action"].get("delete_messages", True), self._flag("honeypot", "delete_messages"), row=1)
+        self._add_toggle(
+            "Delete", hp["action"].get("delete_messages", True), self._flag("honeypot", "delete_messages"), row=1
+        )
         chans = discord.ui.ChannelSelect(
-            placeholder="Honeypot channels (replaces the list)…", min_values=0, max_values=25,
-            channel_types=_CONTENT_CHANNEL_TYPES, default_values=self._chan_defaults(hp["channels"]),
+            placeholder="Honeypot channels (replaces the list)…",
+            min_values=0,
+            max_values=25,
+            channel_types=_CONTENT_CHANNEL_TYPES,
+            default_values=self._chan_defaults(hp["channels"]),
         )
         self._add_list_select(chans, ("honeypot", "channels"), row=2)
-        exempt = discord.ui.RoleSelect(placeholder="Exempt roles…", min_values=0, max_values=25,
-                                       default_values=self._role_defaults(hp["exempt_roles"]))
+        exempt = discord.ui.RoleSelect(
+            placeholder="Exempt roles…",
+            min_values=0,
+            max_values=25,
+            default_values=self._role_defaults(hp["exempt_roles"]),
+        )
         self._add_list_select(exempt, ("honeypot", "exempt_roles"), row=3)
-        self._add_toggle("Report-immune", hp.get("report_immune", False),
-                         self._sect("honeypot", "report_immune"), row=4)
+        self._add_toggle(
+            "Report-immune", hp.get("report_immune", False), self._sect("honeypot", "report_immune"), row=4
+        )
         self._add_modal_button("Settings…", lambda: HoneypotModal(self, hp), row=4)
         self._add_back(row=4)
 
@@ -335,8 +374,9 @@ class AntiBotPanel(discord.ui.View):
         self._add_toggle("DM", d["action"].get("dm", True), self._flag(detector, "dm"), row=row)
         self._add_toggle("Modlog", d["action"].get("modlog", True), self._flag(detector, "modlog"), row=row)
         if delete:
-            self._add_toggle("Delete", d["action"].get("delete_messages", True),
-                             self._flag(detector, "delete_messages"), row=row)
+            self._add_toggle(
+                "Delete", d["action"].get("delete_messages", True), self._flag(detector, "delete_messages"), row=row
+            )
 
     # --- embed ------------------------------------------------------------ #
     async def render_embed(self):
@@ -382,10 +422,13 @@ class SpamModal(discord.ui.Modal, title="Cross-channel spam"):
         self.panel = panel
         self.channels = discord.ui.TextInput(label="Channels to trip", default=str(sect["channels"]))
         self.window = discord.ui.TextInput(label="Window (seconds)", default=str(sect["window"]))
-        self.distance = discord.ui.TextInput(label="SimHash distance (near-dup tolerance)", default=str(sect["simhash_distance"]))
+        self.distance = discord.ui.TextInput(
+            label="SimHash distance (near-dup tolerance)", default=str(sect["simhash_distance"])
+        )
         self.cooldown = discord.ui.TextInput(label="Cooldown (seconds)", default=str(sect["cooldown"]))
-        self.timeout_len = discord.ui.TextInput(label="Timeout length (e.g. 1h)",
-                                                default=_dur_str(sect["action"].get("timeout_seconds", 3600)))
+        self.timeout_len = discord.ui.TextInput(
+            label="Timeout length (e.g. 1h)", default=_dur_str(sect["action"].get("timeout_seconds", 3600))
+        )
         for f in (self.channels, self.window, self.distance, self.cooldown, self.timeout_len):
             self.add_item(f)
 
@@ -398,8 +441,9 @@ class SpamModal(discord.ui.Modal, title="Cross-channel spam"):
             timeout = max(1, _dur(self.timeout_len.value))
         except (ValueError, commands.BadArgument):
             return await interaction.response.send_message("Give whole numbers and a valid duration.", ephemeral=True)
-        await self.panel.cog._set_section_fields(self.panel.guild, "spam", channels=channels, window=window,
-                                                 simhash_distance=distance, cooldown=cooldown)
+        await self.panel.cog._set_section_fields(
+            self.panel.guild, "spam", channels=channels, window=window, simhash_distance=distance, cooldown=cooldown
+        )
         await self.panel.cog._set_action_field(self.panel.guild, "spam", "timeout_seconds", timeout)
         self.panel._notice = "✅ Spam thresholds updated."
         await self.panel._show(interaction)
@@ -409,14 +453,18 @@ class DmModal(discord.ui.Modal, title="Unusual DM activity"):
     def __init__(self, panel, sect):
         super().__init__()
         self.panel = panel
-        self.new_account = discord.ui.TextInput(label="New-account window (e.g. 7d, 0=off)",
-                                                default=_dur_str(sect.get("new_account_seconds", 0)))
-        self.new_member = discord.ui.TextInput(label="New-member window (e.g. 1d, 0=off)",
-                                               default=_dur_str(sect.get("new_member_seconds", 0)))
-        self.min_messages = discord.ui.TextInput(label="DMs before firing (min 1)",
-                                                 default=str(sect.get("min_messages", 1)))
-        self.timeout_len = discord.ui.TextInput(label="Timeout length (e.g. 1h)",
-                                                default=_dur_str(sect["action"].get("timeout_seconds", 3600)))
+        self.new_account = discord.ui.TextInput(
+            label="New-account window (e.g. 7d, 0=off)", default=_dur_str(sect.get("new_account_seconds", 0))
+        )
+        self.new_member = discord.ui.TextInput(
+            label="New-member window (e.g. 1d, 0=off)", default=_dur_str(sect.get("new_member_seconds", 0))
+        )
+        self.min_messages = discord.ui.TextInput(
+            label="DMs before firing (min 1)", default=str(sect.get("min_messages", 1))
+        )
+        self.timeout_len = discord.ui.TextInput(
+            label="Timeout length (e.g. 1h)", default=_dur_str(sect["action"].get("timeout_seconds", 3600))
+        )
         for f in (self.new_account, self.new_member, self.min_messages, self.timeout_len):
             self.add_item(f)
 
@@ -428,8 +476,13 @@ class DmModal(discord.ui.Modal, title="Unusual DM activity"):
             timeout = max(1, _dur(self.timeout_len.value))
         except (ValueError, commands.BadArgument):
             return await interaction.response.send_message("Give whole numbers and valid durations.", ephemeral=True)
-        await self.panel.cog._set_section_fields(self.panel.guild, "dmflag", new_account_seconds=new_account,
-                                                 new_member_seconds=new_member, min_messages=min_messages)
+        await self.panel.cog._set_section_fields(
+            self.panel.guild,
+            "dmflag",
+            new_account_seconds=new_account,
+            new_member_seconds=new_member,
+            min_messages=min_messages,
+        )
         await self.panel.cog._set_action_field(self.panel.guild, "dmflag", "timeout_seconds", timeout)
         self.panel._notice = "✅ Unusual-DM settings updated."
         await self.panel._show(interaction)
@@ -439,12 +492,15 @@ class JoinModal(discord.ui.Modal, title="Suspicious join"):
     def __init__(self, panel, sect):
         super().__init__()
         self.panel = panel
-        self.age_new = discord.ui.TextInput(label="'New account' boundary (e.g. 7d)",
-                                            default=_dur_str(sect["age_new_seconds"]))
-        self.age_kick = discord.ui.TextInput(label="Act if younger than (e.g. 1d, 0=off)",
-                                             default=_dur_str(sect["age_kick_seconds"]))
-        self.timeout_len = discord.ui.TextInput(label="Timeout length (e.g. 1h)",
-                                                default=_dur_str(sect["action"].get("timeout_seconds", 3600)))
+        self.age_new = discord.ui.TextInput(
+            label="'New account' boundary (e.g. 7d)", default=_dur_str(sect["age_new_seconds"])
+        )
+        self.age_kick = discord.ui.TextInput(
+            label="Act if younger than (e.g. 1d, 0=off)", default=_dur_str(sect["age_kick_seconds"])
+        )
+        self.timeout_len = discord.ui.TextInput(
+            label="Timeout length (e.g. 1h)", default=_dur_str(sect["action"].get("timeout_seconds", 3600))
+        )
         for f in (self.age_new, self.age_kick, self.timeout_len):
             self.add_item(f)
 
@@ -454,9 +510,12 @@ class JoinModal(discord.ui.Modal, title="Suspicious join"):
             age_kick = _dur(self.age_kick.value)
             timeout = max(1, _dur(self.timeout_len.value))
         except (ValueError, commands.BadArgument):
-            return await interaction.response.send_message("Give valid durations (e.g. `7d`, `1h`, `0`).", ephemeral=True)
-        await self.panel.cog._set_section_fields(self.panel.guild, "join",
-                                                 age_new_seconds=age_new, age_kick_seconds=age_kick)
+            return await interaction.response.send_message(
+                "Give valid durations (e.g. `7d`, `1h`, `0`).", ephemeral=True
+            )
+        await self.panel.cog._set_section_fields(
+            self.panel.guild, "join", age_new_seconds=age_new, age_kick_seconds=age_kick
+        )
         await self.panel.cog._set_action_field(self.panel.guild, "join", "timeout_seconds", timeout)
         self.panel._notice = "✅ Join settings updated."
         await self.panel._show(interaction)
@@ -468,12 +527,15 @@ class RolePingDetectModal(discord.ui.Modal, title="Role-ping detection"):
         self.panel = panel
         self.threshold = discord.ui.TextInput(label="Pings to trip", default=str(sect["threshold"]))
         self.window = discord.ui.TextInput(label="Window (seconds)", default=str(sect["window"]))
-        self.min_members = discord.ui.TextInput(label="Min role size (0 = any)",
-                                                default=str(sect.get("min_role_members", 0)))
-        self.new_account = discord.ui.TextInput(label="New-account window (e.g. 7d, 0=off)",
-                                                default=_dur_str(sect.get("new_account_seconds", 0)))
-        self.new_member = discord.ui.TextInput(label="New-member window (e.g. 1h, 0=off)",
-                                               default=_dur_str(sect.get("new_member_seconds", 0)))
+        self.min_members = discord.ui.TextInput(
+            label="Min role size (0 = any)", default=str(sect.get("min_role_members", 0))
+        )
+        self.new_account = discord.ui.TextInput(
+            label="New-account window (e.g. 7d, 0=off)", default=_dur_str(sect.get("new_account_seconds", 0))
+        )
+        self.new_member = discord.ui.TextInput(
+            label="New-member window (e.g. 1h, 0=off)", default=_dur_str(sect.get("new_member_seconds", 0))
+        )
         for f in (self.threshold, self.window, self.min_members, self.new_account, self.new_member):
             self.add_item(f)
 
@@ -486,9 +548,15 @@ class RolePingDetectModal(discord.ui.Modal, title="Role-ping detection"):
             new_member = _dur(self.new_member.value)
         except (ValueError, commands.BadArgument):
             return await interaction.response.send_message("Give whole numbers and valid durations.", ephemeral=True)
-        await self.panel.cog._set_section_fields(self.panel.guild, "roleping", threshold=threshold, window=window,
-                                                 min_role_members=min_members, new_account_seconds=new_account,
-                                                 new_member_seconds=new_member)
+        await self.panel.cog._set_section_fields(
+            self.panel.guild,
+            "roleping",
+            threshold=threshold,
+            window=window,
+            min_role_members=min_members,
+            new_account_seconds=new_account,
+            new_member_seconds=new_member,
+        )
         self.panel._notice = "✅ Role-ping detection updated."
         await self.panel._show(interaction)
 
@@ -497,11 +565,14 @@ class RolePingLockModal(discord.ui.Modal, title="Lockdown & notice"):
     def __init__(self, panel, sect):
         super().__init__()
         self.panel = panel
-        self.duration = discord.ui.TextInput(label="Lockdown duration (e.g. 5m)",
-                                             default=_dur_str(sect.get("lockdown_seconds", 300)))
+        self.duration = discord.ui.TextInput(
+            label="Lockdown duration (e.g. 5m)", default=_dur_str(sect.get("lockdown_seconds", 300))
+        )
         self.notice = discord.ui.TextInput(
-            label="Public notice ('{role}' = role; blank = off)", required=False,
-            style=discord.TextStyle.long, default=sect.get("notice_message", ""),
+            label="Public notice ('{role}' = role; blank = off)",
+            required=False,
+            style=discord.TextStyle.long,
+            default=sect.get("notice_message", ""),
         )
         self.add_item(self.duration)
         self.add_item(self.notice)
@@ -511,8 +582,9 @@ class RolePingLockModal(discord.ui.Modal, title="Lockdown & notice"):
             seconds = max(30, _dur(self.duration.value))
         except (ValueError, commands.BadArgument):
             return await interaction.response.send_message("Give a valid duration (e.g. `5m`).", ephemeral=True)
-        await self.panel.cog._set_section_fields(self.panel.guild, "roleping",
-                                                 lockdown_seconds=seconds, notice_message=self.notice.value.strip())
+        await self.panel.cog._set_section_fields(
+            self.panel.guild, "roleping", lockdown_seconds=seconds, notice_message=self.notice.value.strip()
+        )
         self.panel._notice = "✅ Lockdown & notice updated."
         await self.panel._show(interaction)
 
@@ -521,10 +593,12 @@ class HoneypotModal(discord.ui.Modal, title="Honeypot settings"):
     def __init__(self, panel, sect):
         super().__init__()
         self.panel = panel
-        self.exempt_after = discord.ui.TextInput(label="Exempt members here longer than (e.g. 7d)",
-                                                 default=_dur_str(sect["exempt_after_seconds"]))
-        self.timeout_len = discord.ui.TextInput(label="Timeout length (e.g. 1h)",
-                                                default=_dur_str(sect["action"].get("timeout_seconds", 3600)))
+        self.exempt_after = discord.ui.TextInput(
+            label="Exempt members here longer than (e.g. 7d)", default=_dur_str(sect["exempt_after_seconds"])
+        )
+        self.timeout_len = discord.ui.TextInput(
+            label="Timeout length (e.g. 1h)", default=_dur_str(sect["action"].get("timeout_seconds", 3600))
+        )
         self.add_item(self.exempt_after)
         self.add_item(self.timeout_len)
 
@@ -545,8 +619,9 @@ class TimeoutModal(discord.ui.Modal, title="Timeout length"):
         super().__init__()
         self.panel = panel
         self.detector = detector
-        self.timeout_len = discord.ui.TextInput(label="Timeout length (e.g. 1h)",
-                                                default=_dur_str(sect["action"].get("timeout_seconds", 3600)))
+        self.timeout_len = discord.ui.TextInput(
+            label="Timeout length (e.g. 1h)", default=_dur_str(sect["action"].get("timeout_seconds", 3600))
+        )
         self.add_item(self.timeout_len)
 
     async def on_submit(self, interaction):
@@ -563,8 +638,9 @@ class SigModal(discord.ui.Modal, title="Signature matching"):
     def __init__(self, panel, sect):
         super().__init__()
         self.panel = panel
-        self.distance = discord.ui.TextInput(label="Match SimHash distance",
-                                             default=str(sect.get("simhash_distance", 8)))
+        self.distance = discord.ui.TextInput(
+            label="Match SimHash distance", default=str(sect.get("simhash_distance", 8))
+        )
         self.add_item(self.distance)
 
     async def on_submit(self, interaction):
@@ -582,8 +658,10 @@ class BanDmModal(discord.ui.Modal, title="Ban DM message"):
         super().__init__()
         self.panel = panel
         self.message = discord.ui.TextInput(
-            label="DM before ban ({guild}/{member}/{reason})", required=False,
-            style=discord.TextStyle.long, default=current or "",
+            label="DM before ban ({guild}/{member}/{reason})",
+            required=False,
+            style=discord.TextStyle.long,
+            default=current or "",
             placeholder="Leave blank to send no DM before a ban.",
         )
         self.add_item(self.message)
