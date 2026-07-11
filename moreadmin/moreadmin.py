@@ -897,11 +897,9 @@ class MoreAdmin(commands.Cog):
     @commands.guild_only()
     @checks.admin_or_permissions(ban_members=True)
     @checks.bot_has_permissions(ban_members=True)
-    async def bandm(self, ctx, member: discord.Member, days: Optional[int] = 1, *, reason: Optional[str] = None):
+    async def bandm(self, ctx, member: discord.Member, days: int, *, reason: Optional[str] = None):
         """
         Ban a member and have the bot DM them a message
-
-        By default, deletes last day of messages
         """
         ban_command = self.bot.get_command("ban")
 
