@@ -102,3 +102,9 @@ venv.bak/
 
 # mypy
 .mypy_cache/
+
+# line_profiler output
+*.lprof
+
+# Claude Code local settings (skills and CLAUDE.md are tracked; local settings are not)
+.claude/*.json
