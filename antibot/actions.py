@@ -115,15 +115,29 @@ async def take_action(
         full_reason = reason + ("\n" + "\n".join(lines) if lines else "")
         try:
             await modlog.create_case(
-                cog.bot, guild, discord.utils.utcnow(), case_type, member,
-                moderator=guild.me, reason=full_reason[:2000],
+                cog.bot,
+                guild,
+                discord.utils.utcnow(),
+                case_type,
+                member,
+                moderator=guild.me,
+                reason=full_reason[:2000],
             )
         except Exception:
             pass
 
     # 7) alert embed to the notify channel / role
-    await _send_alert(cog, guild, member, case_type, action, reason,
-                      action_cfg=action_cfg, extra_fields=extra_fields, failed_reason=failed_reason)
+    await _send_alert(
+        cog,
+        guild,
+        member,
+        case_type,
+        action,
+        reason,
+        action_cfg=action_cfg,
+        extra_fields=extra_fields,
+        failed_reason=failed_reason,
+    )
 
     # 8) owner ping on permission failure
     if failed_reason is not None:
@@ -230,8 +244,9 @@ async def _delete_messages(guild, messages: List[Tuple[int, int]], reason: str) 
 
 
 async def _safe_dm(member, guild, action, reason) -> None:
-    verb = {"timeout": "timed out in", "kick": "kicked from", "ban": "banned from",
-            "role": "restricted in"}.get(action, "actioned in")
+    verb = {"timeout": "timed out in", "kick": "kicked from", "ban": "banned from", "role": "restricted in"}.get(
+        action, "actioned in"
+    )
     try:
         await member.send(f"You have been {verb} **{guild}** by automated moderation.\nReason: {reason}")
     except Exception:
@@ -254,7 +269,9 @@ async def _safe_ban_dm(cog, guild, member, reason) -> None:
         pass
 
 
-async def _send_alert(cog, guild, member, case_type, action, reason, *, action_cfg=None, extra_fields=None, failed_reason=None) -> None:
+async def _send_alert(
+    cog, guild, member, case_type, action, reason, *, action_cfg=None, extra_fields=None, failed_reason=None
+) -> None:
     chan_id = await cog.config.guild(guild).notify_channel()
     channel = guild.get_channel_or_thread(chan_id) if chan_id else None
     if channel is None:

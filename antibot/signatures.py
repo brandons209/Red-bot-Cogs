@@ -140,8 +140,7 @@ def _fingerprint_many(texts) -> Tuple[List[str], List[int]]:
     return list(dict.fromkeys(nhashes)), simhashes  # dedupe nhashes, keep order
 
 
-def _assemble(*, label, created_by, trust, avatar_hash, role_ids, age_band_,
-              username_sample, message_texts) -> Dict:
+def _assemble(*, label, created_by, trust, avatar_hash, role_ids, age_band_, username_sample, message_texts) -> Dict:
     nhashes, simhashes = _fingerprint_many(message_texts)
     return {
         "id": uuid.uuid4().hex[:8],
@@ -169,7 +168,9 @@ def build_signature(
 ) -> Dict:
     """Capture a live member (+ optional sample messages) into a signature dict."""
     return _assemble(
-        label=label, created_by=created_by, trust=trust,
+        label=label,
+        created_by=created_by,
+        trust=trust,
         avatar_hash=_avatar_key(member),
         role_ids=_member_role_ids(member, recent_roles),
         age_band_=age_band(_account_age_seconds(member)),
@@ -191,8 +192,11 @@ def build_manual(
     """Assemble a confirmed signature from raw data, for already-banned/deleted
     accounts where no live member object exists (manual seeding from logs)."""
     return _assemble(
-        label=label, created_by=created_by, trust="confirmed",
-        avatar_hash=avatar_hash, role_ids=role_ids,
+        label=label,
+        created_by=created_by,
+        trust="confirmed",
+        avatar_hash=avatar_hash,
+        role_ids=role_ids,
         age_band_=age_band_,
         username_sample=username,
         message_texts=message_texts,
@@ -208,7 +212,9 @@ def _fuzzy_ratio(a: str, b: str) -> float:
     return float(fuzz.token_sort_ratio(a, b))
 
 
-def compare(feats: Dict, signature: Dict, weights: Optional[Dict] = None, *, simhash_dist: int = 6) -> Tuple[float, List[str]]:
+def compare(
+    feats: Dict, signature: Dict, weights: Optional[Dict] = None, *, simhash_dist: int = 6
+) -> Tuple[float, List[str]]:
     """
     Score a candidate's ``feats`` against one ``signature``.
 

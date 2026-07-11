@@ -1377,9 +1377,12 @@ class ActivityLogger(commands.Cog):
             for row in data:
                 author = self.bot.get_user(row["author_id"])
                 if isinstance(guild, discord.Guild) and author is None:
-                    author = guild.get_member(row["author_id"]) or await guild.fetch_member(row["author_id"])
-                if author:
-                    row["author_id"] = author.display_name
+                    try:
+                        author = guild.get_member(row["author_id"]) or await guild.fetch_member(row["author_id"])
+                        if author:
+                            row["author_id"] = author.display_name
+                    except discord.HTTPException:
+                        pass
 
                 action = row.get("action")
                 attr = row.get("attribute")

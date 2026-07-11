@@ -49,8 +49,7 @@ class StarboardEntry:
 
     def __repr__(self) -> str:
         return (
-            "<Starboard guild={0.guild} name={0.name} emoji={0.emoji} "
-            "enabled={0.enabled} threshold={0.threshold}>"
+            "<Starboard guild={0.guild} name={0.name} emoji={0.emoji} " "enabled={0.enabled} threshold={0.threshold}>"
         ).format(self)
 
     def check_roles(self, member: Union[discord.Member, discord.User]) -> bool:
@@ -74,12 +73,8 @@ class StarboardEntry:
             # for the starboard count
             return True
         guild = member.guild
-        whitelisted_roles = [
-            guild.get_role(rid) for rid in self.whitelist if guild.get_role(rid) is not None
-        ]
-        blacklisted_roles = [
-            guild.get_role(rid) for rid in self.blacklist if guild.get_role(rid) is not None
-        ]
+        whitelisted_roles = [guild.get_role(rid) for rid in self.whitelist if guild.get_role(rid) is not None]
+        blacklisted_roles = [guild.get_role(rid) for rid in self.blacklist if guild.get_role(rid) is not None]
         if whitelisted_roles:
             # only count if the whitelist contains actual roles
             for role in whitelisted_roles:
@@ -168,9 +163,7 @@ class StarboardEntry:
             "selfstar": self.selfstar,
             "blacklist": self.blacklist,
             "whitelist": self.whitelist,
-            "messages": {
-                k: m.to_json() async for k, m in AsyncIter(self.messages.items(), steps=500)
-            },
+            "messages": {k: m.to_json() async for k, m in AsyncIter(self.messages.items(), steps=500)},
             "starboarded_messages": self.starboarded_messages,
             "threshold": self.threshold,
             "autostar": self.autostar,
@@ -285,9 +278,7 @@ class StarboardMessage:
         except (discord.errors.NotFound, discord.errors.Forbidden):
             return
 
-    async def update_count(
-        self, bot: Red, starboard: StarboardEntry, remove: Optional[int]
-    ) -> None:
+    async def update_count(self, bot: Red, starboard: StarboardEntry, remove: Optional[int]) -> None:
         """
         This function can pull the most accurate reaction info from a starboarded message
         However it takes at least 2 API calls which can be expensive. I am leaving
@@ -316,18 +307,14 @@ class StarboardMessage:
         if orig_channel:
             try:
                 orig_msg = await orig_channel.fetch_message(self.original_message)
-                orig_reaction = [
-                    r for r in orig_msg.reactions if str(r.emoji) == str(starboard.emoji)
-                ]
+                orig_reaction = [r for r in orig_msg.reactions if str(r.emoji) == str(starboard.emoji)]
             except discord.HTTPException:
                 pass
         new_reaction = []
         if new_channel:
             try:
                 new_msg = await new_channel.fetch_message(self.new_message)
-                new_reaction = [
-                    r for r in new_msg.reactions if str(r.emoji) == str(starboard.emoji)
-                ]
+                new_reaction = [r for r in new_msg.reactions if str(r.emoji) == str(starboard.emoji)]
             except discord.HTTPException:
                 pass
         reactions = orig_reaction + new_reaction
@@ -356,9 +343,7 @@ class StarboardMessage:
         }
 
     @classmethod
-    def from_json(
-        cls, data: Dict[str, Union[List[int], int, None]], guild_id: Optional[int]
-    ) -> StarboardMessage:
+    def from_json(cls, data: Dict[str, Union[List[int], int, None]], guild_id: Optional[int]) -> StarboardMessage:
         return cls(
             guild=data.get("guild", guild_id),
             original_message=data.get("original_message"),
