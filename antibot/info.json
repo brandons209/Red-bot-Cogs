@@ -1,0 +1,20 @@
+{
+  "author": [
+    "brandons209"
+  ],
+  "description": "Automated anti-bot / anti-raid moderation: cross-channel spam detection, suspicious-join and Discord spammer-badge handling, role-ping abuse lockdown, honeypot channels, and human-in-the-loop bot 'signature' learning. Configurable per-detector actions (ban/kick/timeout/role) with modlog reporting.",
+  "hidden": false,
+  "install_msg": "Thanks for installing AntiBot! Set a notify channel with `[p]antibot notifychannel #channel` and review `[p]antibot settings`. Requires the Members and Message Content privileged intents.",
+  "requirements": [
+    "rapidfuzz"
+  ],
+  "tags": [
+    "brandons209",
+    "moderation",
+    "antispam",
+    "antiraid",
+    "antibot"
+  ],
+  "min_bot_version": "3.5.0",
+  "end_user_data_statement": "This cog stores per-guild moderation configuration, per-member automated-action timestamps and counters, and learned bot 'signatures' consisting of hashes/fingerprints of avatar, message, and role features. No verbatim message content is retained."
+}
