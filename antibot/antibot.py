@@ -32,6 +32,9 @@ _DETECTORS = ("spam", "join", "roleping", "spammer", "honeypot", "dmflag")
 _PUNITIVE = ("timeout", "kick", "ban", "role")
 _SIG_STORE_CAP = 200
 _MIN_FUZZY_LEN = 12  # normalized-text length below which SimHash near-dup is disabled
+# A DM reply in a channel the bot itself just messaged is solicited, not unusual. Grace
+# window covers the longest DM prompt-and-wait flow in the repo (role age-verification, 60s).
+_DM_SOLICITED_GRACE = 120
 
 _CASETYPES = [
     {"name": "antibot_spam", "default_setting": True, "image": "\N{FIRE}", "case_str": "AntiBot: Cross-channel spam"},
@@ -177,6 +180,7 @@ class AntiBot(commands.Cog):
         self._recent_roles: Dict = {}  # (guild_id, user_id) -> set[role_id]
         self._recent_texts: Dict = {}  # (guild_id, user_id) -> deque[str] (for sig learn)
         self._dm_counts: Dict = {}  # (guild_id, user_id) -> count of DMs to the bot
+        self._recent_bot_dm_channels: Dict = {}  # dm_channel_id -> last bot-send ts (solicited)
         self._restore_tasks: set = set()  # pending precise role-unlock tasks
 
         self._task = asyncio.create_task(self._bg_loop())
@@ -252,6 +256,9 @@ class AntiBot(commands.Cog):
                     self._recent_texts.clear()
                 if len(self._dm_counts) > 10000:  # bound the DM-to-bot counter
                     self._dm_counts.clear()
+                for cid in [c for c, t in list(self._recent_bot_dm_channels.items())
+                            if now - t > _DM_SOLICITED_GRACE]:
+                    self._recent_bot_dm_channels.pop(cid, None)
             except asyncio.CancelledError:
                 break
             except Exception as e:  # noqa: BLE001
@@ -318,6 +325,12 @@ class AntiBot(commands.Cog):
     # --- listeners -------------------------------------------------------- #
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
+        # The bot sending a DM marks that channel solicited: a reply to us (e.g. a DOB for
+        # role age-verification) must not read as unusual DM activity. Recorded before the
+        # bot-author early return, since the bot's own message has author.bot == True.
+        if message.guild is None and message.author.id == self.bot.user.id:
+            self._recent_bot_dm_channels[message.channel.id] = time.time()
+            return
         if message.author.bot:
             return
         if message.guild is None:
@@ -503,6 +516,11 @@ class AntiBot(commands.Cog):
         """A member DM'd the bot. Act in the first mutual guild where the unusual-DM
         detector is enabled and the sender passes the new-account/new-member gate. The
         per-member debounce in take_action stops a second guild from double-punishing."""
+        # A reply in a channel the bot recently DM'd is solicited (role age-verification
+        # and similar prompt-then-wait flows), so it never counts as unusual DM activity.
+        ts = self._recent_bot_dm_channels.get(message.channel.id)
+        if ts and (time.time() - ts) < _DM_SOLICITED_GRACE:
+            return
         author = message.author
         for guild in self.bot.guilds:
             member = guild.get_member(author.id)
