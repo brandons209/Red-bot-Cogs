@@ -4,16 +4,11 @@
     "somethingux",
     "Alzarath"
   ],
-  "bot_version": [
-    3,
-    5,
-    0
-  ],
+  "min_bot_version": "3.5.0",
   "description": "Search derpibooru for images of ponies! Fully customizable filter list!",
   "hidden": false,
   "install_msg": "Thank you for using this cog! Please make sure to setup the filters to your liking using '[p]ponyfilter'.",
   "requirements": [
-    "urllib3",
     "aiohttp"
   ],
   "short": "Search derpibooru for images of ponies!",
